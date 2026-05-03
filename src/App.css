@@ -1,0 +1,338 @@
+#root {
+  min-height: 100vh;
+  width: 100%;
+}
+
+/* Force all Radix select items to be right-aligned */
+[data-radix-select-item] {
+  direction: rtl;
+  text-align: right !important;
+  justify-content: flex-end !important;
+}
+[data-radix-select-item] span {
+  text-align: right !important;
+  direction: rtl;
+}
+
+@keyframes page-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-transition {
+  animation: page-fade-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
+}
+
+.word-document-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  align-items: stretch;
+  width: 100%;
+  direction: ltr;
+}
+
+.word-document-toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(255, 255, 255, 0.94);
+  padding: 0.5rem 0.4rem;
+  border-radius: 1rem;
+  width: 2.75rem;
+  min-width: 2.75rem;
+  max-width: 2.75rem;
+  flex-shrink: 0;
+  align-self: flex-start;
+  direction: ltr;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.word-document-toolbar-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: center;
+  gap: 0.3rem;
+  width: 100%;
+  direction: ltr;
+}
+
+.word-document-toolbar-separator {
+  width: 80%;
+  height: 1px;
+  background: rgba(148, 163, 184, 0.3);
+  margin: 0.1rem 0;
+}
+
+.word-document-page {
+  width: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 2rem 1rem;
+  border-radius: 1.25rem;
+  background: #dde1e7;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+
+.word-document-content {
+  display: block;
+  width: 210mm;
+  min-width: 210mm;
+}
+
+.word-document-page .ProseMirror {
+  /* true A4 dimensions */
+  width: 210mm !important;
+  min-height: 297mm !important;
+  height: auto !important;
+  margin: 0 auto;
+  background: #ffffff;
+  box-shadow: 0 4px 24px rgba(15, 23, 42, 0.18), 0 1.5px 4px rgba(15, 23, 42, 0.10);
+  border-radius: 2px;
+  /* A4 margins: top/bottom 20mm, left/right 25mm */
+  padding: 20mm 25mm;
+  color: #0f172a;
+  font-family: "Tajawal", "Amiri", "Segoe UI", Tahoma, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.9;
+  text-align: right;
+  direction: rtl;
+  outline: none;
+  display: block;
+  box-sizing: border-box;
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
+  overflow: hidden;
+}
+
+.word-document-page-readonly .ProseMirror {
+  min-height: auto !important;
+  padding: 20mm 25mm;
+}
+
+.word-document-page .ProseMirror p {
+  margin: 0 0 1rem;
+}
+
+.word-document-page .ProseMirror h2 {
+  font-size: 1.4rem;
+  font-weight: 800;
+  margin: 0 0 1rem;
+}
+
+.word-document-page .ProseMirror ul,
+.word-document-page .ProseMirror ol {
+  padding-right: 1.5rem;
+  margin: 0 0 1rem;
+}
+
+.word-document-page .ProseMirror blockquote {
+  border-right: 4px solid #cbd5e1;
+  margin: 1rem 0;
+  padding: 0.25rem 1rem;
+  color: #475569;
+}
+
+.word-document-page .ProseMirror img {
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.35rem;
+  border-radius: 0.75rem;
+}
+
+.word-document-page .ProseMirror table,
+.ProseMirror table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  margin: 1rem 0 !important;
+  table-layout: fixed !important;
+  border: 2px solid #334155 !important;
+  display: table !important;
+}
+
+.word-document-page .ProseMirror th,
+.word-document-page .ProseMirror td,
+.ProseMirror th,
+.ProseMirror td {
+  border: 2px solid #334155 !important;
+  border-color: #334155 !important;
+  padding: 0.6rem !important;
+  vertical-align: top !important;
+  min-width: 2rem !important;
+  word-break: break-word !important;
+  white-space: pre-wrap !important;
+  overflow-wrap: break-word !important;
+}
+
+.word-document-page .ProseMirror th,
+.ProseMirror th {
+  background: #ffffff !important;
+  font-weight: 700 !important;
+}
+
+.word-document-page .ProseMirror td,
+.ProseMirror td {
+  background: #ffffff !important;
+}
+
+.word-document-page .ProseMirror .selectedCell:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(14, 165, 233, 0.12);
+  pointer-events: none;
+}
+
+.word-document-page .ProseMirror table .column-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: -2px;
+  left: -2px;
+  width: 4px;
+  background-color: #0ea5e9;
+  pointer-events: none;
+}
+
+.word-document-page .ProseMirror .tableWrapper {
+  overflow-x: auto;
+  overflow-y: visible;
+  display: block;
+  position: relative;
+  margin: 0.5rem 0;
+}
+
+.word-document-toolbar-horizontal {
+  width: 100%;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 0.375rem 0.5rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  /* Hide scrollbar visually but keep functionality */
+  scrollbar-width: none;
+}
+
+.word-document-toolbar-horizontal::-webkit-scrollbar {
+  display: none;
+}
+
+.word-document-toolbar-row-horizontal {
+  /* inline-flex is more reliable than flex+min-width:max-content on iOS Safari */
+  display: inline-flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.word-document-toolbar-separator-h {
+  width: 1px;
+  height: 1.5rem;
+  background: #cbd5e1;
+  flex-shrink: 0;
+  margin: 0 0.125rem;
+}
+
+/* Bottom toolbar: hidden on desktop, shown on mobile */
+.word-document-toolbar-bottom {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  /* Allow the scaled A4 page to be fully visible — no clipping */
+  .word-document-page {
+    padding: 0.25rem;
+    border-radius: 0.75rem;
+    overflow: visible;
+    background: transparent;
+  }
+
+  /* On mobile: show top toolbar and hide bottom toolbar */
+  .word-document-toolbar-top {
+    display: block !important;
+    order: 1;
+  }
+  .word-document-page-slot {
+    order: 2;
+  }
+  .word-document-toolbar-bottom {
+    display: none !important;
+    order: 3;
+  }
+
+  /* Top toolbar scrolls horizontally */
+  .word-document-toolbar-top .word-document-toolbar-row-horizontal {
+    flex-wrap: nowrap;
+  }
+
+  /* Center toolbar content when it fits on screen */
+  .word-document-toolbar-horizontal {
+    text-align: center;
+  }
+  .word-document-toolbar-row-horizontal {
+    display: inline-flex;
+    text-align: initial;
+  }
+
+  /* Cancel any legacy transform offsets on images */
+  .word-document-page .ProseMirror img {
+    transform: none !important;
+  }
+
+  .word-document-page .ProseMirror span[data-node-view-wrapper] {
+    transform: none !important;
+  }
+}

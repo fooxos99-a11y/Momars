@@ -1,0 +1,22 @@
+{
+  "id": "/",
+  "name": "رخصة ممارس",
+  "short_name": "رخصة ممارس",
+  "description": "برنامج تأهيلي لإعداد معلمي ومعلمات القرآن لقيادة الحلقة القرآنية بكفاءة وفاعلية.",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f2fbfc",
+  "theme_color": "#0d6f8f",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/الأيقونة.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

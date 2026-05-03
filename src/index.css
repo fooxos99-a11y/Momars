@@ -1,0 +1,222 @@
+@import url("https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Tajawal:wght@400;500;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design system: Practitioner License Program
+   Teal palette — #107699, #084159, white. RTL-first. */
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 198 83% 14%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 198 83% 14%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 198 83% 14%;
+
+    /* Teal — main brand (#107699) */
+    --primary: 194 81% 33%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 194 70% 45%;
+    --primary-deep: 198 83% 19%;
+
+    /* Deep teal — accent (#084159) */
+    --accent: 193 78% 22%;
+    --accent-foreground: 0 0% 100%;
+    --accent-soft: 194 72% 94%;
+
+    --secondary: 194 50% 96%;
+    --secondary-foreground: 194 81% 33%;
+
+    --muted: 194 30% 96%;
+    --muted-foreground: 198 25% 35%;
+
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 194 35% 88%;
+    --input: 194 35% 88%;
+    --ring: 194 81% 33%;
+
+    --radius: 1rem;
+
+    /* Gradients */
+    --gradient-hero: radial-gradient(circle at 50% 35%, hsl(191 72% 32%) 0%, hsl(191 75% 27%) 36%, hsl(193 78% 22%) 100%);
+    --gradient-primary: linear-gradient(135deg, hsl(193 78% 22%), hsl(191 72% 34%));
+    --gradient-gold: linear-gradient(135deg, hsl(191 72% 34%), hsl(193 78% 22%));
+    --gradient-soft: linear-gradient(180deg, hsl(0 0% 100%), hsl(194 68% 97%));
+    --gradient-page: radial-gradient(circle at 50% 0%, hsl(191 76% 84% / 0.52) 0%, hsl(191 72% 92% / 0.4) 26%, transparent 58%), linear-gradient(180deg, hsl(191 64% 97%) 0%, hsl(190 70% 96%) 34%, hsl(191 56% 98%) 68%, hsl(0 0% 100%) 100%);
+    --page-surface-top: 191 64% 97%;
+
+    /* Shadows */
+    --shadow-soft: 0 2px 12px -4px hsl(198 83% 19% / 0.08);
+    --shadow-card: 0 10px 40px -12px hsl(198 83% 19% / 0.18);
+    --shadow-elegant: 0 20px 60px -20px hsl(198 83% 19% / 0.35);
+    --shadow-gold: 0 14px 34px -14px hsl(193 78% 22% / 0.42);
+
+    --transition-smooth: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 198 83% 14%;
+    --sidebar-primary: 194 81% 33%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 194 72% 94%;
+    --sidebar-accent-foreground: 193 78% 22%;
+    --sidebar-border: 194 35% 88%;
+    --sidebar-ring: 194 81% 33%;
+  }
+
+  .dark {
+    --background: 198 83% 8%;
+    --foreground: 0 0% 98%;
+    --card: 198 70% 11%;
+    --card-foreground: 0 0% 98%;
+    --popover: 198 70% 11%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 194 70% 50%;
+    --primary-foreground: 198 83% 8%;
+    --secondary: 198 50% 16%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 198 50% 16%;
+    --muted-foreground: 194 25% 70%;
+    --accent: 194 70% 50%;
+    --accent-foreground: 198 83% 8%;
+    --border: 198 50% 18%;
+    --input: 198 50% 18%;
+    --ring: 194 70% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    scroll-behavior: smooth;
+    text-size-adjust: 100%;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+    font-family: "Tajawal", system-ui, sans-serif;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: "Tajawal", system-ui, sans-serif;
+    @apply font-bold tracking-tight;
+  }
+  .font-quran {
+    font-family: "Amiri", serif;
+  }
+}
+
+@layer utilities {
+  .gradient-hero {
+    background: var(--gradient-hero);
+  }
+  .gradient-primary {
+    background: var(--gradient-primary);
+  }
+  .gradient-gold {
+    background: var(--gradient-gold);
+  }
+  .gradient-soft {
+    background: var(--gradient-soft);
+  }
+  .gradient-page {
+    background: var(--gradient-page);
+  }
+  .shadow-card {
+    box-shadow: var(--shadow-card);
+  }
+  .shadow-elegant {
+    box-shadow: var(--shadow-elegant);
+  }
+  .shadow-gold {
+    box-shadow: var(--shadow-gold);
+  }
+  .transition-smooth {
+    transition: var(--transition-smooth);
+  }
+  .text-gradient-gold {
+    background: var(--gradient-gold);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .site-logo {
+    transition: var(--transition-smooth);
+    filter: drop-shadow(0 8px 18px rgba(8, 65, 89, 0.2));
+  }
+
+  .site-logo-top {
+    filter: brightness(0) invert(1) drop-shadow(0 8px 18px rgba(0, 0, 0, 0.22));
+  }
+
+  .site-logo-scrolled {
+    filter: brightness(0) saturate(100%) invert(31%) sepia(53%) saturate(1050%) hue-rotate(154deg) brightness(91%) contrast(94%) drop-shadow(0 8px 18px rgba(8, 65, 89, 0.12));
+  }
+}
+
+@media (max-width: 767px) {
+  .site-logo {
+    filter: none;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+    backface-visibility: hidden;
+    transform: translateZ(0);
+  }
+
+  .site-logo-top {
+    filter: brightness(0) invert(1);
+  }
+
+  .site-logo-scrolled {
+    filter: brightness(0) saturate(100%) invert(31%) sepia(53%) saturate(1050%) hue-rotate(154deg) brightness(91%) contrast(94%);
+  }
+
+  .site-logo.shadow-gold {
+    box-shadow: none;
+  }
+}
+
+/* Animations */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slow-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes soft-pulse {
+  0%, 100% { opacity: 0.2; transform: scale(1); }
+  50% { opacity: 0.42; transform: scale(1.04); }
+}
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.animate-float { animation: float 6s ease-in-out infinite; }
+.animate-fade-up { animation: fade-up 0.8s ease-out both; }
+.animate-slow-spin { animation: slow-spin 28s linear infinite; }
+.animate-soft-pulse { animation: soft-pulse 5s ease-in-out infinite; }
+.animate-marquee { animation: marquee 30s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-float,
+  .animate-fade-up,
+  .animate-slow-spin,
+  .animate-soft-pulse,
+  .animate-marquee {
+    animation: none;
+  }
+}
