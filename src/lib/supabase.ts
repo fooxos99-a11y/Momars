@@ -243,7 +243,7 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
   const branchCodeById = new Map(branches.map((branch) => [branch.id as string, branch.code as BranchId]));
 
   const [{ data: students, error: studentsError }, { data: studentParts, error: studentPartsError }] = await Promise.all([
-    supabase.from("students").select("id, full_name, login_code, note, branch_id"),
+    supabase.from("students").select("id, full_name, login_code, note, branch_id, created_at"),
     supabase.from("student_parts").select("student_id, part_number"),
   ]);
 
@@ -271,6 +271,7 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
     branchId: branchCodeById.get(student.branch_id as string) ?? "male",
     note: (student.note as string) ?? "",
     completedParts: [...(completedPartsByStudentId.get(student.id as string) ?? [])].sort((left, right) => left - right),
+    createdAt: (student.created_at as string) ?? new Date().toISOString(),
   }));
 
   const recitersWithBranchResponse = await supabase.from("reciters").select("id, full_name, user_id, branch_id");
@@ -517,7 +518,7 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
   };
 };
 
-export const addStudentToDatabase = async (student: Omit<StudentRecord, "id" | "completedParts">) => {
+export const addStudentToDatabase = async (student: Omit<StudentRecord, "id" | "completedParts" | "createdAt">) => {
   const { data, error } = await supabase.rpc("create_student_account", {
     student_name: student.name.trim(),
     student_login_code: student.loginId.trim(),

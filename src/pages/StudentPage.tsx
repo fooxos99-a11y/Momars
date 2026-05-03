@@ -187,7 +187,15 @@ const StudentPage = () => {
       return [];
     }
 
+    const studentCreatedAt = student.createdAt ? new Date(student.createdAt).getTime() : 0;
+
     return data.notifications.filter((notification) => {
+      // Don't show notifications sent before the student account was created
+      if (studentCreatedAt && notification.createdAt) {
+        const notifTime = new Date(notification.createdAt).getTime();
+        if (notifTime < studentCreatedAt) return false;
+      }
+
       if (notification.targetLoginIds && notification.targetLoginIds.length > 0) {
         return notification.targetLoginIds.includes(student.loginId);
       }

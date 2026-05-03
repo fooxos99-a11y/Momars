@@ -65,6 +65,7 @@ export interface StudentRecord {
   branchId: BranchId;
   note: string;
   completedParts: number[];
+  createdAt: string;
 }
 
 export interface ReciterRecord {
@@ -676,9 +677,9 @@ export const useDashboardStore = () => {
   return {
     data,
     isHydrated,
-    addStudent: async (student: Omit<StudentRecord, "id" | "completedParts">) => {
+    addStudent: async (student: Omit<StudentRecord, "id" | "completedParts" | "createdAt">) => {
       const tempStudentId = createId();
-      setStudents((students) => [...students, { id: tempStudentId, completedParts: [], ...student }]);
+      setStudents((students) => [...students, { id: tempStudentId, completedParts: [], createdAt: new Date().toISOString(), ...student }]);
 
       try {
         const studentId = await addStudentToDatabase(student);
