@@ -369,7 +369,7 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
     throw answersResponse.error;
   }
 
-  if (attendanceResponse.error) {
+  if (attendanceResponse.error && !isMissingRelationError(attendanceResponse.error, "course_attendance")) {
     throw attendanceResponse.error;
   }
 
