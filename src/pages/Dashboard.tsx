@@ -2146,23 +2146,23 @@ const Dashboard = () => {
   const getSubmissionGrade = (courseId: string, assessmentType: AssessmentType, submissionId: string) => {
     const submission = data.submissions.find((item) => item.id === submissionId);
     const questions = getAssessmentQuestionsForCourse(courseId, assessmentType);
+    const questionTotal = questions.reduce((sum, question) => sum + question.points, 0);
 
     if (!submission) {
-      return { score: 0, total: questions.reduce((sum, question) => sum + question.points, 0) };
+      return { score: 0, total: questionTotal };
     }
 
     const answersByQuestionId = new Map(submission.answers.map((answer) => [answer.questionId, answer]));
-    const total = questions.reduce((sum, question) => sum + question.points, 0);
 
     if (typeof submission.manualScore === "number" && Number.isFinite(submission.manualScore) && submission.manualScore >= 0) {
-      return { score: submission.manualScore, total };
+      return { score: submission.manualScore, total: Math.max(questionTotal, submission.manualScore) };
     }
 
     const scoreOverride = answersByQuestionId.get("__score_override__")?.value;
     if (scoreOverride !== undefined) {
       const numericScore = Number(scoreOverride);
       if (Number.isFinite(numericScore) && numericScore >= 0) {
-        return { score: numericScore, total };
+        return { score: numericScore, total: Math.max(questionTotal, numericScore) };
       }
     }
 
@@ -2180,7 +2180,7 @@ const Dashboard = () => {
       return isAnswerCorrect(question, answer.value) ? sum + question.points : sum;
     }, 0);
 
-    return { score, total };
+    return { score, total: questionTotal };
   };
 
   const getSubmissionCorrectAnswersStats = (courseId: string, assessmentType: AssessmentType, submissionId: string) => {

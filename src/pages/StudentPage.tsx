@@ -135,18 +135,26 @@ const StudentPage = () => {
     const submission = data.submissions.find((item) => item.id === submissionId);
     const course = data.courses.find((item) => item.id === courseId);
     const questions = course ? getAssessmentQuestions(course, assessmentType) : [];
-    const total = questions.reduce((sum, question) => sum + question.points, 0);
+    const questionTotal = questions.reduce((sum, question) => sum + question.points, 0);
 
     if (!submission) {
-      return { score: 0, total };
+      return { score: 0, total: questionTotal };
     }
 
     // Respect manualScore if set (matches admin dashboard behaviour)
     if (typeof submission.manualScore === "number" && Number.isFinite(submission.manualScore) && submission.manualScore >= 0) {
-      return { score: submission.manualScore, total };
+      return { score: submission.manualScore, total: Math.max(questionTotal, submission.manualScore) };
     }
 
     const answersByQuestionId = new Map(submission.answers.map((answer) => [answer.questionId, answer]));
+    const scoreOverride = answersByQuestionId.get("__score_override__")?.value;
+    if (scoreOverride !== undefined) {
+      const numericScore = Number(scoreOverride);
+      if (Number.isFinite(numericScore) && numericScore >= 0) {
+        return { score: numericScore, total: Math.max(questionTotal, numericScore) };
+      }
+    }
+
     const score = questions.reduce((sum, question) => {
       const answer = answersByQuestionId.get(question.id);
 
@@ -157,7 +165,7 @@ const StudentPage = () => {
       return normalizeAnswer(answer.value) === normalizeAnswer(question.correctAnswer) ? sum + question.points : sum;
     }, 0);
 
-    return { score, total };
+    return { score, total: questionTotal };
   };
 
   const detailsSubmission = data.submissions.find((submission) => submission.id === detailsSubmissionId) ?? null;
