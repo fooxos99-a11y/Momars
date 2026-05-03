@@ -83,6 +83,10 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
   const canInteractWithAssessment = Boolean(student) && isAssessmentEnabled && !existingSubmission;
 
   useEffect(() => {
+    if (!isHydrated) {
+      return;
+    }
+
     const loginFromQuery = searchParams.get("login")?.trim();
     const session = loadAccessSession();
     const loginFromSession = session?.role === "student" ? session.loginCode.trim() : "";
@@ -109,7 +113,7 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
     } else if (!resolvedLogin) {
       setLoginDialogOpen(true);
     }
-  }, [assessmentType, data, searchParams]);
+  }, [assessmentType, data, isHydrated, searchParams]);
 
   useEffect(() => {
     if (!student) {

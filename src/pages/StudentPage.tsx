@@ -14,6 +14,7 @@ import {
   getStudentByLoginId,
   loadAccessSession,
   saveAccessSession,
+  clearAccessSession,
   useDashboardStore,
 } from "@/lib/dashboard-store";
 import { getStudentAssignedReciterByLoginCodeFromDatabase, type DatabaseStudentReciter } from "@/lib/supabase";
@@ -73,6 +74,9 @@ const StudentPage = () => {
         redirectPath: `/student?login=${encodeURIComponent(foundStudent.loginId)}`,
         branchId: foundStudent.branchId,
       });
+    } else {
+      // Student not found after hydration = deleted or invalid → clear session
+      clearAccessSession();
     }
 
     setStudentResolved(true);

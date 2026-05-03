@@ -76,6 +76,10 @@ const TasksPage = () => {
   const [detailsSubmissionId, setDetailsSubmissionId] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!isHydrated) {
+      return;
+    }
+
     const loginFromQuery = searchParams.get("login")?.trim();
     const session = loadAccessSession();
     const loginFromSession = session?.role === "student" ? session.loginCode.trim() : "";
@@ -101,7 +105,7 @@ const TasksPage = () => {
     }
 
     setStudentResolved(true);
-  }, [data, searchParams]);
+  }, [data, isHydrated, searchParams]);
 
   useEffect(() => {
     const requestedTaskId = searchParams.get("taskId")?.trim() ?? "";
