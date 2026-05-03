@@ -411,7 +411,7 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
       type: mapQuestionType(question.question_type, options),
       options,
       allowFile: Boolean(question.allow_file),
-      points: Number(question.points) || 0,
+      points: Number(question.points) > 0 ? Number(question.points) : 1,
       correctAnswer: (question.correct_answer as string) ?? "",
       attachmentName: (question.attachment_name as string) ?? "",
       attachmentType: (question.attachment_type as string) ?? "",

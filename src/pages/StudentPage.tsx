@@ -135,13 +135,18 @@ const StudentPage = () => {
     const submission = data.submissions.find((item) => item.id === submissionId);
     const course = data.courses.find((item) => item.id === courseId);
     const questions = course ? getAssessmentQuestions(course, assessmentType) : [];
+    const total = questions.reduce((sum, question) => sum + question.points, 0);
 
     if (!submission) {
-      return { score: 0, total: questions.reduce((sum, question) => sum + question.points, 0) };
+      return { score: 0, total };
+    }
+
+    // Respect manualScore if set (matches admin dashboard behaviour)
+    if (typeof submission.manualScore === "number" && Number.isFinite(submission.manualScore) && submission.manualScore >= 0) {
+      return { score: submission.manualScore, total };
     }
 
     const answersByQuestionId = new Map(submission.answers.map((answer) => [answer.questionId, answer]));
-    const total = questions.reduce((sum, question) => sum + question.points, 0);
     const score = questions.reduce((sum, question) => {
       const answer = answersByQuestionId.get(question.id);
 

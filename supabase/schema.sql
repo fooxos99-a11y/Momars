@@ -149,7 +149,9 @@ create table if not exists public.course_questions (
   created_at timestamptz not null default now()
 );
 
-alter table public.course_questions add column if not exists points integer not null default 0;
+alter table public.course_questions add column if not exists points integer not null default 1;
+-- Fix existing questions that were inserted before the points column (they got default 0)
+update public.course_questions set points = 1 where points = 0;
 alter table public.course_questions add column if not exists correct_answer text not null default '';
 alter table public.course_questions add column if not exists attachment_name text not null default '';
 alter table public.course_questions add column if not exists attachment_type text not null default '';
