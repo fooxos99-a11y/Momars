@@ -544,6 +544,7 @@ const Dashboard = () => {
   const [assessmentPickerStep, setAssessmentPickerStep] = useState<"pick" | "timer">("pick");
   const [pendingAssessmentAvailability, setPendingAssessmentAvailability] = useState<PendingAssessmentAvailability | null>(null);
   const [assessmentDurationMinutes, setAssessmentDurationMinutes] = useState("30");
+  const [assessmentNoTimeLimit, setAssessmentNoTimeLimit] = useState(false);
   const [assessmentTemplateDraft, setAssessmentTemplateDraft] = useState("");
   const [assessmentTargetBranch, setAssessmentTargetBranch] = useState<BranchId | null>(null);
   const [assessmentBlockedBranch, setAssessmentBlockedBranch] = useState<BranchId | null>(null);
@@ -1471,6 +1472,7 @@ const Dashboard = () => {
   const resetAssessmentAvailabilityDialog = () => {
     setPendingAssessmentAvailability(null);
     setAssessmentDurationMinutes("30");
+    setAssessmentNoTimeLimit(false);
     setAssessmentTemplateDraft("");
     setAssessmentTargetBranch(null);
     setAssessmentBlockedBranch(null);
@@ -1511,7 +1513,7 @@ const Dashboard = () => {
 
     const duration = Number(assessmentDurationMinutes);
 
-    if (!Number.isFinite(duration) || duration <= 0) {
+    if (!assessmentNoTimeLimit && (!Number.isFinite(duration) || duration <= 0)) {
       setAssessmentAvailabilityError("أدخل مدة صحيحة بالدقائق.");
       return;
     }
@@ -1556,7 +1558,8 @@ const Dashboard = () => {
     }
     setCrossCourseConflict(null);
 
-    const closesAt = new Date(Date.now() + duration * 60 * 1000).toISOString();
+    // If no time limit, closesAt is undefined (open until manually closed)
+    const closesAt = assessmentNoTimeLimit ? undefined : new Date(Date.now() + duration * 60 * 1000).toISOString();
     const branchLabel = branchLabels[targetBranchId];
     const assessmentLabel = assessmentLabels[pendingAssessmentAvailability.assessmentType];
     const template = assessmentTemplateDraft.trim() || getDefaultAssessmentNotificationTemplate(pendingAssessmentAvailability.assessmentType);
@@ -1564,16 +1567,19 @@ const Dashboard = () => {
       .split("{courseTitle}").join(course.title)
       .split("{assessmentLabel}").join(assessmentLabel)
       .split("{branchLabel}").join(branchLabel)
-      .split("{durationMinutes}").join(String(duration))
-      .split("{durationLabel}").join(formatDurationMinutes(duration));
+      .split("{durationMinutes}").join(assessmentNoTimeLimit ? "غير محدودة" : String(duration))
+      .split("{durationLabel}").join(assessmentNoTimeLimit ? "غير محدودة" : formatDurationMinutes(duration));
 
     try {
       // Keep the other branch as-is; activation is additive per branch.
       const globalWindowKey = pendingAssessmentAvailability.assessmentType;
       const existingGlobalWindow = course.assessmentWindows.global[globalWindowKey];
-      const nextGlobalWindow = !existingGlobalWindow || new Date(existingGlobalWindow) < new Date(closesAt)
-        ? closesAt
-        : existingGlobalWindow;
+      // When no time limit, clear the global window so isFutureDateTime returns true (always open)
+      const nextGlobalWindow = assessmentNoTimeLimit
+        ? undefined
+        : (!existingGlobalWindow || new Date(existingGlobalWindow) < new Date(closesAt!))
+          ? closesAt
+          : existingGlobalWindow;
       const branchAvailabilityUpdate = {
         ...course.branchAvailability,
         [targetBranchId]: {
@@ -3928,8 +3934,22 @@ const Dashboard = () => {
                 )}
                 <div className="space-y-2">
                   <label className="text-sm font-bold text-foreground">المدة بالدقائق</label>
-                  <Input value={assessmentDurationMinutes} onChange={(event) => setAssessmentDurationMinutes(event.target.value)} placeholder="مثال: 30" />
+                  <Input
+                    value={assessmentDurationMinutes}
+                    onChange={(event) => setAssessmentDurationMinutes(event.target.value)}
+                    placeholder="مثال: 30"
+                    disabled={assessmentNoTimeLimit}
+                  />
                 </div>
+                <label className="flex cursor-pointer items-center justify-end gap-2 text-sm">
+                  <span className="font-medium text-foreground">بدون مهلة (مفتوح حتى الإغلاق اليدوي)</span>
+                  <input
+                    type="checkbox"
+                    checked={assessmentNoTimeLimit}
+                    onChange={(e) => setAssessmentNoTimeLimit(e.target.checked)}
+                    className="h-4 w-4 accent-primary"
+                  />
+                </label>
                 {assessmentAvailabilityError && <p className="text-sm font-medium text-destructive">{assessmentAvailabilityError}</p>}
                 <div className="flex justify-end gap-3">
                   <Button variant="outline" onClick={() => setAssessmentPickerStep("pick")}>رجوع</Button>

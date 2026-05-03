@@ -64,6 +64,13 @@ const Header = () => {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Periodic re-render to re-evaluate assessment deadlines every minute
+  const [, setAssessmentTick] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => setAssessmentTick((t) => t + 1), 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
   const handleAccess = async () => {
     setLoginLoading(true);
 

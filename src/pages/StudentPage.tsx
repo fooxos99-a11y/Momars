@@ -43,6 +43,7 @@ const StudentPage = () => {
   const [searchParams] = useSearchParams();
   const [studentLoginId, setStudentLoginId] = useState("");
   const [studentResolved, setStudentResolved] = useState(false);
+  const [loginAttempted, setLoginAttempted] = useState(false);
   const [studentTab, setStudentTab] = useState<"courses" | "reading" | "notifications">("courses");
   const [detailsSubmissionId, setDetailsSubmissionId] = useState<string | null>(null);
   const [databaseAssignedReciter, setDatabaseAssignedReciter] = useState<DatabaseStudentReciter | null>(null);
@@ -61,6 +62,9 @@ const StudentPage = () => {
       setStudentResolved(true);
       return;
     }
+
+    // A login was attempted — track this so we don't silently redirect on data load failure
+    setLoginAttempted(true);
 
     const foundStudent = getStudentByLoginId(data, resolvedLogin);
 
@@ -236,6 +240,25 @@ const StudentPage = () => {
   }
 
   if (!student) {
+    // If a login code was provided but student was not found, the data may have failed to load.
+    // Show an error with a retry button instead of silently redirecting to home.
+    if (loginAttempted) {
+      return (
+        <div dir="rtl" className="flex min-h-screen items-center justify-center bg-[linear-gradient(180deg,#f8fbfb,#eef5f5)]">
+          <div className="rounded-2xl border border-border bg-white p-8 text-center shadow-soft">
+            <p className="mb-2 text-base font-bold text-foreground">تعذر تحميل بيانات الطالب</p>
+            <p className="mb-5 text-sm text-muted-foreground">تحقق من اتصالك بالإنترنت وأعد المحاولة.</p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="rounded-xl bg-primary px-6 py-2 text-sm font-bold text-white hover:bg-primary/90"
+            >
+              إعادة المحاولة
+            </button>
+          </div>
+        </div>
+      );
+    }
     return <Navigate to="/" replace />;
   }
 
