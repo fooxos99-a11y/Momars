@@ -273,6 +273,7 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
   const isLocked = !student;
   const isPreviewImage = previewAttachment?.type?.startsWith("image/") || previewAttachment?.dataUrl.startsWith("data:image/");
   const isPreviewPdf = previewAttachment?.type === "application/pdf" || previewAttachment?.dataUrl.startsWith("data:application/pdf");
+  const isPreviewVideo = previewAttachment?.type?.startsWith("video/") || previewAttachment?.dataUrl.startsWith("data:video/");
   const previewPdfSrc = previewAttachment && isPreviewPdf
     ? `${previewAttachment.dataUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`
     : "";
@@ -328,7 +329,19 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
                   </div>
                 )}
 
-                {previewAttachment && !isPreviewImage && !isPreviewPdf && (
+                {previewAttachment && isPreviewVideo && (
+                  <div className="overflow-hidden rounded-[1.25rem] border border-primary/10 bg-black/90 p-2">
+                    <video
+                      controls
+                      playsInline
+                      preload="metadata"
+                      className="max-h-[60vh] w-full rounded-[1rem] bg-black sm:max-h-[70vh]"
+                      src={previewAttachment.dataUrl}
+                    />
+                  </div>
+                )}
+
+                {previewAttachment && !isPreviewImage && !isPreviewPdf && !isPreviewVideo && (
                   <div className="rounded-[1.25rem] border border-primary/10 bg-muted/20 p-5 text-sm text-muted-foreground">
                     هذا النوع لا يدعم المعاينة المباشرة داخل الصفحة.
                   </div>

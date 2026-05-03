@@ -815,6 +815,7 @@ const Dashboard = () => {
   const detailsSubmission = data.submissions.find((submission) => submission.id === detailsSubmissionId) ?? null;
   const isPreviewImage = previewAttachment?.type?.startsWith("image/") || previewAttachment?.dataUrl.startsWith("data:image/");
   const isPreviewPdf = previewAttachment?.type === "application/pdf" || previewAttachment?.dataUrl.startsWith("data:application/pdf");
+  const isPreviewVideo = previewAttachment?.type?.startsWith("video/") || previewAttachment?.dataUrl.startsWith("data:video/");
   const previewPdfSrc = previewAttachment && isPreviewPdf
     ? `${previewAttachment.dataUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`
     : undefined;
@@ -4439,7 +4440,17 @@ const Dashboard = () => {
                 />
               )}
 
-              {previewAttachment && !isPreviewImage && !isPreviewPdf && (
+              {previewAttachment && isPreviewVideo && (
+                <video
+                  controls
+                  playsInline
+                  preload="metadata"
+                  className="h-full w-full rounded-xl bg-black object-contain"
+                  src={previewAttachment.dataUrl}
+                />
+              )}
+
+              {previewAttachment && !isPreviewImage && !isPreviewPdf && !isPreviewVideo && (
                 <div className="rounded-3xl border border-white/10 bg-white/5 px-6 py-8 text-center text-sm text-white/80">
                   هذا النوع من الملفات لا يدعم المعاينة بملء الشاشة.
                 </div>
