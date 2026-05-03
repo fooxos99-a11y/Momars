@@ -1,5 +1,25 @@
-const CACHE_NAME = "mmars-pwa-v1";
+const CACHE_NAME = "mmars-pwa-v2";
 const APP_SHELL = ["/", "/manifest.webmanifest", "/الأيقونة.png"];
+
+const networkFirst = async (request, cacheKey = request) => {
+  try {
+    const response = await fetch(request);
+
+    if (response && response.status === 200 && response.type === "basic") {
+      const cache = await caches.open(CACHE_NAME);
+      await cache.put(cacheKey, response.clone());
+    }
+
+    return response;
+  } catch {
+    const cachedResponse = await caches.match(cacheKey);
+    if (cachedResponse) {
+      return cachedResponse;
+    }
+
+    return Response.error();
+  }
+};
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -25,35 +45,11 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (event.request.mode === "navigate") {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put("/", copy));
-          return response;
-        })
-        .catch(() => caches.match("/").then((cached) => cached || Response.error())),
-    );
+    event.respondWith(networkFirst(event.request, "/"));
     return;
   }
 
-  event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-
-      return fetch(event.request).then((response) => {
-        if (!response || response.status !== 200 || response.type !== "basic") {
-          return response;
-        }
-
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-        return response;
-      });
-    }),
-  );
+  event.respondWith(networkFirst(event.request));
 });
 
 self.addEventListener("push", (event) => {
