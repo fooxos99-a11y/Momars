@@ -14,7 +14,6 @@ import {
   getStudentByLoginId,
   loadAccessSession,
   saveAccessSession,
-  clearAccessSession,
   useDashboardStore,
 } from "@/lib/dashboard-store";
 import { getStudentAssignedReciterByLoginCodeFromDatabase, type DatabaseStudentReciter } from "@/lib/supabase";
@@ -75,8 +74,8 @@ const StudentPage = () => {
         branchId: foundStudent.branchId,
       });
     } else {
-      // Student not found after hydration = deleted or invalid → clear session
-      clearAccessSession();
+      // Do not force logout here; browser state can be stale temporarily.
+      setStudentLoginId("");
     }
 
     setStudentResolved(true);
