@@ -20,20 +20,46 @@ import {
   useDashboardStore,
 } from "@/lib/dashboard-store";
 
-const getYoutubeEmbedUrl = (url: string): string | null => {
-  if (!url.trim()) return null;
+const extractFirstUrl = (value: string): string | null => {
+  const direct = value.match(/https?:\/\/[^\s"'<>]+/i)?.[0];
+  if (direct) return direct;
+
+  const href = value.match(/href\s*=\s*["']([^"']+)["']/i)?.[1];
+  if (href) return href;
+
+  const bareYoutube = value.match(/(?:www\.)?(?:youtube\.com|youtu\.be)\/[^\s"'<>]+/i)?.[0];
+  if (bareYoutube) return bareYoutube;
+
+  return null;
+};
+
+const normalizeUrl = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(trimmed)) return `https://${trimmed}`;
+  return trimmed;
+};
+
+const getYoutubeEmbedUrl = (raw: string): string | null => {
+  const source = normalizeUrl(extractFirstUrl(raw) ?? raw);
+  if (!source) return null;
+
   try {
-    const parsed = new URL(url.trim());
+    const parsed = new URL(source);
+    const host = parsed.hostname.replace(/^www\./i, "").toLowerCase();
     let videoId: string | null = null;
-    if (parsed.hostname === "youtu.be") {
+
+    if (host === "youtu.be") {
       videoId = parsed.pathname.slice(1).split("?")[0];
-    } else if (parsed.hostname.includes("youtube.com")) {
+    } else if (host.endsWith("youtube.com")) {
       videoId = parsed.searchParams.get("v");
       if (!videoId) {
-        const embedMatch = parsed.pathname.match(/\/embed\/([^/?]+)/);
+        const embedMatch = parsed.pathname.match(/\/(?:embed|shorts|live)\/([^/?]+)/);
         if (embedMatch) videoId = embedMatch[1];
       }
     }
+
     return videoId ? `https://www.youtube.com/embed/${videoId}` : null;
   } catch {
     return null;
@@ -436,7 +462,11 @@ const TasksPage = () => {
                   {!existingSubmission && selectedTask.taskMode === "document" && (
                     <div className="space-y-2">
                       {(() => {
-                        const embedUrl = getYoutubeEmbedUrl(selectedTask.youtubeUrl ?? "");
+                        const embedUrl = getYoutubeEmbedUrl(
+                          selectedTask.youtubeUrl?.trim()
+                            ? selectedTask.youtubeUrl
+                            : (selectedTask.taskTemplateContent ?? ""),
+                        );
                         return embedUrl ? (
                           <div className="overflow-hidden rounded-[1.5rem] border border-primary/10 bg-black">
                             <iframe
