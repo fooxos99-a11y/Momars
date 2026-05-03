@@ -1112,6 +1112,7 @@ export const useDashboardStore = () => {
         manualScore?: number | null;
       }>,
     ) => {
+      const previousSubmissions = data.submissions;
       const affectedLoginIds = new Set(submissions.map((s) => s.loginId));
 
       /* optimistic local update so the dashboard reflects all imported rows immediately */
@@ -1158,8 +1159,9 @@ export const useDashboardStore = () => {
           });
           return [...filtered, ...syncedSubmissions];
         });
-      } catch {
-        // Keep optimistic imported data when remote sync fails.
+      } catch (error) {
+        setSubmissions(() => previousSubmissions);
+        throw error;
       }
     },
     addTaskTemplate: async (name: string, content: string) => {
