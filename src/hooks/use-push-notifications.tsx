@@ -29,6 +29,12 @@ const isStandalonePwa = () => {
   return media || iosStandalone;
 };
 
+const isMobileDevice = () => {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  return /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(ua);
+};
+
 export const subscribeAndSave = async (loginCode: string): Promise<boolean> => {
   if (!VAPID_PUBLIC_KEY) return false;
 
@@ -125,6 +131,12 @@ export const usePushNotifications = (loginCode: string | null) => {
 
   useEffect(() => {
     if (!isPushSupported() || !loginCode) return;
+
+    // Do not auto-prompt on desktop browsers.
+    if (!isMobileDevice()) {
+      setShowPrompt(false);
+      return;
+    }
 
     if (isIosDevice() && !isStandalonePwa()) {
       setPushStatusNote("في iPhone يجب فتح المنصة كتطبيق من الشاشة الرئيسية (Add to Home Screen) لتعمل إشعارات الخلفية.");
