@@ -663,11 +663,6 @@ export const ImportResultsDialog = ({
                 </span>
               )}
               <span className="text-muted-foreground">من أصل {importRows.length} سجل في الملف</span>
-              {questionColMap_count_display(importRows) > 0 && (
-                <span className="text-muted-foreground">
-                  · {questionColMap_count_display(importRows)} عمود إجابات مطابق
-                </span>
-              )}
             </div>
           )}
 
@@ -680,7 +675,6 @@ export const ImportResultsDialog = ({
                     <TableHead className="text-right font-bold">الاسم في الملف</TableHead>
                     <TableHead className="text-right font-bold">الطالب المطابق</TableHead>
                     <TableHead className="text-right font-bold">درجة الملف</TableHead>
-                    <TableHead className="text-right font-bold">إجابات مطابقة</TableHead>
                     <TableHead className="text-right font-bold">الحالة</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -725,9 +719,6 @@ export const ImportResultsDialog = ({
                             </Badge>
                           ) : "—"
                         )}
-                      </TableCell>
-                      <TableCell className="text-right text-sm text-muted-foreground">
-                        {Math.min(row.questionMatchCount, importQuestionCount || questions.length)} / {importQuestionCount || questions.length}
                       </TableCell>
                       <TableCell className="text-right">
                         {row.matchedStudent ? (
