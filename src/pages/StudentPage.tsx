@@ -48,6 +48,10 @@ const StudentPage = () => {
   const [databaseAssignedReciter, setDatabaseAssignedReciter] = useState<DatabaseStudentReciter | null>(null);
 
   useEffect(() => {
+    if (!isHydrated) {
+      return;
+    }
+
     const loginFromQuery = searchParams.get("login")?.trim();
     const session = loadAccessSession();
     const loginFromSession = session?.role === "student" ? session.loginCode.trim() : "";
@@ -72,7 +76,7 @@ const StudentPage = () => {
     }
 
     setStudentResolved(true);
-  }, [data, searchParams]);
+  }, [data, isHydrated, searchParams]);
 
   useEffect(() => {
     if (!studentLoginId) {
