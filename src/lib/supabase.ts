@@ -128,7 +128,7 @@ export const resolveAccessByLoginCodeFromDatabase = async (loginCode: string): P
 
   const { data: student, error: studentError } = await supabase
     .from("students")
-    .select("full_name, login_code")
+    .select("full_name, login_code, branch_id, branches(code)")
     .eq("login_code", trimmedCode)
     .maybeSingle();
 
@@ -140,12 +140,14 @@ export const resolveAccessByLoginCodeFromDatabase = async (loginCode: string): P
     return null;
   }
 
+  const branchCode = (student.branches as { code?: string } | null)?.code as BranchId | null ?? null;
+
   return {
     role: "student",
     loginCode: student.login_code,
     name: student.full_name,
     redirectPath: getRedirectPathByRole("student", student.login_code),
-    branchId: null,
+    branchId: branchCode,
   };
 };
 

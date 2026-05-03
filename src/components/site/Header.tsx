@@ -52,8 +52,10 @@ const Header = () => {
   const navigate = useNavigate();
   const { data, isHydrated } = useDashboardStore();
   const activeCourse = getActiveCourse(data);
+  // Use branchId from session directly (saved at login) — avoids depending on data.students being loaded
+  const sessionBranchId = session?.role === "student" ? (session.branchId ?? (getStudentByLoginId(data, session.loginCode)?.branchId ?? null)) : null;
   const sessionStudent = session?.role === "student" ? getStudentByLoginId(data, session.loginCode) : null;
-  const activeTask = getActiveTask(data, sessionStudent?.branchId ?? null);
+  const activeTask = getActiveTask(data, sessionBranchId);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -128,7 +130,7 @@ const Header = () => {
       return;
     }
 
-    if (!isHydrated || !activeCourse || !isAssessmentEnabledForCourse(activeCourse, assessmentType, sessionStudent?.branchId)) {
+    if (!isHydrated || !activeCourse || !isAssessmentEnabledForCourse(activeCourse, assessmentType, sessionBranchId)) {
       return;
     }
 
@@ -214,7 +216,7 @@ const Header = () => {
                         disabled={
                           item.type === "tasks"
                             ? !isHydrated || !activeTask
-                            : !isHydrated || !activeCourse || !isAssessmentEnabledForCourse(activeCourse, item.type, sessionStudent?.branchId)
+                            : !isHydrated || !activeCourse || !isAssessmentEnabledForCourse(activeCourse, item.type, sessionBranchId)
                         }
                         onSelect={() => handleStudentAssessmentNavigation(item.type)}
                       >
