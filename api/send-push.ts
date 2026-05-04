@@ -17,7 +17,14 @@ if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 }
 
+const setNoCacheHeaders = (res: VercelResponse) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Pragma", "no-cache");
+};
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  setNoCacheHeaders(res);
+
   if (req.method !== "POST") {
     return res.status(405).end();
   }
