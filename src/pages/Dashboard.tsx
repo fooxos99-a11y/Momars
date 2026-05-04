@@ -32,6 +32,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import AdminTasksTab from "@/components/dashboard/AdminTasksTab";
+import AdminFinalExamTab from "@/components/dashboard/AdminFinalExamTab";
 import ImportResultsDialog, { type ImportRow } from "@/components/dashboard/ImportResultsDialog";
 import ManualGradesDialog from "@/components/dashboard/ManualGradesDialog";
 import {
@@ -547,11 +548,7 @@ const Dashboard = () => {
   const [newSurveyRequired, setNewSurveyRequired] = useState(true);
 
   // Final exam state
-  const [finalExamBranch, setFinalExamBranch] = useState<BranchId>("male");
-  const [finalExamQuestionForm, setFinalExamQuestionForm] = useState({ prompt: "", type: "multiple" as "multiple" | "text" | "truefalse", optionsText: "", points: "1", correctAnswer: "", allowFile: "no" as "yes" | "no" });
-  const [finalExamQuestionError, setFinalExamQuestionError] = useState("");
-  const [finalExamSplitText, setFinalExamSplitText] = useState("");
-  const [finalExamCopyConfirm, setFinalExamCopyConfirm] = useState<null | { from: BranchId; to: BranchId; move: boolean }>(null);
+  const [finalExamResultsBranch, setFinalExamResultsBranch] = useState<BranchId>("male");
   const [finalExamScoreEdit, setFinalExamScoreEdit] = useState<{ submissionId: string; value: string } | null>(null);
   const [courseEditForm, setCourseEditForm] = useState(emptyCourseEditForm);
   const [courseEditError, setCourseEditError] = useState("");
@@ -912,7 +909,6 @@ const Dashboard = () => {
       setReciterBranchFilter(managedBranchId);
       setStudentForm((current) => ({ ...current, branchId: managedBranchId }));
       setReciterForm((current) => ({ ...current, branchId: managedBranchId }));
-      setFinalExamBranch(managedBranchId);
     }
   }, [managedBranchId]);
 
@@ -4462,256 +4458,7 @@ const Dashboard = () => {
           );
         })()}
 
-        {dashboardTab === "finalexam" && (() => {
-          const effectiveBranch = managedBranchId ?? finalExamBranch;
-          const branchQuestions = data.finalExamQuestions.filter((q) => q.branchCode === effectiveBranch).sort((a, b) => a.sortOrder - b.sortOrder);
-          const branchSubmissions = data.finalExamSubmissions.filter((s) => s.branchCode === effectiveBranch);
-          const isEnabled = data.finalExamSettings[effectiveBranch];
-          const otherBranch: BranchId = effectiveBranch === "male" ? "female" : "male";
-          const finalExamLink = typeof window !== "undefined" ? `${window.location.origin}/final-exam` : "/final-exam";
-
-          const handleFinalExamAddQuestion = async () => {
-            const prompt = finalExamQuestionForm.prompt.trim();
-            if (!prompt) { setFinalExamQuestionError("أدخل نص السؤال."); return; }
-            const options = finalExamQuestionForm.type === "multiple"
-              ? finalExamQuestionForm.optionsText.split("|").map((o) => o.trim()).filter(Boolean)
-              : finalExamQuestionForm.type === "truefalse" ? ["صح", "خطأ"] : [];
-            if (finalExamQuestionForm.type === "multiple" && options.length < 2) { setFinalExamQuestionError("أدخل خيارين على الأقل مفصولين بـ |"); return; }
-            const pts = Number(finalExamQuestionForm.points);
-            if (!Number.isFinite(pts) || pts < 0) { setFinalExamQuestionError("أدخل درجة صحيحة."); return; }
-            setFinalExamQuestionError("");
-            try {
-              await store.addFinalExamQuestion(effectiveBranch, { prompt, type: finalExamQuestionForm.type, options, allowFile: finalExamQuestionForm.allowFile === "yes", points: pts, correctAnswer: finalExamQuestionForm.correctAnswer.trim() });
-              setFinalExamQuestionForm({ prompt: "", type: "multiple", optionsText: "", points: "1", correctAnswer: "", allowFile: "no" });
-            } catch (err) { setFinalExamQuestionError(err instanceof Error ? err.message : "تعذر إضافة السؤال."); }
-          };
-
-          const handleFinalExamSplit = async () => {
-            if (!finalExamSplitText.trim()) { setFinalExamQuestionError("الصق الأسئلة أولاً."); return; }
-            const parsed = parseImportedQuestionsFromText(finalExamSplitText);
-            if (!parsed.length) { setFinalExamQuestionError("لم يتم التعرف على أسئلة."); return; }
-            for (const q of parsed) {
-              await store.addFinalExamQuestion(effectiveBranch, { prompt: q.prompt, type: q.type, options: q.options, allowFile: false, points: 1, correctAnswer: "" });
-            }
-            setFinalExamSplitText("");
-            setFinalExamQuestionError(`تم إضافة ${parsed.length} سؤال.`);
-          };
-
-          return (
-            <div className="grid gap-6 xl:grid-cols-[0.65fr_0.35fr]">
-              <div className="space-y-6">
-                {/* Branch selector */}
-                {!managedBranchId && (
-                  <Card className={dashboardCardClass}>
-                    <CardContent className="flex items-center gap-4 p-4">
-                      <div className="text-sm font-bold text-foreground shrink-0">الفرع</div>
-                      <div className="flex gap-2">
-                        {(["male", "female"] as BranchId[]).map((b) => (
-                          <button key={b} type="button" onClick={() => setFinalExamBranch(b)} className={cn("rounded-full px-5 py-2 text-sm font-bold transition-smooth border", finalExamBranch === b ? "bg-primary text-white border-primary shadow-lg shadow-primary/20" : "bg-white text-foreground border-border/60 hover:border-primary/40")}>
-                            {branchLabels[b]}
-                          </button>
-                        ))}
-                      </div>
-                      <Button size="sm" variant={isEnabled ? "default" : "outline"} className={cn("mr-auto rounded-full px-5", isEnabled && "bg-emerald-600 hover:bg-emerald-700")} onClick={() => void store.toggleFinalExamEnabled(effectiveBranch)}>
-                        <Power className="size-3.5 ml-1.5" />
-                        {isEnabled ? "مفعّل" : "غير مفعّل"}
-                      </Button>
-                    </CardContent>
-                  </Card>
-                )}
-                {managedBranchId && (
-                  <Card className={dashboardCardClass}>
-                    <CardContent className="flex items-center gap-4 p-4">
-                      <div className="text-sm font-bold text-foreground">فرع: {branchLabels[effectiveBranch]}</div>
-                      <Button size="sm" variant={isEnabled ? "default" : "outline"} className={cn("mr-auto rounded-full px-5", isEnabled && "bg-emerald-600 hover:bg-emerald-700")} onClick={() => void store.toggleFinalExamEnabled(effectiveBranch)}>
-                        <Power className="size-3.5 ml-1.5" />
-                        {isEnabled ? "مفعّل" : "غير مفعّل"}
-                      </Button>
-                    </CardContent>
-                  </Card>
-                )}
-
-                {/* Question editor */}
-                <Card className={dashboardCardClass}>
-                  <CardHeader><CardTitle className="text-xl">أسئلة {branchLabels[effectiveBranch]}</CardTitle></CardHeader>
-                  <CardContent className="space-y-5">
-                    {/* Split paste */}
-                    <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-muted/20 p-4 space-y-3">
-                      <label className="text-sm font-bold text-foreground">تقسيم الأسئلة</label>
-                      <div className="flex gap-2">
-                        <Textarea value={finalExamSplitText} onChange={(e) => setFinalExamSplitText(e.target.value)} placeholder={"الصق الأسئلة هنا...\n١. ما هو...\nأ. خيار 1\nب. خيار 2"} className="min-h-[80px] flex-1 text-sm" />
-                        <Button type="button" className="h-auto rounded-2xl px-4 self-stretch" onClick={() => void handleFinalExamSplit()} disabled={!finalExamSplitText.trim()}>تقسيم</Button>
-                      </div>
-                    </div>
-
-                    {/* Add form */}
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2 md:col-span-2">
-                        <label className="text-sm font-bold text-foreground">السؤال</label>
-                        <Textarea value={finalExamQuestionForm.prompt} onChange={(e) => setFinalExamQuestionForm((c) => ({ ...c, prompt: e.target.value }))} placeholder="اكتب السؤال" />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-sm font-bold text-foreground">نوع السؤال</label>
-                        <Select value={finalExamQuestionForm.type} onValueChange={(v) => setFinalExamQuestionForm((c) => ({ ...c, type: v as "multiple" | "text" | "truefalse" }))}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="multiple">اختيار من متعدد</SelectItem>
-                            <SelectItem value="truefalse">صح وخطأ</SelectItem>
-                            <SelectItem value="text">نص</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-sm font-bold text-foreground">درجة السؤال</label>
-                        <Input value={finalExamQuestionForm.points} onChange={(e) => setFinalExamQuestionForm((c) => ({ ...c, points: e.target.value }))} placeholder="1" />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-sm font-bold text-foreground">الإجابة الصحيحة</label>
-                        {finalExamQuestionForm.type === "truefalse" ? (
-                          <Select value={finalExamQuestionForm.correctAnswer} onValueChange={(v) => setFinalExamQuestionForm((c) => ({ ...c, correctAnswer: v }))}>
-                            <SelectTrigger><SelectValue placeholder="اختر" /></SelectTrigger>
-                            <SelectContent><SelectItem value="صح">صح</SelectItem><SelectItem value="خطأ">خطأ</SelectItem></SelectContent>
-                          </Select>
-                        ) : (
-                          <Input value={finalExamQuestionForm.correctAnswer} onChange={(e) => setFinalExamQuestionForm((c) => ({ ...c, correctAnswer: e.target.value }))} placeholder="للدرجات التلقائية" />
-                        )}
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-sm font-bold text-foreground">إرفاق ملف</label>
-                        <Select value={finalExamQuestionForm.allowFile} onValueChange={(v) => setFinalExamQuestionForm((c) => ({ ...c, allowFile: v as "yes" | "no" }))}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent><SelectItem value="no">لا يسمح</SelectItem><SelectItem value="yes">يسمح</SelectItem></SelectContent>
-                        </Select>
-                      </div>
-                      {finalExamQuestionForm.type === "multiple" && (
-                        <div className="space-y-2 md:col-span-2">
-                          <label className="text-sm font-bold text-foreground">الخيارات</label>
-                          <Input value={finalExamQuestionForm.optionsText} onChange={(e) => setFinalExamQuestionForm((c) => ({ ...c, optionsText: e.target.value }))} placeholder="خيار 1 | خيار 2 | خيار 3" />
-                        </div>
-                      )}
-                    </div>
-                    {finalExamQuestionError && <p className="text-sm font-medium text-destructive">{finalExamQuestionError}</p>}
-                    <Button onClick={() => void handleFinalExamAddQuestion()}>إضافة سؤال</Button>
-                    <Separator />
-
-                    {/* Questions list */}
-                    <div className="space-y-3">
-                      {branchQuestions.length === 0 && <div className={cn(dashboardEmptyStateClass, "p-4 text-sm text-muted-foreground")}>لا توجد أسئلة بعد.</div>}
-                      {branchQuestions.map((question, index) => (
-                        <div key={question.id} className={cn(dashboardPlainPanelClass, "p-4")}>
-                          <div className="mb-2 flex items-start justify-between gap-3">
-                            <div className="font-bold text-foreground">{index + 1}. {question.prompt} <span className="text-sm font-medium text-muted-foreground">• الدرجة: {question.points}</span></div>
-                            <Button variant="ghost" size="sm" onClick={() => void store.deleteFinalExamQuestion(question.id)}>حذف</Button>
-                          </div>
-                          {(question.type === "multiple" || question.type === "truefalse") && (
-                            <div className="space-y-1 pt-2 text-sm">
-                              {question.options.map((opt) => (
-                                <div key={opt} className={cn(opt.trim() === question.correctAnswer.trim() ? "font-bold text-emerald-700" : "text-foreground")}>{opt}</div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Submissions */}
-                <Card className={dashboardCardClass}>
-                  <CardHeader><CardTitle className="text-xl">الإجابات - {branchLabels[effectiveBranch]}</CardTitle></CardHeader>
-                  <CardContent className="space-y-3">
-                    {branchSubmissions.length === 0 && <div className={cn(dashboardEmptyStateClass, "p-4 text-sm text-muted-foreground")}>لا توجد إجابات بعد.</div>}
-                    {branchSubmissions.map((submission) => {
-                      const total = branchQuestions.reduce((s, q) => s + q.points, 0);
-                      const score = typeof submission.manualScore === "number" ? submission.manualScore : null;
-                      return (
-                        <div key={submission.id} className={cn(dashboardPlainPanelClass, "p-4")}>
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <div className="font-bold text-foreground">{submission.studentName}</div>
-                              <div className="text-xs text-muted-foreground">{submission.loginCode} · {new Date(submission.submittedAt).toLocaleDateString("ar-SA")}</div>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              {finalExamScoreEdit?.submissionId === submission.id ? (
-                                <div className="flex items-center gap-2">
-                                  <Input
-                                    className="h-8 w-20 rounded-xl text-center"
-                                    value={finalExamScoreEdit.value}
-                                    onChange={(e) => setFinalExamScoreEdit((c) => c ? { ...c, value: e.target.value } : null)}
-                                  />
-                                  <Button size="sm" className="rounded-xl h-8" onClick={async () => {
-                                    if (!finalExamScoreEdit) return;
-                                    const n = Number(finalExamScoreEdit.value);
-                                    if (!Number.isFinite(n) || n < 0) return;
-                                    await store.setFinalExamManualScore(submission.id, n);
-                                    setFinalExamScoreEdit(null);
-                                  }}>حفظ</Button>
-                                  <Button size="sm" variant="ghost" className="rounded-xl h-8" onClick={() => setFinalExamScoreEdit(null)}>إلغاء</Button>
-                                </div>
-                              ) : (
-                                <>
-                                  <Badge variant="outline" className="border-primary/20 text-primary">{score != null ? `${score} / ${total}` : `— / ${total}`}</Badge>
-                                  <Button variant="outline" size="sm" className="rounded-xl h-8" onClick={() => setFinalExamScoreEdit({ submissionId: submission.id, value: score != null ? String(score) : "" })}>
-                                    <Pencil className="size-3.5" />
-                                  </Button>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Right sidebar */}
-              <div className="space-y-6">
-                <Card className={dashboardCardClass}>
-                  <CardHeader><CardDescription>الرابط الثابت</CardDescription><CardTitle className="text-xl">الاختبار النهائي</CardTitle></CardHeader>
-                  <CardContent className="space-y-3 text-sm text-muted-foreground">
-                    <p>الرابط ثابت — يُظهر الاختبار النهائي حسب فرع الطالب.</p>
-                    <div className={cn(dashboardMutedPanelClass, "break-all p-4")}>{finalExamLink}</div>
-                    <Button variant="outline" className="w-full" onClick={() => { void navigator.clipboard.writeText(finalExamLink); toast({ title: "تم النسخ" }); }}>
-                      <Copy className="size-4 ml-2" />
-                      نسخ الرابط
-                    </Button>
-                  </CardContent>
-                </Card>
-
-                {/* Copy / Move */}
-                {!managedBranchId && (
-                  <Card className={dashboardCardClass}>
-                    <CardHeader><CardDescription>نسخ أو نقل الأسئلة</CardDescription><CardTitle className="text-xl">من {branchLabels[effectiveBranch]} إلى {branchLabels[otherBranch]}</CardTitle></CardHeader>
-                    <CardContent className="space-y-3">
-                      <p className="text-sm text-muted-foreground">سيتم استبدال أسئلة {branchLabels[otherBranch]} الحالية بأسئلة {branchLabels[effectiveBranch]}.</p>
-                      <div className="flex gap-2">
-                        <Button variant="outline" className="flex-1 rounded-full" onClick={() => setFinalExamCopyConfirm({ from: effectiveBranch, to: otherBranch, move: false })}>
-                          <Copy className="size-3.5 ml-1.5" />
-                          نسخ
-                        </Button>
-                        <Button variant="outline" className="flex-1 rounded-full border-amber-300 text-amber-700 hover:bg-amber-50" onClick={() => setFinalExamCopyConfirm({ from: effectiveBranch, to: otherBranch, move: true })}>
-                          <ArrowRightLeft className="size-3.5 ml-1.5" />
-                          نقل
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-
-                <Card className={dashboardCardClass}>
-                  <CardHeader><CardTitle className="text-xl">إحصائيات</CardTitle></CardHeader>
-                  <CardContent className="space-y-2 text-sm">
-                    <div className="flex justify-between"><span className="text-muted-foreground">معلمين - الأسئلة</span><Badge variant="outline">{data.finalExamQuestions.filter((q) => q.branchCode === "male").length}</Badge></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">معلمات - الأسئلة</span><Badge variant="outline">{data.finalExamQuestions.filter((q) => q.branchCode === "female").length}</Badge></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">معلمين - الإجابات</span><Badge variant="outline">{data.finalExamSubmissions.filter((s) => s.branchCode === "male").length}</Badge></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">معلمات - الإجابات</span><Badge variant="outline">{data.finalExamSubmissions.filter((s) => s.branchCode === "female").length}</Badge></div>
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-          );
-        })()}
+        {dashboardTab === "finalexam" && <AdminFinalExamTab canEdit={canCreateCourses} managedBranchId={managedBranchId} />}
 
         {dashboardTab === "courses" && (
           <div className="space-y-6">
@@ -5299,6 +5046,70 @@ const Dashboard = () => {
                 </CardContent>
               </Card>
             )}
+
+            {/* نتائج الاختبار النهائي */}
+            {(() => {
+              const feBranch = managedBranchId ?? finalExamResultsBranch;
+              const feQuestions = data.finalExamQuestions.filter((q) => q.branchCode === feBranch);
+              const feTotal = feQuestions.reduce((sum, q) => sum + q.points, 0);
+              const feSubs = data.finalExamSubmissions.filter((s) => s.branchCode === feBranch);
+              return (
+                <Card className="border-primary/10 bg-white/90">
+                  <CardHeader>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      {!managedBranchId && (
+                        <div className="flex gap-2">
+                          {(["male", "female"] as BranchId[]).map((b) => (
+                            <button key={b} type="button" onClick={() => setFinalExamResultsBranch(b)}
+                              className={cn("rounded-full px-4 py-1.5 text-sm font-bold border transition-smooth",
+                                b === finalExamResultsBranch ? "bg-primary text-white border-primary" : "bg-white text-foreground border-border/60 hover:border-primary/40")}>
+                              {branchLabels[b]}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <CardTitle className="text-xl">نتائج الاختبار النهائي</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {feSubs.length === 0 && <div className="rounded-3xl border border-dashed border-primary/20 p-4 text-sm text-muted-foreground">لا توجد إجابات بعد.</div>}
+                    {feSubs.map((sub) => {
+                      const score = typeof sub.manualScore === "number" ? sub.manualScore : null;
+                      return (
+                        <div key={sub.id} className="flex flex-col gap-3 rounded-3xl border border-primary/10 bg-white p-4 md:flex-row md:items-center md:justify-between">
+                          <div className="text-right">
+                            <div className="font-bold text-foreground">{sub.studentName}</div>
+                            <div className="text-xs text-muted-foreground">{sub.loginCode} · {new Date(sub.submittedAt).toLocaleDateString("ar-SA")}</div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {finalExamScoreEdit?.submissionId === sub.id ? (
+                              <div className="flex items-center gap-2">
+                                <Input className="h-8 w-20 rounded-xl text-center" value={finalExamScoreEdit.value} onChange={(e) => setFinalExamScoreEdit((c) => c ? { ...c, value: e.target.value } : null)} />
+                                <Button size="sm" className="rounded-xl h-8" onClick={async () => {
+                                  if (!finalExamScoreEdit) return;
+                                  const n = Number(finalExamScoreEdit.value);
+                                  if (!Number.isFinite(n) || n < 0) return;
+                                  await store.setFinalExamManualScore(sub.id, n);
+                                  setFinalExamScoreEdit(null);
+                                }}>حفظ</Button>
+                                <Button size="sm" variant="ghost" className="rounded-xl h-8" onClick={() => setFinalExamScoreEdit(null)}>إلغاء</Button>
+                              </div>
+                            ) : (
+                              <>
+                                <Badge variant="outline" className="border-primary/20 text-primary">{score != null ? `${score} / ${feTotal}` : `— / ${feTotal}`}</Badge>
+                                <Button variant="outline" size="sm" className="rounded-xl h-8" onClick={() => setFinalExamScoreEdit({ submissionId: sub.id, value: score != null ? String(score) : "" })}>
+                                  <Pencil className="size-3.5" />
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </CardContent>
+                </Card>
+              );
+            })()}
           </div>
         )}
 
@@ -6311,29 +6122,6 @@ const Dashboard = () => {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={Boolean(finalExamCopyConfirm)} onOpenChange={(open) => !open && setFinalExamCopyConfirm(null)}>
-        <AlertDialogContent className="rounded-[1.75rem] border border-border/60 text-right">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-right">
-              {finalExamCopyConfirm?.move ? "نقل الأسئلة" : "نسخ الأسئلة"}
-            </AlertDialogTitle>
-            <AlertDialogDescription className="text-right">
-              {finalExamCopyConfirm && `سيتم ${finalExamCopyConfirm.move ? "نقل" : "نسخ"} أسئلة ${branchLabels[finalExamCopyConfirm.from]} إلى ${branchLabels[finalExamCopyConfirm.to]}. سيتم حذف الأسئلة الحالية في ${branchLabels[finalExamCopyConfirm.to]}.`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="justify-start gap-2 sm:justify-start sm:space-x-0">
-            <AlertDialogAction className="rounded-full px-4" onClick={async () => {
-              if (!finalExamCopyConfirm) return;
-              await store.copyFinalExamQuestions(finalExamCopyConfirm.from, finalExamCopyConfirm.to, finalExamCopyConfirm.move);
-              setFinalExamCopyConfirm(null);
-              toast({ title: "تم بنجاح" });
-            }}>
-              {finalExamCopyConfirm?.move ? "نقل" : "نسخ"}
-            </AlertDialogAction>
-            <AlertDialogCancel className="mt-0 rounded-full px-4">إلغاء</AlertDialogCancel>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 };
