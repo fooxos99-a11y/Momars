@@ -201,7 +201,13 @@ export const ManualGradesDialog = ({
                     variant="outline"
                     size="sm"
                     className="rounded-full px-4"
-                    onClick={() => setScores((prev) => Object.fromEntries(branchStudents.map((student) => [student.loginId, prev[student.loginId] === "1" ? "0" : "1"]))))}
+                    onClick={() =>
+                      setScores((prev) =>
+                        Object.fromEntries(
+                          branchStudents.map((student) => [student.loginId, prev[student.loginId] === "1" ? "0" : "1"]),
+                        ),
+                      )
+                    }
                   >
                     {branchStudents.every((student) => scores[student.loginId] === "1") ? "إلغاء تنفيذ الكل" : "تنفيذ للكل"}
                   </Button>

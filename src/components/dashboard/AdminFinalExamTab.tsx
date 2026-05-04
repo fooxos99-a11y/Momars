@@ -1,5 +1,5 @@
 ﻿import React, { useState, useMemo } from "react";
-import { Copy, GraduationCap, Plus, Power, Trash2 } from "lucide-react";
+import { FileText, Plus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,24 +37,22 @@ const emptyForm = {
 interface AdminFinalExamTabProps {
   canEdit?: boolean;
   managedBranchId?: BranchId | null;
+  selectedBranch?: BranchId;
+  onBranchChange?: (branch: BranchId) => void;
 }
 
-const AdminFinalExamTab = ({ canEdit = true, managedBranchId = null }: AdminFinalExamTabProps) => {
+const AdminFinalExamTab = ({ canEdit = true, managedBranchId = null, selectedBranch = "male", onBranchChange }: AdminFinalExamTabProps) => {
   const store = useDashboardStore();
   const { data } = store;
 
-  const [branch, setBranch] = useState<BranchId>(managedBranchId ?? "male");
-  const [copyOpen, setCopyOpen] = useState(false);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
-  const [activationDialogOpen, setActivationDialogOpen] = useState(false);
-  const [activationMinutes, setActivationMinutes] = useState("60");
-  const [activationError, setActivationError] = useState("");
   const [forms, setForms] = useState([emptyForm]);
   const [formErrors, setFormErrors] = useState<string[]>([""]);
   const [pasteText, setPasteText] = useState("");
   const [formError, setFormError] = useState("");
+  const [splitMessage, setSplitMessage] = useState("");
 
-  const effectiveBranch = managedBranchId ?? branch;
+  const effectiveBranch = managedBranchId ?? selectedBranch;
   const branchQuestions = useMemo(
     () => data.finalExamQuestions.filter((q) => q.branchCode === effectiveBranch).sort((a, b) => a.sortOrder - b.sortOrder),
     [data.finalExamQuestions, effectiveBranch],
@@ -63,7 +61,7 @@ const AdminFinalExamTab = ({ canEdit = true, managedBranchId = null }: AdminFina
   const isEnabled = isFinalExamAvailable(branchSetting);
   const closesAtLabel = formatDateTime(branchSetting.closesAt);
 
-  const resetForms = () => { setForms([emptyForm]); setFormErrors([""]); setPasteText(""); setFormError(""); };
+  const resetForms = () => { setForms([emptyForm]); setFormErrors([""]); setPasteText(""); setFormError(""); setSplitMessage(""); };
 
   const updateForm = (i: number, patch: Partial<typeof emptyForm>) =>
     setForms((cur) => cur.map((f, idx) => (idx === i ? { ...f, ...patch } : f)));
@@ -102,6 +100,29 @@ const AdminFinalExamTab = ({ canEdit = true, managedBranchId = null }: AdminFina
     return true;
   };
 
+  const handleSplitQuestions = () => {
+    const text = pasteText.trim();
+
+    if (!text) {
+      setFormError("الصق الأسئلة في الخانة أولاً.");
+      setSplitMessage("");
+      return;
+    }
+
+    const parsed = applyParsed(text);
+
+    if (!parsed) {
+      setFormError("لم يتم التعرف على أسئلة. تأكد من الصيغة (١. السؤال...).");
+      setSplitMessage("");
+      return;
+    }
+
+    const count = parseImportedQuestionsFromText(text).length;
+    setPasteText("");
+    setFormError("");
+    setSplitMessage(`تم تقسيم ${count} سؤال بنجاح.`);
+  };
+
   const handleSaveQuestions = async () => {
     let hasErr = false;
     const errs = forms.map((f) => {
@@ -116,6 +137,7 @@ const AdminFinalExamTab = ({ canEdit = true, managedBranchId = null }: AdminFina
     });
     if (hasErr) { setFormErrors(errs); return; }
     setFormError("");
+    setSplitMessage("");
     try {
       for (const f of forms) {
         const opts = f.type === "multiple"
@@ -133,32 +155,6 @@ const AdminFinalExamTab = ({ canEdit = true, managedBranchId = null }: AdminFina
       resetForms();
       setAddDialogOpen(false);
     } catch (err) { setFormError(err instanceof Error ? err.message : "تعذر إضافة السؤال."); }
-  };
-
-  const handleCopyTo = async (to: BranchId) => {
-    await store.copyFinalExamQuestions(effectiveBranch, to, false);
-    setCopyOpen(false);
-  };
-
-  const handleToggleAvailability = async () => {
-    if (isEnabled) {
-      await store.toggleFinalExamEnabled(effectiveBranch, null);
-      return;
-    }
-    setActivationError("");
-    setActivationDialogOpen(true);
-  };
-
-  const handleActivate = async () => {
-    const minutes = Number(activationMinutes);
-    if (!Number.isFinite(minutes) || minutes <= 0) {
-      setActivationError("أدخل مدة صحيحة بالدقائق.");
-      return;
-    }
-    const closesAt = new Date(Date.now() + minutes * 60 * 1000).toISOString();
-    setActivationError("");
-    await store.toggleFinalExamEnabled(effectiveBranch, closesAt);
-    setActivationDialogOpen(false);
   };
 
   const renderFormCard = (f: typeof emptyForm, fi: number) => {
@@ -260,72 +256,28 @@ const AdminFinalExamTab = ({ canEdit = true, managedBranchId = null }: AdminFina
 
   return (
     <div className="space-y-6">
-      {/* Copy Dialog */}
-      <Dialog open={copyOpen} onOpenChange={setCopyOpen}>
-        <DialogContent className="max-w-sm rounded-[1.75rem] p-0 text-right [&>button]:hidden">
-          <DialogHeader className="border-b border-border/60 px-6 py-5 text-right">
-            <DialogTitle className="text-right text-xl">نسخ الأسئلة إلى</DialogTitle>
-          </DialogHeader>
-          <p className="px-6 pt-4 text-sm text-muted-foreground">اختر الفرع الذي تريد نسخ أسئلة {branchLabels[effectiveBranch]} إليه.</p>
-          <div className="grid grid-cols-2 gap-3 p-6">
-            {(["male", "female"] as BranchId[]).map((b) => (
-              <button key={b} type="button" disabled={b === effectiveBranch}
-                className={cn("flex flex-col items-center gap-3 rounded-[1.25rem] border border-border/70 bg-muted/20 p-5 text-center transition-colors hover:border-primary/40 hover:bg-primary/5", b === effectiveBranch && "cursor-not-allowed opacity-40")}
-                onClick={() => void handleCopyTo(b)}>
-                <GraduationCap className="size-7 text-primary" />
-                <div className="text-sm font-bold text-foreground">{branchLabels[b]}</div>
-              </button>
-            ))}
-          </div>
-          <div className="flex justify-end border-t border-border/60 px-6 py-4">
-            <Button variant="outline" className="rounded-full px-5" onClick={() => setCopyOpen(false)}>إلغاء</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={activationDialogOpen} onOpenChange={setActivationDialogOpen}>
-        <DialogContent className="max-w-sm rounded-[1.75rem] p-0 text-right [&>button]:hidden">
-          <DialogHeader className="border-b border-border/60 px-6 py-5 text-right">
-            <DialogTitle className="text-right text-xl">تفعيل الاختبار النهائي</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 px-6 py-5">
-            <p className="text-sm text-muted-foreground">حدد مدة فتح الاختبار لفرع {branchLabels[effectiveBranch]} فقط.</p>
-            <div className="space-y-2">
-              <label className="text-sm font-bold text-foreground">المدة بالدقائق</label>
-              <Input value={activationMinutes} onChange={(e) => setActivationMinutes(e.target.value)} placeholder="60" className="h-11 rounded-2xl text-right" />
-            </div>
-            {activationError && <p className="text-sm font-medium text-destructive">{activationError}</p>}
-          </div>
-          <div className="flex justify-end gap-3 border-t border-border/60 px-6 py-4">
-            <Button variant="outline" className="rounded-full px-5" onClick={() => setActivationDialogOpen(false)}>إلغاء</Button>
-            <Button className="rounded-full px-5" onClick={() => void handleActivate()}>تفعيل</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
       {/* Add Questions Dialog */}
       <Dialog open={addDialogOpen} onOpenChange={(open) => { setAddDialogOpen(open); if (!open) resetForms(); }}>
-        <DialogContent className="flex h-[90vh] w-[min(95vw,780px)] flex-col rounded-[1.5rem] border-white/80 bg-white p-0 text-right shadow-[0_24px_70px_rgba(15,23,42,0.14)] [&>button]:hidden">
-          <div className="shrink-0 border-b border-border/60 px-5 py-4">
-            <span className="text-base font-bold text-foreground">إضافة أسئلة — {branchLabels[effectiveBranch]}</span>
+        <DialogContent className="flex h-[90vh] w-[min(94vw,720px)] flex-col rounded-[1.5rem] border-white/80 bg-white p-0 text-right shadow-[0_24px_70px_rgba(15,23,42,0.14)] [&>button]:hidden">
+          <div className="shrink-0 border-b border-border/60 px-4 py-4 sm:px-5">
+            <div className="flex items-center justify-end gap-2 text-right">
+              <span className="text-lg font-bold text-foreground">إضافة أسئلة - {branchLabels[effectiveBranch]}</span>
+              <FileText className="size-5 text-primary" />
+            </div>
           </div>
-          <div className="shrink-0 border-b border-border/60 px-5 py-3 flex gap-2 items-start">
+          <div className="shrink-0 border-b border-border/60 px-4 py-3 sm:px-5">
+            <div className="flex items-start gap-2">
             <textarea
-              className="flex-1 min-h-[64px] max-h-32 resize-y rounded-xl border border-border/70 bg-muted/20 px-3 py-2 text-sm text-right placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
-              placeholder="الصق الأسئلة هنا... سيتم تقسيمها تلقائيا"
+              className="flex-1 min-h-[72px] max-h-32 resize-y rounded-xl border border-border/70 bg-muted/20 px-3 py-2 text-sm text-right placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
+              placeholder={"الصق الأسئلة هنا... سيتم تقسيمها تلقائياً\n\nمثال:\n١. ما هو...\nأ. خيار 1\nب. خيار 2"}
               value={pasteText}
               onChange={(e) => setPasteText(e.target.value)}
-              onPaste={(e) => {
-                const text = e.clipboardData.getData("text");
-                if (!text.trim()) return;
-                e.preventDefault();
-                if (!applyParsed(text)) setPasteText(text);
-                else setPasteText("");
-              }}
             />
-            <Button type="button" size="sm" className="mt-1 h-9 shrink-0 rounded-xl" disabled={!pasteText.trim()} onClick={() => { applyParsed(pasteText); setPasteText(""); }}>تقسيم</Button>
+            <Button type="button" size="sm" className="mt-1 h-9 shrink-0 rounded-xl" disabled={!pasteText.trim()} onClick={handleSplitQuestions}>تقسيم</Button>
+            </div>
+            {splitMessage && <p className="pt-2 text-sm font-medium text-emerald-700">{splitMessage}</p>}
           </div>
-          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5 space-y-4">
             {forms.map((f, i) => renderFormCard(f, i))}
             <button type="button" onClick={() => { setForms((c) => [...c, emptyForm]); setFormErrors((c) => [...c, ""]); }}
               className="flex w-full items-center justify-center gap-2 rounded-[1.25rem] border border-dashed border-primary/40 py-3 text-sm font-medium text-primary transition-colors hover:border-primary hover:bg-primary/5">
@@ -333,8 +285,8 @@ const AdminFinalExamTab = ({ canEdit = true, managedBranchId = null }: AdminFina
               إضافة سؤال
             </button>
           </div>
-          {formError && <p className="shrink-0 px-5 text-sm font-medium text-destructive">{formError}</p>}
-          <div className="shrink-0 border-t border-border/60 px-5 py-4">
+          {formError && <p className="shrink-0 px-4 text-sm font-medium text-destructive sm:px-5">{formError}</p>}
+          <div className="shrink-0 border-t border-border/60 px-4 py-4 sm:px-5">
             <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-start">
               <Button type="button" variant="outline" onClick={() => { setAddDialogOpen(false); resetForms(); }}>إلغاء</Button>
               <Button type="button" onClick={() => void handleSaveQuestions()}>حفظ {forms.length > 1 ? `(${forms.length} أسئلة)` : ""}</Button>
@@ -348,38 +300,29 @@ const AdminFinalExamTab = ({ canEdit = true, managedBranchId = null }: AdminFina
         <Card className="rounded-[1.5rem] border-white/80 bg-white/95 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
           <CardHeader className="text-right">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" className="rounded-full px-4 gap-1.5" onClick={() => setCopyOpen(true)}>
-                  <Copy className="size-3.5" />
-                  نسخ
-                </Button>
-              </div>
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                {!managedBranchId && (
-                  <div className="flex gap-2">
-                    {(["male", "female"] as BranchId[]).map((b) => (
-                      <button key={b} type="button" onClick={() => setBranch(b)}
-                        className={cn("rounded-full px-4 py-1.5 text-sm font-bold border transition-smooth",
-                          b === branch ? "bg-primary text-white border-primary shadow-md shadow-primary/20" : "bg-white text-foreground border-border/60 hover:border-primary/40")}>
-                        {branchLabels[b]}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <Button size="sm" variant={isEnabled ? "default" : "outline"}
-                  className={cn("rounded-full px-5 gap-1.5", isEnabled && "bg-emerald-600 hover:bg-emerald-700")}
-                  onClick={() => void handleToggleAvailability()}>
-                  <Power className="size-3.5" />
-                  {isEnabled ? "إيقاف" : "تفعيل"}
-                </Button>
-              </div>
+              {!managedBranchId ? (
+                <div className="w-full max-w-[220px] space-y-2 text-right">
+                  <div className="text-sm font-medium text-muted-foreground">الفرع</div>
+                  <Select value={selectedBranch} onValueChange={(value) => onBranchChange?.(value as BranchId)}>
+                    <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="male">معلمين</SelectItem>
+                      <SelectItem value="female">معلمات</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <div className="rounded-[0.9rem] border border-border/60 bg-muted/20 px-3 py-2 text-sm font-medium text-foreground">
+                  {branchLabels[managedBranchId]}
+                </div>
+              )}
             </div>
           </CardHeader>
           <CardContent className="space-y-4 text-right">
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-[1.25rem] border border-border/60 bg-muted/20 px-4 py-3">
-              <div className="text-sm text-muted-foreground">
-                {isEnabled && closesAtLabel ? `مفتوح حتى ${closesAtLabel}` : "الأسئلة والتفعيل مرتبطان بالفرع المحدد فقط."}
-              </div>
+              {isEnabled && closesAtLabel ? <div className="text-sm text-muted-foreground">{`مفتوح حتى ${closesAtLabel}`}</div> : <div />}
               <Button onClick={() => setAddDialogOpen(true)} className="rounded-full px-5">
               <Plus className="size-4" />
               إضافة سؤال

@@ -23,7 +23,12 @@ const Hero = () => {
 
       <div className="container relative z-10 py-32 lg:py-0">
         <div className="mx-auto max-w-4xl text-center text-white animate-fade-up">
-            <div className="mx-auto mb-6 flex items-center justify-center">
+            <div className="mx-auto mb-6 flex items-center justify-center gap-4 sm:gap-5">
+              <img
+                src="/شعار-الجمعية.png"
+                alt="شعار الجمعية"
+                className="site-logo site-logo-top mt-1 h-20 w-auto object-contain sm:h-24 md:h-28"
+              />
               <img
                 src="/اللوقو-شفاف.png"
                 alt="شعار برنامج رخصة ممارس"

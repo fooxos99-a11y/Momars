@@ -1,5 +1,3 @@
-import { Check } from "lucide-react";
-
 const goals = [
   "التعرّف على أهمية العلم الشرعي وأهم مسائل العقيدة والطهارة والصلاة",
   "إتقان أساسيات تعليم القرآن الكريم ومبادئ علم التجويد",
@@ -41,10 +39,8 @@ const About = () => {
                   key={g}
                   className="flex items-start gap-3 p-4 rounded-2xl bg-card border border-primary/10 shadow-soft hover:shadow-card transition-smooth"
                 >
-                  <span className="w-7 h-7 rounded-full bg-primary grid place-items-center shrink-0 mt-0.5">
-                    <Check className="size-4 text-primary-foreground" strokeWidth={3} />
-                  </span>
-                  <span className="text-primary leading-relaxed font-semibold">{g}</span>
+                  <span className="mt-0.5 h-7 w-7 shrink-0 rounded-full border-[3px] border-[#167190] bg-white/70" />
+                  <span className="bg-[var(--gradient-primary)] bg-clip-text text-transparent leading-relaxed font-semibold">{g}</span>
                 </li>
               ))}
             </ul>

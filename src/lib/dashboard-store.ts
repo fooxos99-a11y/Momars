@@ -24,6 +24,7 @@ import {
   updateCoursesSortOrderInDatabase,
   updateStudentInDatabase,
   addSatisfactionQuestionToDatabase,
+  addSatisfactionQuestionsToDatabase,
   deleteSatisfactionQuestionFromDatabase,
   submitSatisfactionResponsesToDatabase,
   addFinalExamQuestionToDatabase,
@@ -1253,18 +1254,54 @@ const useCreateDashboardStore = () => {
         throw error;
       }
     },
-    addSatisfactionQuestion: async (question: { courseId: string; prompt: string; type: "rating" | "text"; isRequired: boolean }) => {
-      const tempId = createId();
-      const sortOrder = data.satisfactionQuestions.filter((q) => q.courseId === question.courseId).length;
+    addSatisfactionQuestion: async (question: { prompt: string; type: "rating" | "text"; isRequired: boolean }) => {
+      const targetCourses = getCourses(data).filter((course) => course.isPostEnabled);
+
+      if (targetCourses.length === 0) {
+        return;
+      }
+
       const now = new Date().toISOString();
-      setSatisfactionQuestions((questions) => [...questions, { id: tempId, ...question, sortOrder, createdAt: now }]);
+      const tempQuestions = targetCourses.map((course) => ({
+        id: createId(),
+        courseId: course.id,
+        prompt: question.prompt,
+        type: question.type,
+        isRequired: question.isRequired,
+        sortOrder: data.satisfactionQuestions.filter((q) => q.courseId === course.id).length,
+        createdAt: now,
+      }));
+
+      setSatisfactionQuestions((questions) => [...questions, ...tempQuestions]);
+
       try {
-        const saved = await addSatisfactionQuestionToDatabase({ ...question, sortOrder });
+        const savedQuestions = await addSatisfactionQuestionsToDatabase(
+          tempQuestions.map((item) => ({
+            courseId: item.courseId,
+            prompt: item.prompt,
+            type: item.type,
+            isRequired: item.isRequired,
+            sortOrder: item.sortOrder,
+          })),
+        );
+
+        const savedByCourseId = new Map(savedQuestions.map((item) => [item.courseId, item]));
+
         setSatisfactionQuestions((questions) =>
-          questions.map((q) => q.id === tempId ? { ...q, id: saved.id, createdAt: saved.createdAt } : q),
+          questions.map((q) => {
+            const saved = savedByCourseId.get(q.courseId);
+            const isTempQuestion = tempQuestions.some((item) => item.id === q.id);
+
+            if (!saved || !isTempQuestion) {
+              return q;
+            }
+
+            return { ...q, id: saved.id, createdAt: saved.createdAt };
+          }),
         );
       } catch (error) {
-        setSatisfactionQuestions((questions) => questions.filter((q) => q.id !== tempId));
+        const tempIds = new Set<string>(tempQuestions.map((item) => item.id));
+        setSatisfactionQuestions((questions) => questions.filter((q) => !tempIds.has(q.id)));
         throw error;
       }
     },

@@ -22,6 +22,7 @@ import {
   getRoleLabel,
   getStudentByLoginId,
   isAssessmentEnabledForCourse,
+  isFinalExamAvailable,
   loadAccessSession,
   resolveAccessByLoginCode,
   saveAccessSession,
@@ -38,6 +39,8 @@ const links = [
   { href: "#competencies", label: "مجالات وكفايات البرنامج" },
   { href: "#requirements", label: "المتطلبات" },
 ];
+
+type StudentAssessmentMenuType = AssessmentType | "finalexam";
 
 const Header = () => {
   const [scrolled, setScrolled] = useState(false);
@@ -154,8 +157,18 @@ const Header = () => {
     setProfileOpen(true);
   };
 
-  const handleStudentAssessmentNavigation = (assessmentType: AssessmentType) => {
+  const handleStudentAssessmentNavigation = (assessmentType: StudentAssessmentMenuType) => {
     if (!session || session.role !== "student") {
+      return;
+    }
+
+    if (assessmentType === "finalexam") {
+      if (!sessionBranchId || !isFinalExamAvailable(data.finalExamSettings[sessionBranchId])) {
+        return;
+      }
+
+      setAccountMenuOpen(false);
+      navigate(`/final-exam?login=${encodeURIComponent(session.loginCode)}`);
       return;
     }
 
@@ -180,10 +193,14 @@ const Header = () => {
   const secondaryActionPath = session?.role === "student"
     ? `/student?login=${encodeURIComponent(session.loginCode)}`
     : session?.redirectPath ?? "/";
-  const studentAssessmentItems: Array<{ type: AssessmentType; label: string }> = [
+  const studentFinalExamEnabled = session?.role === "student" && sessionBranchId
+    ? isFinalExamAvailable(data.finalExamSettings[sessionBranchId])
+    : false;
+  const studentAssessmentItems: Array<{ type: StudentAssessmentMenuType; label: string }> = [
     { type: "pre", label: "الاختبار القبلي" },
     { type: "post", label: "الاختبار البعدي" },
     { type: "tasks", label: "التكليف" },
+    { type: "finalexam", label: "الاختبار النهائي" },
   ];
 
   return (
@@ -197,13 +214,20 @@ const Header = () => {
       <div className="container flex h-20 items-center gap-4 xl:gap-6">
         {/* Logo */}
         <a href="#home" className="flex shrink-0 items-center gap-2.5 md:gap-3">
-          <img
-            src="/اللوقو-شفاف.png"
-            alt="شعار برنامج رخصة ممارس"
-            className={`site-logo h-8 w-auto md:h-9 ${scrolled ? "site-logo-scrolled" : "site-logo-top"}`}
-          />
+          <div className="flex items-center gap-2 md:gap-2.5">
+            <img
+              src="/شعار-الجمعية.png"
+              alt="شعار الجمعية"
+              className={`site-logo h-8 w-auto object-contain md:h-9 ${scrolled ? "site-logo-scrolled" : "site-logo-top"}`}
+            />
+            <img
+              src="/اللوقو-شفاف.png"
+              alt="شعار برنامج رخصة ممارس"
+              className={`site-logo h-8 w-auto object-contain md:h-9 ${scrolled ? "site-logo-scrolled" : "site-logo-top"}`}
+            />
+          </div>
           <div className={`text-right leading-tight ${scrolled ? "text-foreground" : "text-white"}`}>
-            <div className="text-[0.82rem] font-extrabold md:text-[1.02rem]">برنامج رخصة ممارس</div>
+            <div className="text-[0.72rem] font-extrabold md:text-[0.9rem]">برنامج رخصة ممارس</div>
           </div>
         </a>
 
@@ -250,7 +274,9 @@ const Header = () => {
                         key={item.type}
                         className="justify-end text-right"
                         disabled={
-                          item.type === "tasks"
+                          item.type === "finalexam"
+                            ? !studentFinalExamEnabled
+                            : item.type === "tasks"
                             ? !isHydrated || !activeTask
                             : !isHydrated || !activeCourse || !isAssessmentEnabledForCourse(activeCourse, item.type, sessionBranchId)
                         }

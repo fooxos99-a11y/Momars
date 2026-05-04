@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { ArrowRightLeft, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -312,8 +312,13 @@ const ReciterPage = () => {
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.12),_transparent_38%),linear-gradient(180deg,#f7fcfb_0%,#eff8f7_100%)] text-foreground">
       <div className="container py-8 md:py-12">
         <div className="mb-8 rounded-[2rem] border border-white/70 bg-white/85 p-6 shadow-soft backdrop-blur">
-          <div className="space-y-3 text-right">
-            <h1 className="text-2xl font-black md:text-4xl">لوحة المقرئ</h1>
+          <div className="flex items-center justify-between gap-4 text-right">
+            <div className="space-y-3 text-right">
+              <h1 className="text-2xl font-black md:text-4xl">لوحة المقرئ</h1>
+            </div>
+            <Link to="/" className="shrink-0">
+              <img src="/اللوقو-شفاف.png" alt="شعار المنصة" className="site-logo site-logo-scrolled h-14 w-auto object-contain" />
+            </Link>
           </div>
         </div>
 

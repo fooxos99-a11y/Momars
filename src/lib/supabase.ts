@@ -1805,6 +1805,35 @@ export const addSatisfactionQuestionToDatabase = async (input: { courseId: strin
   return { id: data.id as string, createdAt: (data.created_at as string | null) ?? new Date().toISOString() };
 };
 
+export const addSatisfactionQuestionsToDatabase = async (inputs: Array<{ courseId: string; prompt: string; type: "rating" | "text"; isRequired: boolean; sortOrder: number }>) => {
+  if (inputs.length === 0) {
+    return [] as Array<{ id: string; courseId: string; createdAt: string }>;
+  }
+
+  const rows = inputs.map((input) => ({
+    course_id: input.courseId,
+    prompt: input.prompt.trim(),
+    type: input.type,
+    is_required: input.isRequired,
+    sort_order: input.sortOrder,
+  }));
+
+  const { data, error } = await supabase
+    .from("satisfaction_questions")
+    .insert(rows)
+    .select("id, course_id, created_at");
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []).map((row) => ({
+    id: row.id as string,
+    courseId: row.course_id as string,
+    createdAt: (row.created_at as string | null) ?? new Date().toISOString(),
+  }));
+};
+
 export const deleteSatisfactionQuestionFromDatabase = async (questionId: string) => {
   const { error } = await supabase.from("satisfaction_questions").delete().eq("id", questionId);
 

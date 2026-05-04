@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { getCourses, getTasks, useDashboardStore, type AssessmentType, type CourseQuestion, type CourseRecord } from "@/lib/dashboard-store";
 import { cn } from "@/lib/utils";
 
@@ -9,11 +9,13 @@ const ProgramIndicatorRing = ({
   label,
   progressValue,
   displayValue,
+  shouldAnimate,
   suffix = "%",
 }: {
   label: string;
   progressValue: number;
   displayValue: number;
+  shouldAnimate: boolean;
   suffix?: string;
 }) => {
   const gradientId = useId();
@@ -25,9 +27,15 @@ const ProgramIndicatorRing = ({
   const circumference = 2 * Math.PI * radius;
 
   useEffect(() => {
+    if (!shouldAnimate) {
+      setAnimatedProgress(0);
+      setAnimatedDisplay(0);
+      return;
+    }
+
     let frameId = 0;
     const startedAt = performance.now();
-    const duration = 1200;
+    const duration = 2200;
 
     const tick = (now: number) => {
       const elapsed = Math.min((now - startedAt) / duration, 1);
@@ -43,7 +51,7 @@ const ProgramIndicatorRing = ({
     frameId = requestAnimationFrame(tick);
 
     return () => cancelAnimationFrame(frameId);
-  }, [safeDisplay, safeProgress]);
+  }, [safeDisplay, safeProgress, shouldAnimate]);
 
   const dashOffset = circumference * (1 - animatedProgress / 100);
   const shownValue = `${Math.round(animatedDisplay)}${suffix}`;
@@ -51,31 +59,33 @@ const ProgramIndicatorRing = ({
   return (
     <div className="flex flex-col items-center gap-3 text-center">
       <div className="relative flex h-40 w-40 items-center justify-center sm:h-44 sm:w-44 lg:h-48 lg:w-48">
-        <div className="absolute inset-3 rounded-full bg-[radial-gradient(circle,_rgba(14,154,192,0.18)_0%,_rgba(14,154,192,0.08)_42%,_transparent_72%)] blur-2xl" />
+        <div className="absolute inset-2 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.34)_0%,_rgba(64,181,208,0.22)_18%,_rgba(11,103,126,0.22)_38%,_rgba(8,65,89,0.1)_58%,_transparent_76%)] blur-2xl" />
         <svg viewBox="0 0 140 140" className="relative h-full w-full -rotate-90 overflow-visible">
           <defs>
             <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#0f6f8f" />
-              <stop offset="55%" stopColor="#128db2" />
-              <stop offset="100%" stopColor="#19aacd" />
+              <stop offset="0%" stopColor="hsl(191 72% 34%)" />
+              <stop offset="55%" stopColor="hsl(192 75% 28%)" />
+              <stop offset="100%" stopColor="hsl(193 78% 22%)" />
             </linearGradient>
           </defs>
-          <circle cx="70" cy="70" r={radius} fill="none" stroke="rgba(184, 205, 214, 0.45)" strokeWidth="10" />
+          <circle cx="70" cy="70" r={radius} fill="none" stroke="rgba(184, 205, 214, 0.42)" strokeWidth="13" />
+          <circle cx="70" cy="70" r={radius} fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="16" opacity="0.42" />
           <circle
             cx="70"
             cy="70"
             r={radius}
             fill="none"
             stroke={`url(#${gradientId})`}
-            strokeWidth="10"
+            strokeWidth="13"
             strokeLinecap="round"
             strokeDasharray={circumference}
             strokeDashoffset={dashOffset}
+            className="drop-shadow-[0_0_14px_rgba(93,205,227,0.35)]"
           />
         </svg>
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="flex h-[66%] w-[66%] items-center justify-center rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.96)_0%,_rgba(244,251,253,0.88)_56%,_rgba(233,245,249,0.28)_100%)] shadow-[inset_0_1px_14px_rgba(255,255,255,0.92)] backdrop-blur-sm">
-            <span className="font-black leading-none tracking-[-0.04em] text-[#0d4860] text-[2rem] sm:text-[2.15rem]">
+            <span className="font-black leading-none tracking-[-0.04em] text-[#0a4c61] text-[2rem] sm:text-[2.15rem]">
               {shownValue}
             </span>
           </div>
@@ -159,6 +169,34 @@ const INDICATORS = [
 
 const Stats = () => {
   const { data } = useDashboardStore();
+  const sectionRef = useRef<HTMLElement | null>(null);
+  const [shouldAnimateIndicators, setShouldAnimateIndicators] = useState(false);
+
+  useEffect(() => {
+    const section = sectionRef.current;
+
+    if (!section || shouldAnimateIndicators) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting) {
+          return;
+        }
+
+        setShouldAnimateIndicators(true);
+        observer.disconnect();
+      },
+      {
+        threshold: 0.05,
+      },
+    );
+
+    observer.observe(section);
+
+    return () => observer.disconnect();
+  }, [shouldAnimateIndicators]);
 
   const metrics = useMemo(() => {
     const students = data.students;
@@ -175,7 +213,7 @@ const Stats = () => {
     const completedPartsCount = students.reduce((s, st) => s + st.completedParts.length, 0);
     const totalPossibleParts = totalStudents * 30;
     const memorization = totalPossibleParts > 0 ? (completedPartsCount / totalPossibleParts) * 100 : 0;
-    const completed30 = students.filter((s) => s.completedParts.length >= 30).length;
+    const completed30 = students.filter((s) => s.isCertified).length;
 
     // Assessment averages
     const calcAssessmentAvg = (type: AssessmentType, ids: string[]) => {
@@ -213,25 +251,33 @@ const Stats = () => {
     );
     const attendance = (attendedLoginIds.size / totalStudents) * 100;
 
-    return { memorization, pre, post, attendance, tasks: tasksAvg, completed30, totalStudents };
+    return { memorization, completedPartsCount, pre, post, attendance, tasks: tasksAvg, completed30, totalStudents };
   }, [data]);
 
   const values: Record<string, { value: number; display: string }> = metrics
     ? {
-        memorization: { value: metrics.memorization, display: fmtPct(metrics.memorization) },
+        memorization: { value: 100, display: String(metrics.completedPartsCount) },
         pre: { value: metrics.pre, display: fmtPct(metrics.pre) },
         post: { value: metrics.post, display: fmtPct(metrics.post) },
         attendance: { value: metrics.attendance, display: fmtPct(metrics.attendance) },
         tasks: { value: metrics.tasks, display: fmtPct(metrics.tasks) },
         completed30: {
-          value: metrics.totalStudents > 0 ? (metrics.completed30 / metrics.totalStudents) * 100 : 0,
+          value: 100,
           display: String(metrics.completed30),
         },
       }
-    : Object.fromEntries(INDICATORS.map((i) => [i.key, { value: 0, display: "0%" }]));
+    : Object.fromEntries(
+        INDICATORS.map((i) => [
+          i.key,
+          {
+            value: 0,
+            display: i.key === "memorization" || i.key === "completed30" ? "0" : "0%",
+          },
+        ]),
+      );
 
   return (
-    <section className="relative overflow-hidden gradient-page py-24">
+    <section ref={sectionRef} className="relative overflow-hidden gradient-page py-24">
       <div className="absolute -top-40 -right-32 w-[28rem] h-[28rem] rounded-full bg-primary/5 blur-3xl" aria-hidden />
       <div className="absolute -bottom-40 -left-32 w-[28rem] h-[28rem] rounded-full bg-accent/10 blur-3xl" aria-hidden />
 
@@ -255,8 +301,9 @@ const Stats = () => {
                 key={ind.key}
                 label={ind.label}
                 progressValue={value}
-                displayValue={ind.key === "completed30" ? Number(display) || 0 : value}
-                suffix={ind.key === "completed30" ? "" : "%"}
+                displayValue={ind.key === "memorization" || ind.key === "completed30" ? Number(display) || 0 : value}
+                shouldAnimate={shouldAnimateIndicators}
+                suffix={ind.key === "memorization" || ind.key === "completed30" ? "" : "%"}
               />
             );
           })}

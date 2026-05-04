@@ -54,6 +54,7 @@ import {
   getTaskLink,
   getRoleLabel,
   isAssessmentEnabledForCourse,
+  isFinalExamAvailable,
   isDashboardRole,
   loadAccessSession,
   useDashboardStore,
@@ -423,6 +424,7 @@ const formatPercent = (value: number) => `${Math.round(clampPercent(value))}%`;
 
 const ProgramIndicatorRing = ({
   label,
+  helperText,
   progressValue,
   displayValue,
   suffix = "%",
@@ -430,6 +432,7 @@ const ProgramIndicatorRing = ({
   formatDisplay,
 }: {
   label: string;
+  helperText?: string;
   progressValue: number;
   displayValue: number;
   suffix?: string;
@@ -447,7 +450,7 @@ const ProgramIndicatorRing = ({
   useEffect(() => {
     let frameId = 0;
     const startedAt = performance.now();
-    const duration = 1200;
+    const duration = 2200;
 
     const tick = (now: number) => {
       const elapsed = Math.min((now - startedAt) / duration, 1);
@@ -474,37 +477,40 @@ const ProgramIndicatorRing = ({
   return (
     <div className="flex flex-col items-center gap-3 text-center">
       <div className={cn("relative flex items-center justify-center", isSmall ? "h-28 w-28 sm:h-32 sm:w-32" : "h-40 w-40 sm:h-44 sm:w-44 lg:h-48 lg:w-48")}>
-        <div className="absolute inset-3 rounded-full bg-[radial-gradient(circle,_rgba(14,154,192,0.18)_0%,_rgba(14,154,192,0.08)_42%,_transparent_72%)] blur-2xl" />
+        <div className="absolute inset-2 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.34)_0%,_rgba(64,181,208,0.22)_18%,_rgba(11,103,126,0.22)_38%,_rgba(8,65,89,0.1)_58%,_transparent_76%)] blur-2xl" />
         <svg viewBox="0 0 140 140" className="relative h-full w-full -rotate-90 overflow-visible">
           <defs>
             <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#0f6f8f" />
-              <stop offset="55%" stopColor="#128db2" />
-              <stop offset="100%" stopColor="#19aacd" />
+              <stop offset="0%" stopColor="hsl(191 72% 34%)" />
+              <stop offset="55%" stopColor="hsl(192 75% 28%)" />
+              <stop offset="100%" stopColor="hsl(193 78% 22%)" />
             </linearGradient>
           </defs>
-          <circle cx="70" cy="70" r={radius} fill="none" stroke="rgba(184, 205, 214, 0.45)" strokeWidth="10" />
+          <circle cx="70" cy="70" r={radius} fill="none" stroke="rgba(184, 205, 214, 0.42)" strokeWidth="13" />
+          <circle cx="70" cy="70" r={radius} fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="16" opacity="0.42" />
           <circle
             cx="70"
             cy="70"
             r={radius}
             fill="none"
             stroke={`url(#${gradientId})`}
-            strokeWidth="10"
+            strokeWidth="13"
             strokeLinecap="round"
             strokeDasharray={circumference}
             strokeDashoffset={dashOffset}
+            className="drop-shadow-[0_0_14px_rgba(93,205,227,0.35)]"
           />
         </svg>
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="flex h-[66%] w-[66%] items-center justify-center rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.96)_0%,_rgba(244,251,253,0.88)_56%,_rgba(233,245,249,0.28)_100%)] shadow-[inset_0_1px_14px_rgba(255,255,255,0.92)] backdrop-blur-sm">
-            <span className={cn("font-black leading-none tracking-[-0.04em] text-[#0d4860]", isSmall ? "text-[1.45rem] sm:text-[1.6rem]" : "text-[2rem] sm:text-[2.15rem]")}>
+            <span className={cn("font-black leading-none tracking-[-0.04em] text-[#0a4c61]", isSmall ? "text-[1.45rem] sm:text-[1.6rem]" : "text-[2rem] sm:text-[2.15rem]")}>
               {shownValue}
             </span>
           </div>
         </div>
       </div>
-      <div className={cn("font-extrabold leading-7 text-[#08384a]", isSmall ? "max-w-[8rem] text-xs sm:text-sm" : "max-w-[11rem] text-sm sm:text-[0.95rem]")}>{label}</div>
+      <div className={cn("font-extrabold leading-7 text-[#08384a]", isSmall ? "max-w-[10rem] text-xs sm:text-sm" : "max-w-[11rem] text-sm sm:text-[0.95rem]")}>{label}</div>
+      {helperText ? <div className="text-[0.72rem] font-medium text-muted-foreground sm:text-xs">{helperText}</div> : null}
     </div>
   );
 };
@@ -638,6 +644,11 @@ const Dashboard = () => {
   const [newSurveyRequired, setNewSurveyRequired] = useState(true);
 
   // Final exam state
+  const [finalExamManageBranch, setFinalExamManageBranch] = useState<BranchId>(managedBranchId ?? "male");
+  const [finalExamCopyOpen, setFinalExamCopyOpen] = useState(false);
+  const [finalExamActivationDialogOpen, setFinalExamActivationDialogOpen] = useState(false);
+  const [finalExamActivationMinutes, setFinalExamActivationMinutes] = useState("60");
+  const [finalExamActivationError, setFinalExamActivationError] = useState("");
   const [finalExamResultsBranch, setFinalExamResultsBranch] = useState<BranchId>("male");
   const [finalExamScoreEdit, setFinalExamScoreEdit] = useState<{ submissionId: string; value: string } | null>(null);
   const [courseEditForm, setCourseEditForm] = useState(emptyCourseEditForm);
@@ -701,6 +712,44 @@ const Dashboard = () => {
   const [adminTransferError, setAdminTransferError] = useState("");
   const [adminTransferSubmitting, setAdminTransferSubmitting] = useState(false);
   const [allStudentsReciterOrder, setAllStudentsReciterOrder] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (managedBranchId) {
+      setFinalExamManageBranch(managedBranchId);
+    }
+  }, [managedBranchId]);
+
+  const effectiveFinalExamManageBranch = managedBranchId ?? finalExamManageBranch;
+  const finalExamManageSetting = data.finalExamSettings[effectiveFinalExamManageBranch];
+  const isFinalExamManageEnabled = isFinalExamAvailable(finalExamManageSetting);
+
+  const handleCopyFinalExamQuestionsToBranch = async (to: BranchId) => {
+    await store.copyFinalExamQuestions(effectiveFinalExamManageBranch, to, false);
+    setFinalExamCopyOpen(false);
+  };
+
+  const handleToggleFinalExamAvailability = async () => {
+    if (isFinalExamManageEnabled) {
+      await store.toggleFinalExamEnabled(effectiveFinalExamManageBranch, null);
+      return;
+    }
+
+    setFinalExamActivationError("");
+    setFinalExamActivationDialogOpen(true);
+  };
+
+  const handleActivateFinalExam = async () => {
+    const minutes = Number(finalExamActivationMinutes);
+    if (!Number.isFinite(minutes) || minutes <= 0) {
+      setFinalExamActivationError("أدخل مدة صحيحة بالدقائق.");
+      return;
+    }
+
+    const closesAt = new Date(Date.now() + minutes * 60 * 1000).toISOString();
+    setFinalExamActivationError("");
+    await store.toggleFinalExamEnabled(effectiveFinalExamManageBranch, closesAt);
+    setFinalExamActivationDialogOpen(false);
+  };
   const effectiveSelectedBranch = managedBranchId ?? selectedBranch;
   const effectiveReciterBranchFilter = managedBranchId ?? reciterBranchFilter;
 
@@ -874,6 +923,10 @@ const Dashboard = () => {
     const courses = getCourses(data);
     return [...courses].sort((a, b) => a.sortOrder - b.sortOrder);
   }, [data]);
+  const satisfactionCourseItems = useMemo(
+    () => courseItems.filter((course) => course.isPostEnabled),
+    [courseItems],
+  );
 
   const handleCourseOrderDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
@@ -886,6 +939,12 @@ const Dashboard = () => {
     store.reorderCourses(next);
   }, [courseItems, store]);
 
+  const handleDeleteSelectedSatisfactionQuestions = useCallback(async () => {
+    for (const question of selectedSatisfactionQuestions) {
+      await store.deleteSatisfactionQuestion(question.id);
+    }
+  }, [selectedSatisfactionQuestions, store]);
+
   const dndSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
@@ -894,6 +953,12 @@ const Dashboard = () => {
   const selectedReciter = data.reciters.find((reciter) => reciter.id === selectedReciterId) ?? data.reciters[0] ?? null;
   const reciterStudents = selectedReciter ? getAssignedStudents(data, selectedReciter.id) : [];
   const selectedCourse = courseItems.find((course) => course.id === selectedCourseId) ?? courseItems[0] ?? null;
+  const selectedSatisfactionCourse = satisfactionCourseItems.find((course) => course.id === satisfactionCourseId) ?? satisfactionCourseItems[0] ?? null;
+  const selectedSatisfactionQuestions = selectedSatisfactionCourse
+    ? data.satisfactionQuestions
+        .filter((question) => question.courseId === selectedSatisfactionCourse.id)
+        .sort((left, right) => left.sortOrder - right.sortOrder)
+    : [];
   const activeCourse = getActiveCourse(data);
   const indicatorStudents = indicatorsBranchId === "all" ? data.students : getBranchStudents(data, indicatorsBranchId);
   const selectedIndicatorsCourse = indicatorsCourseId === "all"
@@ -2522,7 +2587,7 @@ const Dashboard = () => {
     const totalStudents = indicatorStudents.length;
     const totalPossibleParts = totalStudents * 30;
     const completedPartsCount = indicatorStudents.reduce((sum, student) => sum + student.completedParts.length, 0);
-    const completedThirtyStudents = indicatorStudents.filter((student) => student.completedParts.length >= 30).length;
+    const completedThirtyStudents = indicatorStudents.filter((student) => student.isCertified).length;
     const branchLoginIds = new Set(indicatorStudents.map((student) => student.loginId));
     
     // Use indicatorsCourseId directly instead of looking it up in courseItems
@@ -2665,6 +2730,7 @@ const Dashboard = () => {
 
     return {
       totalStudents,
+      completedPartsCount,
       completedThirtyStudents,
       tasksSubmittedStudentsCount,
       summary: {
@@ -2765,8 +2831,9 @@ const Dashboard = () => {
     {
       key: "memorization",
       label: "مجموع الأجزاء المقروءة",
-      value: indicatorMetrics.summary.memorization,
-      display: formatPercent(indicatorMetrics.summary.memorization),
+      value: 100,
+      displayValue: indicatorMetrics.completedPartsCount,
+      suffix: "",
       colorStart: "#0f766e",
       colorEnd: "#0d9488",
       track: "#1f3c3a",
@@ -2779,7 +2846,8 @@ const Dashboard = () => {
       key: "pre",
       label: "الاختبارات القبلية",
       value: indicatorMetrics.summary.pre,
-      display: formatPercent(indicatorMetrics.summary.pre),
+      displayValue: indicatorMetrics.summary.pre,
+      suffix: "%",
       detail: undefined,
       colorStart: "#1e40af",
       colorEnd: "#2563eb",
@@ -2793,7 +2861,8 @@ const Dashboard = () => {
       key: "post",
       label: "الاختبارات البعدية",
       value: indicatorMetrics.summary.post,
-      display: formatPercent(indicatorMetrics.summary.post),
+      displayValue: indicatorMetrics.summary.post,
+      suffix: "%",
       detail: undefined,
       colorStart: "#6d28d9",
       colorEnd: "#7c3aed",
@@ -2807,7 +2876,8 @@ const Dashboard = () => {
       key: "attendance",
       label: "الحضور",
       value: indicatorMetrics.summary.attendance,
-      display: formatPercent(indicatorMetrics.summary.attendance),
+      displayValue: indicatorMetrics.summary.attendance,
+      suffix: "%",
       detail: undefined,
       colorStart: "#166534",
       colorEnd: "#16a34a",
@@ -2821,7 +2891,8 @@ const Dashboard = () => {
       key: "tasks",
       label: "التكاليف",
       value: indicatorMetrics.summary.tasks,
-      display: formatPercent(indicatorMetrics.summary.tasks),
+      displayValue: indicatorMetrics.summary.tasks,
+      suffix: "%",
       detail: undefined,
       colorStart: "#9a3412",
       colorEnd: "#c2410c",
@@ -2834,8 +2905,9 @@ const Dashboard = () => {
     {
       key: "completed-thirty",
       label: "الطلاب الذين أنهوا 30 جزءًا",
-      value: indicatorMetrics.totalStudents > 0 ? (indicatorMetrics.completedThirtyStudents / indicatorMetrics.totalStudents) * 100 : 0,
-      display: String(indicatorMetrics.completedThirtyStudents),
+      value: 100,
+      displayValue: indicatorMetrics.completedThirtyStudents,
+      suffix: "",
       detail: undefined,
       colorStart: "#0369a1",
       colorEnd: "#0284c7",
@@ -2912,7 +2984,7 @@ const Dashboard = () => {
     });
 
     const memorizationCount = students.reduce((sum, s) => sum + s.completedParts.length, 0);
-    const completed30Count = students.filter((s) => s.completedParts.length >= 30).length;
+    const completed30Count = students.filter((s) => s.isCertified).length;
 
     return { totalStudents, pre, post, bothCount, rise, tasksCount: tasksTestedSet.size, attendanceCount: attendedSet.size, courseBreakdown, memorizationCount, completed30Count };
   }, [homeBranchFilter, data.students, data.submissions, data.attendance, data.courses, courseItems]);
@@ -3000,12 +3072,12 @@ const Dashboard = () => {
                 ⚠️ تعذر الاتصال بقاعدة البيانات: {loadError}
               </div>
             )}
-            <div className="mb-6 flex w-full items-center justify-between rounded-[2rem] border border-white/70 bg-white/90 px-5 py-4 shadow-[0_18px_50px_rgba(15,23,42,0.06)] backdrop-blur-sm">
+            <div className="mb-6 flex w-full flex-col gap-3 rounded-[2rem] border border-white/70 bg-white/90 px-4 py-4 shadow-[0_18px_50px_rgba(15,23,42,0.06)] backdrop-blur-sm sm:px-5 lg:flex-row lg:items-center lg:justify-between">
               <div className="hidden text-right lg:block">
                 <p className="text-xs font-medium text-muted-foreground">مرحبًا</p>
                 <p className="text-sm font-bold text-foreground">{adminName}</p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:gap-3 lg:w-auto lg:flex-nowrap">
                 <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
                   <SheetTrigger asChild>
                     <Button variant="outline" size="icon" className="rounded-full lg:hidden" aria-label="فتح قائمة لوحة التحكم">
@@ -3018,7 +3090,7 @@ const Dashboard = () => {
                   </SheetContent>
                 </Sheet>
                 {dashboardTab === "home" && (
-                  <div className="min-w-[140px]">
+                  <div className="w-full min-w-0 sm:w-auto sm:min-w-[140px]">
                     <Select value={homeBranchFilter} onValueChange={(value) => setHomeBranchFilter(value as IndicatorsBranchFilter)}>
                       <SelectTrigger className="h-11 flex-row-reverse rounded-full border-border/60 bg-white px-4 text-right [&>span]:text-right">
                         <SelectValue />
@@ -3031,16 +3103,45 @@ const Dashboard = () => {
                     </Select>
                   </div>
                 )}
-                <Button variant="outline" className="rounded-full px-5" onClick={() => setCourseLinksOpen(true)}>
+                <Button variant="outline" className="rounded-full px-4 sm:px-5" onClick={() => setCourseLinksOpen(true)}>
                   الروابط
                 </Button>
+                {dashboardTab === "satisfaction" && selectedSatisfactionQuestions.length > 0 && (
+                  <Button
+                    variant="outline"
+                    className="rounded-full border-destructive/25 px-4 text-destructive hover:bg-destructive/10 hover:text-destructive sm:px-5"
+                    onClick={() => void handleDeleteSelectedSatisfactionQuestions()}
+                  >
+                    <Trash2 className="size-4" />
+                    حذف
+                  </Button>
+                )}
+                {dashboardTab === "finalexam" && canCreateCourses && (
+                  <>
+                    <Button variant="outline" className="rounded-full px-4 sm:px-5" onClick={() => setFinalExamCopyOpen(true)}>
+                      <Copy className="size-4" />
+                      نسخ
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "rounded-full px-4 sm:px-5",
+                        isFinalExamManageEnabled && "border-emerald-600 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+                      )}
+                      onClick={() => void handleToggleFinalExamAvailability()}
+                    >
+                      <Power className="size-4" />
+                      {isFinalExamManageEnabled ? "إيقاف" : "تفعيل"}
+                    </Button>
+                  </>
+                )}
                 {canManageDashboardAccounts && (
-                  <Button variant="outline" className="rounded-full px-5" onClick={handleOpenAdmins} aria-label="الإشراف">
+                  <Button variant="outline" className="rounded-full px-4 sm:px-5" onClick={handleOpenAdmins} aria-label="الإشراف">
                     الإشراف
                   </Button>
                 )}
                 {canCreateCourses && (
-                  <Button variant="outline" className="rounded-full px-5" onClick={() => setCoursesManageOpen(true)}>
+                  <Button variant="outline" className="rounded-full px-4 sm:px-5" onClick={() => setCoursesManageOpen(true)}>
                     الدورات
                   </Button>
                 )}
@@ -3059,7 +3160,7 @@ const Dashboard = () => {
               </div>
             </div>
 
-            <div className="mx-auto w-full max-w-[1280px] px-1 md:px-2">
+            <div className="mx-auto w-full max-w-[1280px] overflow-x-hidden px-1 md:px-2">
               <div className="space-y-6">
 
         {dashboardTab === "home" && (
@@ -3077,9 +3178,9 @@ const Dashboard = () => {
                 {
                   key: "memorization",
                   label: "مجموع الأجزاء المقروءة",
-                  value: T > 0 ? clampPercent((homeMetrics.memorizationCount / (T * 30)) * 100) : 0,
-                  displayValue: T > 0 ? clampPercent((homeMetrics.memorizationCount / (T * 30)) * 100) : 0,
-                  suffix: "%",
+                  value: 100,
+                  displayValue: homeMetrics.memorizationCount,
+                  suffix: "",
                 },
                 {
                   key: "pre",
@@ -3112,13 +3213,13 @@ const Dashboard = () => {
                 {
                   key: "completed30",
                   label: "الطلاب الذين أنهوا 30 جزءًا",
-                  value: T > 0 ? clampPercent((homeMetrics.completed30Count / T) * 100) : 0,
+                  value: 100,
                   displayValue: homeMetrics.completed30Count,
                   suffix: "",
                 },
               ];
               return (
-                <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 xl:grid-cols-6 xl:gap-x-6 xl:gap-y-10">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-8 lg:grid-cols-3 lg:gap-x-6 lg:gap-y-10">
                   {homeIndicators.map((ind) => (
                     <ProgramIndicatorRing
                       key={ind.key}
@@ -3207,18 +3308,18 @@ const Dashboard = () => {
 
         {dashboardTab === "students" && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-right">
                 <h2 className="flex items-center gap-2 text-xl font-bold text-foreground">
                   <SquarePen className="size-5" />
                   تعديل الدرجات
                 </h2>
               </div>
-              <div className="flex gap-2">
+              <div className="flex w-full flex-wrap justify-end gap-2 sm:w-auto sm:flex-nowrap">
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button className="rounded-full px-5 gap-2" variant="outline" onClick={() => setImportResultsOpen(true)}>
+                      <Button className="gap-2 rounded-full px-4 sm:px-5" variant="outline" onClick={() => setImportResultsOpen(true)}>
                         <FileUp className="size-4" />
                         استيراد
                       </Button>
@@ -3228,12 +3329,12 @@ const Dashboard = () => {
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
-                <Button className="rounded-full px-5 gap-2" variant="outline" onClick={() => setManualGradesOpen(true)}>
+                <Button className="gap-2 rounded-full px-4 sm:px-5" variant="outline" onClick={() => setManualGradesOpen(true)}>
                   <Pencil className="size-4" />
                   تعديل يدوي
                 </Button>
                 {hasPermission("add_student") && (
-                  <Button className="rounded-full px-5" onClick={() => openStudentEditor()}>
+                  <Button className="rounded-full px-4 sm:px-5" onClick={() => openStudentEditor()}>
                     <Plus className="size-4" />
                     إضافة
                   </Button>
@@ -3309,11 +3410,11 @@ const Dashboard = () => {
 
         {dashboardTab === "reciters" && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-right">
                 <h2 className="text-xl font-bold text-foreground">الإقراء</h2>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:flex-nowrap">
                 <Popover>
                   <PopoverTrigger asChild>
                     <button
@@ -3333,7 +3434,7 @@ const Dashboard = () => {
                   </PopoverContent>
                 </Popover>
                 {hasPermission("add_reciter") && (
-                  <Button className="rounded-full px-5" onClick={() => openReciterEditor()}>
+                  <Button className="rounded-full px-4 sm:px-5" onClick={() => openReciterEditor()}>
                     <Plus className="size-4" />
                     إضافة
                   </Button>
@@ -3431,9 +3532,14 @@ const Dashboard = () => {
                                   ) : (
                                     <div className="font-bold text-foreground">{student.name}</div>
                                   )}
-                                  {student.isCertified && (
-                                    <span className="inline-block rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-700">مجاز</span>
-                                  )}
+                                  <span
+                                    className={cn(
+                                      "mt-1 inline-flex min-h-6 min-w-[56px] items-center justify-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-colors",
+                                      student.isCertified ? "bg-green-100 text-green-700" : "invisible",
+                                    )}
+                                  >
+                                    مجاز
+                                  </span>
                                   <div className="text-xs text-muted-foreground">المقرئ الحالي: {reciter.name}</div>
                                   {!hasTransferTarget && <div className="mt-1 text-xs text-muted-foreground">لا يوجد مقرئ آخر متاح في نفس الفرع.</div>}
                                 </div>
@@ -3443,23 +3549,18 @@ const Dashboard = () => {
                                     {renderPartGrid(student.id, student.completedParts)}
                                   </div>
                                   <div className="flex justify-end">
-                                    {student.isCertified ? (
-                                      <button
-                                        type="button"
-                                        className="inline-flex items-center gap-1 rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700"
-                                        onClick={() => store.toggleCertifiedStudent(student.id)}
-                                      >
-                                        مجاز ✓
-                                      </button>
-                                    ) : (
-                                      <button
-                                        type="button"
-                                        className="inline-flex items-center gap-1 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground"
-                                        onClick={() => store.toggleCertifiedStudent(student.id)}
-                                      >
-                                        اعتماد
-                                      </button>
-                                    )}
+                                    <button
+                                      type="button"
+                                      className={cn(
+                                        "inline-flex h-10 min-w-[98px] items-center justify-center rounded-full px-4 text-sm font-semibold transition-colors",
+                                        student.isCertified
+                                          ? "bg-green-100 text-green-700 hover:bg-green-200"
+                                          : "border border-border text-muted-foreground hover:border-green-500 hover:text-green-700",
+                                      )}
+                                      onClick={() => store.toggleCertifiedStudent(student.id)}
+                                    >
+                                      {student.isCertified ? "مجاز" : "اعتماد"}
+                                    </button>
                                   </div>
                                 </div>
                               </CardContent>
@@ -3519,9 +3620,14 @@ const Dashboard = () => {
                                     ) : (
                                       <div className="font-semibold text-foreground">{student.name}</div>
                                     )}
-                                    {student.isCertified && (
-                                      <span className="inline-block rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-700">مجاز</span>
-                                    )}
+                                    <span
+                                      className={cn(
+                                        "inline-flex min-h-6 min-w-[56px] items-center justify-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-colors",
+                                        student.isCertified ? "bg-green-100 text-green-700" : "invisible",
+                                      )}
+                                    >
+                                      مجاز
+                                    </span>
                                   {!hasTransferTarget && <div className="text-[11px] text-muted-foreground">لا يوجد مقرئ آخر متاح في نفس الفرع</div>}
                                   </div>
                                   <div className="text-xs text-muted-foreground">{reciter.name}</div>
@@ -3533,23 +3639,18 @@ const Dashboard = () => {
                                 </div>
                               </TableCell>
                               <TableCell className="text-center align-middle">
-                                {student.isCertified ? (
-                                  <button
-                                    type="button"
-                                    className="inline-flex items-center gap-1 rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700 hover:bg-green-200 transition-colors"
-                                    onClick={() => store.toggleCertifiedStudent(student.id)}
-                                  >
-                                    مجاز ✓
-                                  </button>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    className="inline-flex items-center gap-1 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground hover:border-green-500 hover:text-green-700 transition-colors"
-                                    onClick={() => store.toggleCertifiedStudent(student.id)}
-                                  >
-                                    اعتماد
-                                  </button>
-                                )}
+                                <button
+                                  type="button"
+                                  className={cn(
+                                    "inline-flex h-10 min-w-[98px] items-center justify-center rounded-full px-4 text-sm font-semibold transition-colors",
+                                    student.isCertified
+                                      ? "bg-green-100 text-green-700 hover:bg-green-200"
+                                      : "border border-border text-muted-foreground hover:border-green-500 hover:text-green-700",
+                                  )}
+                                  onClick={() => store.toggleCertifiedStudent(student.id)}
+                                >
+                                  {student.isCertified ? "مجاز" : "اعتماد"}
+                                </button>
                               </TableCell>
                             </TableRow>
                           );
@@ -3641,7 +3742,7 @@ const Dashboard = () => {
                   </div>
                   <div className="space-y-2 text-right">
                     <div className="text-sm font-medium text-muted-foreground">نص الشعار</div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                       <Textarea
                         value={notificationForm.message}
                         onChange={(event) => setNotificationForm((current) => ({ ...current, message: event.target.value }))}
@@ -3654,7 +3755,7 @@ const Dashboard = () => {
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="shrink-0"
+                          className="w-full shrink-0 sm:w-auto"
                           onClick={() => setNotificationForm((current) => ({
                             ...current,
                             targetLoginIds: allNotificationTargetStudentsSelected ? [] : notificationTargetStudents.map((student) => student.loginId),
@@ -3677,14 +3778,22 @@ const Dashboard = () => {
                         return (
                           <label key={student.id} className="flex cursor-pointer items-center justify-between gap-3 rounded-[0.9rem] border border-border/50 bg-muted/10 px-3 py-2">
                             <div className="text-right font-medium text-foreground">{student.name}</div>
-                            <Checkbox
-                              checked={isChecked}
-                              onCheckedChange={(checked) => setNotificationForm((current) => ({
+                            <button
+                              type="button"
+                              role="checkbox"
+                              aria-checked={isChecked}
+                              onClick={() => setNotificationForm((current) => ({
                                 ...current,
-                                targetLoginIds: checked
-                                  ? [...current.targetLoginIds, student.loginId]
-                                  : current.targetLoginIds.filter((loginId) => loginId !== student.loginId),
+                                targetLoginIds: isChecked
+                                  ? current.targetLoginIds.filter((loginId) => loginId !== student.loginId)
+                                  : [...current.targetLoginIds, student.loginId],
                               }))}
+                              className={cn(
+                                "h-5 w-5 shrink-0 rounded-full border transition-smooth",
+                                isChecked
+                                  ? "border-primary bg-primary"
+                                  : "border-primary bg-white",
+                              )}
                             />
                           </label>
                         );
@@ -3964,7 +4073,12 @@ const Dashboard = () => {
                                 <TableHead className="text-right">الاسم</TableHead>
                                 <TableHead className="text-right">رقم الدخول</TableHead>
                                 {isTask && <TableHead className="text-right">الحالة</TableHead>}
-                                <TableHead className="text-right w-16">{presentLabel}</TableHead>
+                                <TableHead className="w-20 text-center">
+                                  <div className="flex flex-col items-center justify-center gap-1">
+                                    <span>{presentLabel}</span>
+                                    <span className="h-5 w-5 rounded-full border-2 border-primary/70" aria-hidden="true" />
+                                  </div>
+                                </TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -3987,11 +4101,20 @@ const Dashboard = () => {
                                         {alreadyDone ? "منفذ" : "غير منفذ"}
                                       </TableCell>
                                     )}
-                                    <TableCell>
-                                      <Checkbox
-                                        checked={checked}
-                                        onCheckedChange={() => handleToggle(student.loginId)}
-                                        onClick={(e) => e.stopPropagation()}
+                                    <TableCell className="text-center align-middle">
+                                      <button
+                                        type="button"
+                                        role="checkbox"
+                                        aria-checked={checked}
+                                        aria-label={`${presentLabel} ${student.name}`}
+                                        className={cn(
+                                          "inline-flex h-5 w-5 items-center justify-center rounded-full border-2 transition-colors",
+                                          checked ? "border-primary bg-primary" : "border-primary/70 bg-transparent",
+                                        )}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleToggle(student.loginId);
+                                        }}
                                       />
                                     </TableCell>
                                   </TableRow>
@@ -4061,15 +4184,15 @@ const Dashboard = () => {
                     <div className="space-y-4">
 
                       {showSummaryIndicators && (
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 xl:grid-cols-6 xl:gap-x-6 xl:gap-y-10">
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-8 lg:grid-cols-3 lg:gap-x-6 lg:gap-y-10">
                           {summaryIndicators.map((indicator) => {
                             return (
                               <ProgramIndicatorRing
                                 key={indicator.key}
                                 label={indicator.label}
                                 progressValue={indicator.value}
-                                displayValue={typeof indicator.display === "string" && !indicator.display.includes("%") ? Number(indicator.display) || 0 : indicator.value}
-                                suffix={typeof indicator.display === "string" && !indicator.display.includes("%") ? "" : "%"}
+                                displayValue={indicator.displayValue}
+                                suffix={indicator.suffix}
                               />
                             );
                           })}
@@ -4239,16 +4362,10 @@ const Dashboard = () => {
         })()}
 
         {dashboardTab === "satisfaction" && (() => {
-          const selectedCourse = courseItems.find((c) => c.id === satisfactionCourseId) ?? courseItems[0] ?? null;
-          const courseQuestions = selectedCourse
-            ? data.satisfactionQuestions
-                .filter((q) => q.courseId === selectedCourse.id)
-                .sort((a, b) => a.sortOrder - b.sortOrder)
+          const courseResponses = selectedSatisfactionCourse
+            ? data.satisfactionResponses.filter((r) => r.courseId === selectedSatisfactionCourse.id)
             : [];
-          const courseResponses = selectedCourse
-            ? data.satisfactionResponses.filter((r) => r.courseId === selectedCourse.id)
-            : [];
-          const ratingIndicators = courseQuestions
+          const ratingIndicators = selectedSatisfactionQuestions
             .filter((q) => q.type === "rating")
             .map((q) => {
               const values = courseResponses
@@ -4257,9 +4374,13 @@ const Dashboard = () => {
               const average = values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
               return { question: q, average, count: values.length };
             });
-          const formatRatingAverage = (value: number) => {
+          const formatRatingAverage = (value: number | null) => {
+            if (value == null) {
+              return "0";
+            }
+
             const rounded = Math.round(value * 10) / 10;
-            return Number.isInteger(rounded) ? `${Math.round(rounded)}/10` : `${rounded.toFixed(1)}/10`;
+            return Number.isInteger(rounded) ? String(Math.round(rounded)) : rounded.toFixed(1).replace(".", ",");
           };
           return (
             <div className="space-y-6" dir="rtl">
@@ -4270,12 +4391,12 @@ const Dashboard = () => {
                   <h3 className="text-[0.95rem] font-bold text-foreground">أسئلة الاستبيان</h3>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                     <div className="w-full sm:w-72">
-                      <Select value={selectedCourse?.id ?? ""} onValueChange={setSatisfactionCourseId}>
+                      <Select value={selectedSatisfactionCourse?.id ?? ""} onValueChange={setSatisfactionCourseId}>
                         <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
                           <SelectValue placeholder="اختر الدورة" />
                         </SelectTrigger>
                         <SelectContent>
-                          {courseItems.map((course) => (
+                          {satisfactionCourseItems.map((course) => (
                             <SelectItem key={course.id} value={course.id} className="justify-end pr-3 text-right">
                               {course.title}
                             </SelectItem>
@@ -4283,48 +4404,17 @@ const Dashboard = () => {
                         </SelectContent>
                       </Select>
                     </div>
-                    <Button className="rounded-full px-6" disabled={!selectedCourse} onClick={() => setSatisfactionAddDialogOpen(true)}>
+                    <Button className="rounded-full px-6" disabled={!selectedSatisfactionCourse} onClick={() => setSatisfactionAddDialogOpen(true)}>
                       <Plus className="size-4" />
                       إضافة
                     </Button>
                   </div>
                 </div>
-
-                {/* Questions list */}
-                {!selectedCourse ? (
-                  <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-white/70 p-6 text-center text-sm text-muted-foreground">
-                    لا توجد دورات بعد.
-                  </div>
-                ) : courseQuestions.length === 0 ? (
-                  <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-white/70 p-6 text-center text-sm text-muted-foreground">
-                    لا توجد أسئلة بعد.
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {courseQuestions.map((q, idx) => (
-                      <div key={q.id} className={`${dashboardCardClass} flex items-center justify-between gap-3 rounded-[1.5rem] border border-border/60 px-5 py-4`}>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 rounded-xl text-destructive hover:bg-destructive/10" onClick={() => void store.deleteSatisfactionQuestion(q.id)}>
-                          <Trash2 className="size-3.5" />
-                        </Button>
-                        <div className="min-w-0 flex-1 text-right">
-                          <div className="flex items-center gap-2 justify-end">
-                            <span className="truncate text-sm font-semibold text-foreground">{q.prompt}</span>
-                            <span className="shrink-0 text-xs font-bold text-muted-foreground">#{idx + 1}</span>
-                          </div>
-                          <div className="mt-0.5 flex items-center justify-end gap-2 text-xs text-muted-foreground">
-                            <span>{q.type === "rating" ? "تقييم 0-10" : "نص حر"}</span>
-                            {q.isRequired && <span className="rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary">إلزامي</span>}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
 
               <div className="space-y-4">
                 <h3 className="text-[0.95rem] font-bold text-foreground">مؤشرات الاستبيان</h3>
-                {!selectedCourse ? (
+                {!selectedSatisfactionCourse ? (
                   <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-white/70 p-6 text-center text-sm text-muted-foreground">
                     اختر دورة لعرض المؤشرات.
                   </div>
@@ -4333,24 +4423,21 @@ const Dashboard = () => {
                     لا توجد أسئلة تقييم في هذه الدورة بعد.
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
-                    {ratingIndicators.map(({ question, average, count }) => (
-                      <div key={question.id} className="rounded-[1.75rem] border border-white/70 bg-white/80 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.05)] backdrop-blur-sm">
-                        <div className="mb-4 text-right">
-                          <div className="text-sm font-extrabold leading-7 text-[#08384a] line-clamp-2">{question.prompt}</div>
-                          <div className="text-xs text-muted-foreground">{count} إجابة</div>
-                        </div>
-                        <div className="flex justify-center">
-                          <ProgramIndicatorRing
-                            label="متوسط التقييم"
-                            progressValue={average == null ? 0 : (average / 10) * 100}
-                            displayValue={average ?? 0}
-                            size="small"
-                            formatDisplay={(value) => formatRatingAverage(value)}
-                          />
-                        </div>
-                      </div>
-                    ))}
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-8 lg:grid-cols-3 lg:gap-x-6 lg:gap-y-10">
+                    {ratingIndicators.map(({ question, average, count }) => {
+                      return (
+                        <ProgramIndicatorRing
+                          key={question.id}
+                          label={question.prompt}
+                          helperText={`${count} إجابة`}
+                          progressValue={average == null ? 0 : average * 10}
+                          displayValue={average ?? 0}
+                          suffix=""
+                          size="small"
+                          formatDisplay={formatRatingAverage}
+                        />
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -4366,13 +4453,13 @@ const Dashboard = () => {
             setNewSurveyRequired(true);
           }
         }}>
-          <DialogContent className="max-w-xl rounded-[1.75rem] text-right" dir="rtl">
+          <DialogContent className="max-w-xl rounded-[1.75rem] text-right [&>button]:hidden" dir="rtl">
             <DialogHeader>
               <DialogTitle className="text-right text-xl">إضافة سؤال جديد</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div className="text-sm text-muted-foreground">
-                {satisfactionCourseId ? `الدورة: ${courseItems.find((course) => course.id === satisfactionCourseId)?.title ?? ""}` : "اختر دورة أولاً."}
+                {satisfactionCourseItems.length > 0 ? "سيتم إضافة هذا السؤال تلقائيًا لجميع الاختبارات البعدية في الدورات." : "لا توجد دورات تحتوي على اختبار بعدي بعد."}
               </div>
               <Input
                 value={newSurveyPrompt}
@@ -4380,8 +4467,8 @@ const Dashboard = () => {
                 placeholder="نص السؤال"
                 className="text-right"
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && newSurveyPrompt.trim() && satisfactionCourseId) {
-                    void store.addSatisfactionQuestion({ courseId: satisfactionCourseId, prompt: newSurveyPrompt.trim(), type: newSurveyType, isRequired: newSurveyRequired });
+                  if (e.key === "Enter" && newSurveyPrompt.trim() && satisfactionCourseItems.length > 0) {
+                    void store.addSatisfactionQuestion({ prompt: newSurveyPrompt.trim(), type: newSurveyType, isRequired: newSurveyRequired });
                     setSatisfactionAddDialogOpen(false);
                     setNewSurveyPrompt("");
                     setNewSurveyType("rating");
@@ -4402,10 +4489,18 @@ const Dashboard = () => {
                   </Select>
                 </div>
                 <label className="flex cursor-pointer items-center gap-2.5 text-sm font-medium text-foreground select-none">
-                  <Checkbox
-                    checked={newSurveyRequired}
-                    onCheckedChange={(v) => setNewSurveyRequired(Boolean(v))}
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={newSurveyRequired}
                     id="survey-required-dialog"
+                    onClick={() => setNewSurveyRequired((current) => !current)}
+                    className={cn(
+                      "h-5 w-5 shrink-0 rounded-full border transition-smooth",
+                      newSurveyRequired
+                        ? "border-primary bg-primary"
+                        : "border-primary bg-white",
+                    )}
                   />
                   <span>إلزامي</span>
                 </label>
@@ -4413,10 +4508,10 @@ const Dashboard = () => {
               <div className="flex justify-end gap-3">
                 <Button variant="outline" onClick={() => setSatisfactionAddDialogOpen(false)}>إلغاء</Button>
                 <Button
-                  disabled={!newSurveyPrompt.trim() || !satisfactionCourseId}
+                  disabled={!newSurveyPrompt.trim() || satisfactionCourseItems.length === 0}
                   onClick={async () => {
-                    if (!newSurveyPrompt.trim() || !satisfactionCourseId) return;
-                    await store.addSatisfactionQuestion({ courseId: satisfactionCourseId, prompt: newSurveyPrompt.trim(), type: newSurveyType, isRequired: newSurveyRequired });
+                    if (!newSurveyPrompt.trim() || satisfactionCourseItems.length === 0) return;
+                    await store.addSatisfactionQuestion({ prompt: newSurveyPrompt.trim(), type: newSurveyType, isRequired: newSurveyRequired });
                     setSatisfactionAddDialogOpen(false);
                     setNewSurveyPrompt("");
                     setNewSurveyType("rating");
@@ -4427,8 +4522,8 @@ const Dashboard = () => {
                 </Button>
               </div>
             </div>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
 
         {/* Preview text dialog */}
         <Dialog open={satisfactionPreviewText != null} onOpenChange={(open) => { if (!open) setSatisfactionPreviewText(null); }}>
@@ -4442,7 +4537,14 @@ const Dashboard = () => {
           </DialogContent>
         </Dialog>
 
-        {dashboardTab === "finalexam" && <AdminFinalExamTab canEdit={canCreateCourses} managedBranchId={managedBranchId} />}
+        {dashboardTab === "finalexam" && (
+          <AdminFinalExamTab
+            canEdit={canCreateCourses}
+            managedBranchId={managedBranchId}
+            selectedBranch={finalExamManageBranch}
+            onBranchChange={setFinalExamManageBranch}
+          />
+        )}
 
         {dashboardTab === "courses" && (
           <div className="space-y-6">
@@ -4665,7 +4767,7 @@ const Dashboard = () => {
                           })()
                         ))}
                       </div>
-                      <div className="flex items-center justify-between gap-3">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex justify-start gap-2">
                           {canCreateCourses && (
                             <>
@@ -6064,6 +6166,55 @@ const Dashboard = () => {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={finalExamCopyOpen} onOpenChange={setFinalExamCopyOpen}>
+        <DialogContent className="max-w-sm rounded-[1.75rem] p-0 text-right [&>button]:hidden">
+          <DialogHeader className="border-b border-border/60 px-6 py-5 text-right">
+            <DialogTitle className="text-right text-xl">نسخ الأسئلة إلى</DialogTitle>
+          </DialogHeader>
+          <p className="px-6 pt-4 text-sm text-muted-foreground">اختر الفرع الذي تريد نسخ أسئلة {branchLabels[effectiveFinalExamManageBranch]} إليه.</p>
+          <div className="grid grid-cols-2 gap-3 p-6">
+            {(["male", "female"] as BranchId[]).map((branchId) => (
+              <button
+                key={branchId}
+                type="button"
+                disabled={branchId === effectiveFinalExamManageBranch}
+                className={cn(
+                  "flex flex-col items-center gap-3 rounded-[1.25rem] border border-border/70 bg-muted/20 p-5 text-center transition-colors hover:border-primary/40 hover:bg-primary/5",
+                  branchId === effectiveFinalExamManageBranch && "cursor-not-allowed opacity-40",
+                )}
+                onClick={() => void handleCopyFinalExamQuestionsToBranch(branchId)}
+              >
+                <GraduationCap className="size-7 text-primary" />
+                <div className="text-sm font-bold text-foreground">{branchLabels[branchId]}</div>
+              </button>
+            ))}
+          </div>
+          <div className="flex justify-end border-t border-border/60 px-6 py-4">
+            <Button variant="outline" className="rounded-full px-5" onClick={() => setFinalExamCopyOpen(false)}>إلغاء</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={finalExamActivationDialogOpen} onOpenChange={setFinalExamActivationDialogOpen}>
+        <DialogContent className="max-w-sm rounded-[1.75rem] p-0 text-right [&>button]:hidden">
+          <DialogHeader className="border-b border-border/60 px-6 py-5 text-right">
+            <DialogTitle className="text-right text-xl">تفعيل الاختبار النهائي</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 px-6 py-5">
+            <p className="text-sm text-muted-foreground">حدد مدة فتح الاختبار لفرع {branchLabels[effectiveFinalExamManageBranch]} فقط.</p>
+            <div className="space-y-2">
+              <label className="text-sm font-bold text-foreground">المدة بالدقائق</label>
+              <Input value={finalExamActivationMinutes} onChange={(e) => setFinalExamActivationMinutes(e.target.value)} placeholder="60" className="h-11 rounded-2xl text-right" />
+            </div>
+            {finalExamActivationError && <p className="text-sm font-medium text-destructive">{finalExamActivationError}</p>}
+          </div>
+          <div className="flex justify-end gap-3 border-t border-border/60 px-6 py-4">
+            <Button variant="outline" className="rounded-full px-5" onClick={() => setFinalExamActivationDialogOpen(false)}>إلغاء</Button>
+            <Button className="rounded-full px-5" onClick={() => void handleActivateFinalExam()}>تفعيل</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={recitersOpen} onOpenChange={(open) => {
         setRecitersOpen(open);
         if (!open) {
@@ -6108,20 +6259,33 @@ const Dashboard = () => {
                       const checked = reciterForm.studentIds.includes(student.id);
 
                       return (
-                        <label key={student.id} className="flex cursor-pointer items-center justify-between rounded-2xl border border-border/60 bg-muted/10 px-3 py-2 text-right transition-smooth hover:border-primary/25 hover:bg-primary/5">
+                        <button
+                          key={student.id}
+                          type="button"
+                          onClick={() => {
+                            setReciterForm((current) => ({
+                              ...current,
+                              studentIds: checked
+                                ? current.studentIds.filter((currentStudentId) => currentStudentId !== student.id)
+                                : [...new Set([...current.studentIds, student.id])],
+                            }));
+                          }}
+                          className={cn(
+                            "flex w-full items-center justify-between rounded-2xl border px-3 py-2 text-right transition-smooth",
+                            checked
+                              ? "border-primary/35 bg-primary/10"
+                              : "border-border/60 bg-muted/10 hover:border-primary/25 hover:bg-primary/5",
+                          )}
+                        >
                           <div className="text-sm font-medium text-foreground">{student.name}</div>
-                          <Checkbox
-                            checked={checked}
-                            onCheckedChange={(value) => {
-                              setReciterForm((current) => ({
-                                ...current,
-                                studentIds: value
-                                  ? [...new Set([...current.studentIds, student.id])]
-                                  : current.studentIds.filter((currentStudentId) => currentStudentId !== student.id),
-                              }));
-                            }}
+                          <span
+                            className={cn(
+                              "flex h-5 w-5 shrink-0 rounded-full border-2 transition-colors",
+                              checked ? "border-primary bg-primary" : "border-primary/70 bg-transparent",
+                            )}
+                            aria-hidden="true"
                           />
-                        </label>
+                        </button>
                       );
                     })}
                   </div>

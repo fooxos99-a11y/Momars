@@ -548,9 +548,12 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
               <Card className="relative mt-6 overflow-hidden rounded-[2rem] border border-white/80 bg-white shadow-[0_24px_70px_rgba(8,65,89,0.16)] backdrop-blur-xl">
                 <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-primary/10 via-primary/5 to-transparent" aria-hidden />
                 <CardContent className="relative space-y-5 px-4 pb-5 pt-5 sm:px-6 sm:pb-6 sm:pt-6">
-                  <div className="space-y-1 text-right">
-                    <div className="text-xl font-extrabold text-foreground">استبيان الرضا</div>
-                    <div className="text-sm text-muted-foreground">آراؤك تساعدنا في تحسين البرنامج. الاستبيان لا يؤثر على درجاتك.</div>
+                  <div className="space-y-3 text-right">
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <Badge className="border border-primary/15 bg-primary/10 text-primary hover:bg-primary/10">قسم مستقل</Badge>
+                      <div className="text-xl font-extrabold text-foreground">استبيان الرضا بعد الاختبار</div>
+                    </div>
+                    <div className="text-sm text-muted-foreground">يظهر هذا الاستبيان بعد إرسال الاختبار البعدي، لكنه منفصل تمامًا ولا يدخل في الدرجة أو تقييم الاختبار.</div>
                   </div>
                   {satisfactionQuestions.map((question, index) => (
                     <div key={question.id} className="rounded-[1.75rem] border border-primary/10 bg-[#f6fbfd] p-4 shadow-[0_10px_30px_rgba(8,65,89,0.06)] sm:p-5">

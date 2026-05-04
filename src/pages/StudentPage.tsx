@@ -39,7 +39,7 @@ const studentMenu = [
   { id: "finalexam", label: "الاختبار النهائي", icon: GraduationCap },
   { id: "attendance", label: "التحضير", icon: Users },
   { id: "reading", label: "القراءة", icon: BookOpen },
-  { id: "notifications", label: "التنبيهات", icon: Bell },
+  { id: "notifications", label: "الإشعارات", icon: Bell },
 ] as const;
 
 const StudentPage = () => {
@@ -140,6 +140,11 @@ const StudentPage = () => {
     return data.reciters.find((reciter) => reciter.studentIds.includes(student.id)) ?? null;
   }, [data.reciters, databaseAssignedReciter, student]);
 
+  const sortedCourses = useMemo(
+    () => [...getCourses(data)].sort((left, right) => left.sortOrder - right.sortOrder),
+    [data],
+  );
+
   const getSubmissionGrade = (courseId: string, assessmentType: AssessmentType, submissionId: string) => {
     const submission = data.submissions.find((item) => item.id === submissionId);
     const course = data.courses.find((item) => item.id === courseId);
@@ -184,7 +189,7 @@ const StudentPage = () => {
       return [];
     }
 
-    return getCourses(data).map((course) => {
+    return sortedCourses.map((course) => {
       const rows = (["pre", "post"] as const).map((assessmentType) => {
         const submission = data.submissions
           .filter(
@@ -210,7 +215,7 @@ const StudentPage = () => {
         rows,
       };
     });
-  }, [data, data.submissions, student]);
+  }, [data, data.submissions, sortedCourses, student]);
 
   const studentNotifications = useMemo(() => {
     if (!student) {
@@ -241,7 +246,7 @@ const StudentPage = () => {
 
   const preRows = useMemo(() => {
     if (!student) return [];
-    return getCourses(data).map((course) => {
+    return sortedCourses.map((course) => {
       const submission = data.submissions
         .filter((s) => s.courseId === course.id && s.assessmentType === "pre" && s.loginId === student.loginId)
         .sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime())[0] ?? null;
@@ -250,11 +255,11 @@ const StudentPage = () => {
         : { score: 0, total: course.preQuestions.reduce((s, q) => s + q.points, 0) };
       return { course, submission, score: grade.score, total: grade.total };
     });
-  }, [data, data.submissions, student]);
+  }, [data, data.submissions, sortedCourses, student]);
 
   const postRows = useMemo(() => {
     if (!student) return [];
-    return getCourses(data).map((course) => {
+    return sortedCourses.map((course) => {
       const submission = data.submissions
         .filter((s) => s.courseId === course.id && s.assessmentType === "post" && s.loginId === student.loginId)
         .sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime())[0] ?? null;
@@ -263,7 +268,7 @@ const StudentPage = () => {
         : { score: 0, total: course.postQuestions.reduce((s, q) => s + q.points, 0) };
       return { course, submission, score: grade.score, total: grade.total };
     });
-  }, [data, data.submissions, student]);
+  }, [data, data.submissions, sortedCourses, student]);
 
   const tasksRows = useMemo(() => {
     if (!student) return [];
@@ -280,13 +285,13 @@ const StudentPage = () => {
 
   const attendanceRows = useMemo(() => {
     if (!student) return [];
-    return getCourses(data).map((course) => {
+    return sortedCourses.map((course) => {
       const present = data.attendance.some(
         (r) => r.courseId === course.id && r.loginId === student.loginId,
       );
       return { course, present };
     });
-  }, [data, data.attendance, student]);
+  }, [data, data.attendance, sortedCourses, student]);
 
   const { pushPermission, requestPushPermission, isPushRegistered, pushStatusNote } = usePushNotifications(studentLoginId || null);
 
@@ -323,12 +328,12 @@ const StudentPage = () => {
         <aside className="sticky top-0 hidden h-screen w-[320px] shrink-0 border-l border-white/60 bg-white/95 shadow-[10px_0_35px_rgba(15,23,42,0.04)] lg:block">
           <div className="flex h-full flex-col bg-white">
             <div className="border-b border-border/60 px-4 py-5 text-right">
-              <div className="flex w-full items-center justify-start gap-3">
+              <Link to="/" className="flex w-full items-center justify-start gap-3">
                 <img src="/اللوقو-شفاف.png" alt="شعار المنصة" className="site-logo site-logo-scrolled h-14 w-auto object-contain" />
                 <div className="text-right">
                   <p className="whitespace-nowrap text-base font-extrabold leading-tight text-foreground">لوحة الطالب</p>
                 </div>
-              </div>
+              </Link>
             </div>
 
             <div className="flex-1 overflow-y-auto px-4 py-5 text-right">
@@ -566,7 +571,7 @@ const StudentPage = () => {
                           {pushPermission === "granted" && isPushRegistered ? (
                             <><BellRing className="size-3.5" /> إشعارات الجوال مفعّلة</>
                           ) : (
-                            <><Bell className="size-3.5" /> تفعيل إشعارات الجوال</>
+                            <><Bell className="size-3.5" /> تفعيل الإشعارات</>
                           )}
                         </Button>
                       )}
