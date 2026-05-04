@@ -32,7 +32,7 @@ const Hero = () => {
               <img
                 src="/شعار-الجمعية.png"
                 alt="شعار الجمعية"
-                className="h-20 w-auto rounded-xl object-contain sm:h-24 md:h-28"
+                className="site-logo site-logo-top h-20 w-auto object-contain sm:h-24 md:h-28"
               />
             </div>
             <div className="mx-auto mb-8 h-1 w-24 rounded-full bg-primary-foreground/70" />

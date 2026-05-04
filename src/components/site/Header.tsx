@@ -60,7 +60,7 @@ const Header = () => {
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
     onScroll();
-    window.addEventListener("scroll", onScroll);
+    window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
@@ -171,12 +171,12 @@ const Header = () => {
           <img
             src="/اللوقو-شفاف.png"
             alt="شعار برنامج رخصة ممارس"
-            className={`site-logo h-8 w-auto md:h-9 ${scrolled ? "site-logo-scrolled" : "site-logo-top"}`}
+            className={`site-logo h-9 w-9 object-contain md:h-10 md:w-10 ${scrolled ? "site-logo-scrolled" : "site-logo-top"}`}
           />
           <img
             src="/شعار-الجمعية.png"
             alt="شعار الجمعية"
-            className="h-8 w-auto rounded-lg object-contain md:h-9"
+            className={`site-logo h-9 w-9 object-contain md:h-10 md:w-10 ${scrolled ? "site-logo-scrolled" : "site-logo-top"}`}
           />
           <div className={`text-right leading-tight ${scrolled ? "text-foreground" : "text-white"}`}>
             <div className="text-[0.82rem] font-extrabold md:text-[1.02rem]">برنامج رخصة ممارس</div>
