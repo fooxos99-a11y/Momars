@@ -19,7 +19,7 @@ export interface ManualGradesDialogProps {
   onSave: (
     courseId: string,
     assessmentType: AssessmentType,
-    rows: Array<{ studentName: string; loginId: string; score: number }>,
+    rows: Array<{ studentName: string; loginId: string; score: number | null }>,
   ) => Promise<void>;
 }
 
@@ -97,9 +97,13 @@ export const ManualGradesDialog = ({
       const rows = branchStudents.map((student) => ({
         studentName: student.name,
         loginId: student.loginId,
-        score: scores[student.loginId] === "" || scores[student.loginId] === undefined
-          ? 0
-          : Number(scores[student.loginId]),
+        score: isTaskCourse
+          ? scores[student.loginId] === "1"
+            ? 1
+            : null
+          : scores[student.loginId] === "" || scores[student.loginId] === undefined
+            ? 0
+            : Number(scores[student.loginId]),
       }));
       await onSave(courseId, assessmentType, rows);
       onOpenChange(false);
@@ -190,6 +194,19 @@ export const ManualGradesDialog = ({
 
           {courseId && branchStudents.length > 0 && (
             <div className="overflow-x-auto rounded-[1.25rem] border border-border/60 bg-white">
+              {isTaskCourse && (
+                <div className="flex justify-end border-b border-border/60 px-4 py-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full px-4"
+                    onClick={() => setScores((prev) => Object.fromEntries(branchStudents.map((student) => [student.loginId, prev[student.loginId] === "1" ? "0" : "1"]))))}
+                  >
+                    {branchStudents.every((student) => scores[student.loginId] === "1") ? "إلغاء تنفيذ الكل" : "تنفيذ للكل"}
+                  </Button>
+                </div>
+              )}
               <Table className="min-w-[360px]">
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">

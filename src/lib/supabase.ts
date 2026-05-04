@@ -1095,6 +1095,11 @@ export const bulkUpsertSubmissionsToDatabase = async (
 
   const normalizedSubmissions = [...dedupedByLogin.values()];
   const loginIds = normalizedSubmissions.map((submission) => submission.loginId);
+  const actionableSubmissions = normalizedSubmissions.filter((submission) => {
+    const hasManualScore = typeof submission.manualScore === "number" && Number.isFinite(submission.manualScore) && submission.manualScore >= 0;
+    const hasAnswers = submission.answers.some((answer) => answer.questionId !== "__score_override__" && Boolean(answer.value?.trim() || answer.fileDataUrl));
+    return hasManualScore || hasAnswers;
+  });
 
   /* 1) delete existing submissions for these students in one batch */
   const { data: existingSubmissions, error: existingError } = await supabase
@@ -1123,11 +1128,15 @@ export const bulkUpsertSubmissionsToDatabase = async (
     if (deleteSubmissionsError) throw deleteSubmissionsError;
   }
 
+  if (actionableSubmissions.length === 0) {
+    return [];
+  }
+
   /* 2) resolve student ids in one batch */
   const { data: studentRows, error: studentsError } = await supabase
     .from("students")
     .select("id, login_code")
-    .in("login_code", loginIds);
+    .in("login_code", actionableSubmissions.map((submission) => submission.loginId));
   if (studentsError) throw studentsError;
 
   const studentIdByLogin = new Map<string, string>();
@@ -1136,7 +1145,7 @@ export const bulkUpsertSubmissionsToDatabase = async (
   }
 
   /* 3) insert submissions in one batch */
-  const submissionsPayload = normalizedSubmissions.map((submission) => ({
+  const submissionsPayload = actionableSubmissions.map((submission) => ({
     course_id: courseId,
     assessment_type: assessmentType,
     student_id: studentIdByLogin.get(submission.loginId) ?? null,

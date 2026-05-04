@@ -1094,6 +1094,11 @@ const useCreateDashboardStore = () => {
     ) => {
       const previousSubmissions = data.submissions;
       const affectedLoginIds = new Set(submissions.map((s) => s.loginId));
+      const actionableSubmissions = submissions.filter((submission) => {
+        const hasManualScore = typeof submission.manualScore === "number" && Number.isFinite(submission.manualScore) && submission.manualScore >= 0;
+        const hasAnswers = submission.answers.some((answer) => answer.questionId !== "__score_override__" && Boolean(answer.value?.trim() || answer.fileDataUrl));
+        return hasManualScore || hasAnswers;
+      });
 
       /* Helper: embed __score_override__ in answers so the score survives even if
          manualScore field is lost (e.g. column missing, future refetch, revert). */
@@ -1113,7 +1118,7 @@ const useCreateDashboardStore = () => {
           (s) => !(s.courseId === courseId && s.assessmentType === assessmentType && affectedLoginIds.has(s.loginId)),
         );
         const now = new Date().toISOString();
-        const newSubmissions = submissions.map((sub) => {
+        const newSubmissions = actionableSubmissions.map((sub) => {
           return {
             id: createId(),
             courseId,
@@ -1137,7 +1142,7 @@ const useCreateDashboardStore = () => {
             (s) => !(s.courseId === courseId && s.assessmentType === assessmentType && affectedLoginIds.has(s.loginId)),
           );
           const syncedSubmissions = inserted.map((res) => {
-            const sub = submissions.find((s) => s.loginId === res.loginId)!;
+            const sub = actionableSubmissions.find((s) => s.loginId === res.loginId)!;
             return {
               id: res.id,
               courseId,

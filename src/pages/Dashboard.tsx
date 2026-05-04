@@ -3020,7 +3020,7 @@ const Dashboard = () => {
                 {dashboardTab === "home" && (
                   <div className="min-w-[140px]">
                     <Select value={homeBranchFilter} onValueChange={(value) => setHomeBranchFilter(value as IndicatorsBranchFilter)}>
-                      <SelectTrigger className="h-11 rounded-full border-border/60 bg-white px-4 text-right [&>span]:text-right">
+                      <SelectTrigger className="h-11 flex-row-reverse rounded-full border-border/60 bg-white px-4 text-right [&>span]:text-right">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent className="text-right">
@@ -3139,7 +3139,7 @@ const Dashboard = () => {
                   <h3 className="text-[0.95rem] font-bold text-foreground">تفصيل حسب الدورة</h3>
                   <div className="w-full sm:w-[280px]">
                     <Select value={homeCourseFilter} onValueChange={setHomeCourseFilter}>
-                      <SelectTrigger className="h-11 rounded-full border-border/60 bg-white px-4 text-right [&>span]:text-right">
+                      <SelectTrigger className="h-11 flex-row-reverse rounded-full border-border/60 bg-white px-4 text-right [&>span]:text-right">
                         <SelectValue placeholder="اختر الدورة" />
                       </SelectTrigger>
                       <SelectContent className="text-right">
@@ -3160,33 +3160,40 @@ const Dashboard = () => {
                   ).map((course) => {
                     const courseRise = course.postAvg - course.preAvg;
                     const riseMagnitude = Math.abs(courseRise);
+                    const isRisePositive = courseRise > 0;
+                    const isRiseNegative = courseRise < 0;
 
                     return (
                       <div key={course.id} className="rounded-[1.75rem] border border-white/70 bg-white/75 px-5 py-6 shadow-[0_18px_45px_rgba(15,23,42,0.05)] backdrop-blur-sm">
                         <div className="mb-5 text-right text-base font-extrabold text-[#08384a]">{course.title}</div>
-                        <div className="grid grid-cols-1 gap-6 sm:grid-cols-3 sm:gap-4 lg:gap-6">
+                        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 sm:gap-6 lg:gap-10">
                           <ProgramIndicatorRing
                             label="القبلي"
                             progressValue={course.preAvg}
                             displayValue={course.preAvg}
                             suffix="%"
-                            size="small"
                           />
-                          <ProgramIndicatorRing
-                            label="البعدي"
-                            progressValue={course.postAvg}
-                            displayValue={course.postAvg}
-                            suffix="%"
-                            size="small"
-                          />
-                          <ProgramIndicatorRing
-                            label="نسبة التطور"
-                            progressValue={riseMagnitude}
-                            displayValue={riseMagnitude}
-                            suffix="%"
-                            size="small"
-                            formatDisplay={(value) => `${courseRise > 0 ? "+" : courseRise < 0 ? "-" : ""}${Math.round(value)}%`}
-                          />
+                          <div className="flex flex-col items-center gap-3 text-center">
+                            <div className="flex items-center justify-center gap-3 sm:gap-4">
+                              <ProgramIndicatorRing
+                                label="البعدي"
+                                progressValue={course.postAvg}
+                                displayValue={course.postAvg}
+                                suffix="%"
+                              />
+                              <div
+                                className={cn(
+                                  "inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-black shadow-sm",
+                                  isRisePositive && "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
+                                  isRiseNegative && "bg-rose-50 text-rose-700 ring-1 ring-rose-200",
+                                  !isRisePositive && !isRiseNegative && "bg-slate-50 text-slate-600 ring-1 ring-slate-200",
+                                )}
+                              >
+                                {isRisePositive ? <TrendingUp className="size-4" /> : isRiseNegative ? <TrendingDown className="size-4" /> : <Minus className="size-4" />}
+                                <span>{`${Math.round(riseMagnitude)}%`}</span>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     );
@@ -5466,7 +5473,7 @@ const Dashboard = () => {
             rows.map((r) => ({
               studentName: r.studentName,
               loginId: r.loginId,
-              answers: aType === "tasks" ? [] : [{ questionId: "__score_override__", value: String(r.score) }],
+              answers: aType === "tasks" ? [] : [{ questionId: "__score_override__", value: String(r.score ?? 0) }],
               manualScore: r.score,
             })),
           );
