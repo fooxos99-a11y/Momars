@@ -475,22 +475,36 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
     createdAt: (template.created_at as string | null) ?? new Date().toISOString(),
   }));
 
-  const normalizedSubmissions = (submissionsResponse.data ?? []).map((submission) => ({
-    id: submission.id as string,
-    courseId: submission.course_id as string,
-    assessmentType: submission.assessment_type as AssessmentType,
-    studentName: submission.student_name as string,
-    loginId: submission.login_code as string,
-    manualScore: (() => {
+  const normalizedSubmissions = (submissionsResponse.data ?? []).map((submission) => {
+    const manualScore = (() => {
       const value = (submission as { manual_score?: unknown }).manual_score;
       if (value === null) return null;
       if (typeof value === "number" && Number.isFinite(value)) return value;
       const parsed = Number(value);
       return Number.isFinite(parsed) ? parsed : undefined;
-    })(),
-    answers: answersBySubmissionId.get(submission.id as string) ?? [],
-    submittedAt: (submission.submitted_at as string) ?? new Date().toISOString(),
-  }));
+    })();
+
+    const rawAnswers = answersBySubmissionId.get(submission.id as string) ?? [];
+
+    // If manual_score is stored in DB, ensure __score_override__ is in memory answers
+    // so getSubmissionGrade always finds it even if manualScore field is somehow lost.
+    let answers = rawAnswers;
+    if (typeof manualScore === "number" && Number.isFinite(manualScore) && manualScore >= 0) {
+      const withoutOverride = rawAnswers.filter((a) => a.questionId !== "__score_override__");
+      answers = [...withoutOverride, { questionId: "__score_override__", value: String(manualScore) }];
+    }
+
+    return {
+      id: submission.id as string,
+      courseId: submission.course_id as string,
+      assessmentType: submission.assessment_type as AssessmentType,
+      studentName: submission.student_name as string,
+      loginId: submission.login_code as string,
+      manualScore,
+      answers,
+      submittedAt: (submission.submitted_at as string) ?? new Date().toISOString(),
+    };
+  });
 
   const normalizedAttendance = (attendanceResponse.data ?? []).map((attendance) => ({
     id: attendance.id as string,
