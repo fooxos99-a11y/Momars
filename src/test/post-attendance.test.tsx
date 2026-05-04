@@ -1,4 +1,4 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
+﻿import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useDashboardStore, type DashboardData } from "@/lib/dashboard-store";
 
@@ -48,8 +48,8 @@ const seedData: DashboardData = {
     { id: "student", label: "طالب" },
   ],
   branches: [
-    { id: "male", label: "رجالي" },
-    { id: "female", label: "نسائي" },
+    { id: "male", label: "معلمين" },
+    { id: "female", label: "معلمات" },
   ],
   students: [
     {

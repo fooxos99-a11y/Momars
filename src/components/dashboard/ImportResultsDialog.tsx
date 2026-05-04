@@ -573,7 +573,7 @@ export const ImportResultsDialog = ({
         {/* Header */}
         <DialogHeader className="flex-shrink-0 border-b border-border/60 px-6 py-4">
           <div className="flex items-center justify-between">
-            <DialogTitle className="text-xl">رفع الدرجات بشكل يدوي</DialogTitle>
+            <DialogTitle className="text-xl">تعديل البيانات</DialogTitle>
             <Button
               variant="ghost"
               size="sm"

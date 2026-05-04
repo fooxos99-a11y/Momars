@@ -1,9 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Link, Navigate, useNavigate } from "react-router-dom";
-import { AlertCircle, ArrowRightLeft, BarChart3, Bell, BookOpen, Copy, Database, Download, Eye, EyeOff, FilePen, FileText, FileUp, Info, LayoutPanelTop, Maximize2, Menu, Pencil, Plus, Power, Trash2, Users } from "lucide-react";
+import { AlertCircle, ArrowRightLeft, BarChart3, Bell, BookOpen, Copy, Database, Download, Eye, EyeOff, FilePen, FileText, FileUp, GraduationCap, Home, Info, LayoutPanelTop, Maximize2, Menu, Minus, Pencil, Plus, Power, ShieldCheck, SquarePen, Trash2, TrendingDown, TrendingUp, Users } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,13 +30,16 @@ import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import AdminTasksTab from "@/components/dashboard/AdminTasksTab";
 import ImportResultsDialog, { type ImportRow } from "@/components/dashboard/ImportResultsDialog";
+import ManualGradesDialog from "@/components/dashboard/ManualGradesDialog";
 import {
   type AssessmentType,
   type AttendanceRecord,
   type BranchId,
   type CourseQuestion,
+  type PermissionKey,
   getAssessmentAvailabilityDeadline,
   getDefaultAssessmentNotificationTemplate,
   getManagedBranchId,
@@ -83,8 +86,8 @@ const sendPushNotification = (title: string, message: string, loginCodes: string
 const parts = Array.from({ length: 30 }, (_, index) => index + 1);
 
 const branchLabels: Record<BranchId, string> = {
-  male: "رجالي",
-  female: "نسائي",
+  male: "معلمين",
+  female: "معلمات",
 };
 
 type IndicatorsBranchFilter = BranchId | "all";
@@ -205,6 +208,7 @@ type PreviewAttachment = {
 
 const RECITER_FILTER_ALL_STUDENTS = "all-students";
 const RECITER_FILTER_ALL_RECITERS = "all-reciters";
+const RECITER_FILTER_CERTIFIED = "certified";
 
 const normalizeAnswer = (value: string) => value
   .trim()
@@ -394,14 +398,17 @@ const parseBulkStudentsFromWorksheet = (rows: unknown[][], defaultBranchId: Bran
 };
 
 const dashboardMenu = [
-  { id: "courses", label: "الدورات", icon: Database, hint: "المحتوى والروابط" },
-  { id: "tasks", label: "التكاليف", icon: Copy, hint: "تكاليف مستقلة" },
+  { id: "home", label: "الرئيسية", icon: Home, hint: "نظرة عامة شاملة" },
+  { id: "courses", label: "الإختبارات", icon: Database, hint: "المحتوى والروابط" },
+  { id: "finalexam", label: "الاختبار النهائي", icon: GraduationCap, hint: "اختبار نهائي لكل فرع" },
+  { id: "tasks", label: "المهام الأدائية", icon: Copy, hint: "تكاليف مستقلة" },
   { id: "attendance", label: "التحضير", icon: Users, hint: "تحضير الطلاب" },
   { id: "notifications", label: "الإشعارات", icon: Bell, hint: "إرسال التنبيهات" },
   { id: "reciters", label: "الإقراء", icon: BookOpen, hint: "إدارة الحسابات" },
-  { id: "students", label: "الطلاب", icon: Users, hint: "إدارة الطلاب" },
-  { id: "indicators", label: "المؤشرات", icon: LayoutPanelTop, hint: "مؤشرات الأداء" },
+  { id: "students", label: "المتدربين", icon: Users, hint: "إدارة الطلاب" },
+  { id: "indicators", label: "الإحصائيات", icon: LayoutPanelTop, hint: "مؤشرات الأداء" },
   { id: "results", label: "النتائج", icon: BarChart3, hint: "الحضور والتقييم" },
+  { id: "permissions", label: "الصلاحيات", icon: ShieldCheck, hint: "صلاحيات المسؤولين" },
 ] as const;
 
 const dashboardCardClass = "rounded-[1.5rem] border-white/80 bg-white/95 shadow-[0_18px_45px_rgba(15,23,42,0.05)]";
@@ -495,7 +502,7 @@ const Dashboard = () => {
 
   const store = useDashboardStore();
   const { data, loadError } = store;
-  const [dashboardTab, setDashboardTab] = useState<"students" | "reciters" | "reader" | "courses" | "tasks" | "attendance" | "notifications" | "indicators" | "results" | "statistics">("courses");
+  const [dashboardTab, setDashboardTab] = useState<"home" | "students" | "reciters" | "reader" | "courses" | "tasks" | "attendance" | "notifications" | "indicators" | "results" | "statistics">("home");
   const [studentsOpen, setStudentsOpen] = useState(false);
   const [studentEntryMode, setStudentEntryMode] = useState<"single" | "bulk">("single");
   const [selectedBranch, setSelectedBranch] = useState<IndicatorsBranchFilter>(managedBranchId ?? "male");
@@ -531,6 +538,21 @@ const Dashboard = () => {
   const [courseTitle, setCourseTitle] = useState("");
   const [courseError, setCourseError] = useState("");
   const [courseEditOpen, setCourseEditOpen] = useState(false);
+  const [coursesManageOpen, setCoursesManageOpen] = useState(false);
+  const [satisfactionOpen, setSatisfactionOpen] = useState(false);
+  const [satisfactionTab, setSatisfactionTab] = useState<"questions" | "results">("questions");
+  const [satisfactionResultsCourseId, setSatisfactionResultsCourseId] = useState("");
+  const [newSurveyPrompt, setNewSurveyPrompt] = useState("");
+  const [newSurveyType, setNewSurveyType] = useState<"rating" | "text">("rating");
+  const [newSurveyRequired, setNewSurveyRequired] = useState(true);
+
+  // Final exam state
+  const [finalExamBranch, setFinalExamBranch] = useState<BranchId>("male");
+  const [finalExamQuestionForm, setFinalExamQuestionForm] = useState({ prompt: "", type: "multiple" as "multiple" | "text" | "truefalse", optionsText: "", points: "1", correctAnswer: "", allowFile: "no" as "yes" | "no" });
+  const [finalExamQuestionError, setFinalExamQuestionError] = useState("");
+  const [finalExamSplitText, setFinalExamSplitText] = useState("");
+  const [finalExamCopyConfirm, setFinalExamCopyConfirm] = useState<null | { from: BranchId; to: BranchId; move: boolean }>(null);
+  const [finalExamScoreEdit, setFinalExamScoreEdit] = useState<{ submissionId: string; value: string } | null>(null);
   const [courseEditForm, setCourseEditForm] = useState(emptyCourseEditForm);
   const [courseEditError, setCourseEditError] = useState("");
   const [selectedCourseId, setSelectedCourseId] = useState("");
@@ -553,11 +575,15 @@ const Dashboard = () => {
   const [resultsBranchId, setResultsBranchId] = useState<IndicatorsBranchFilter>("male");
   const [resultsType, setResultsType] = useState<"attendance" | AssessmentType>("attendance");
   const [resultsAttendanceFilter, setResultsAttendanceFilter] = useState<"all" | "present" | "absent" | "frequent-absent">("all");
+  const [homeBranchFilter, setHomeBranchFilter] = useState<IndicatorsBranchFilter>("all");
   const [indicatorsBranchId, setIndicatorsBranchId] = useState<IndicatorsBranchFilter>("all");
   const [indicatorsCourseId, setIndicatorsCourseId] = useState("all");
+  const [courseIndicatorsBranch, setCourseIndicatorsBranch] = useState<BranchId>("male");
+  const [courseIndicatorsCourseId, setCourseIndicatorsCourseId] = useState("");
   const [showSummaryIndicators, setShowSummaryIndicators] = useState(true);
   const [detailsSubmissionId, setDetailsSubmissionId] = useState<string | null>(null);
   const [importResultsOpen, setImportResultsOpen] = useState(false);
+  const [manualGradesOpen, setManualGradesOpen] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<PreviewAttachment | null>(null);
   const [courseLinksOpen, setCourseLinksOpen] = useState(false);
   const [notifTemplatesOpen, setNotifTemplatesOpen] = useState(false);
@@ -589,16 +615,31 @@ const Dashboard = () => {
   const [allStudentsReciterOrder, setAllStudentsReciterOrder] = useState<string[]>([]);
   const effectiveSelectedBranch = managedBranchId ?? selectedBranch;
   const effectiveReciterBranchFilter = managedBranchId ?? reciterBranchFilter;
-  const availableDashboardMenu = dashboardMenu.filter((item) => canManageStandaloneTasks || item.id !== "tasks");
+
+  const hasPermission = (key: PermissionKey): boolean => {
+    if (session.role === "admin") return true;
+    const rolePerms = data.rolePermissions[session.role] ?? {};
+    return (rolePerms[key] as boolean | undefined) ?? true;
+  };
+
+  const availableDashboardMenu = dashboardMenu.filter((item) => {
+    if (!canManageStandaloneTasks && item.id === "tasks") return false;
+    if (session.role !== "admin" && item.id === "permissions") return false;
+    if (!hasPermission("page_notifications") && item.id === "notifications") return false;
+    if (!hasPermission("page_results") && item.id === "results") return false;
+    return true;
+  });
   const branchStudents = effectiveSelectedBranch === "all" ? data.students : getBranchStudents(data, effectiveSelectedBranch);
   const branchReciters = useMemo(
     () => data.reciters.filter((reciter) => reciter.branchId === effectiveReciterBranchFilter),
     [data.reciters, effectiveReciterBranchFilter],
   );
-  const isAllStudentsReciterView = selectedReciterFilter === RECITER_FILTER_ALL_STUDENTS;
+  const isAllStudentsReciterView = selectedReciterFilter === RECITER_FILTER_ALL_STUDENTS || selectedReciterFilter === RECITER_FILTER_CERTIFIED;
+  const isCertifiedReciterView = selectedReciterFilter === RECITER_FILTER_CERTIFIED;
   const isSpecificReciterView = (
     selectedReciterFilter !== RECITER_FILTER_ALL_STUDENTS &&
-    selectedReciterFilter !== RECITER_FILTER_ALL_RECITERS
+    selectedReciterFilter !== RECITER_FILTER_ALL_RECITERS &&
+    selectedReciterFilter !== RECITER_FILTER_CERTIFIED
   );
   const showReciterProgressColumn = selectedReciterFilter !== RECITER_FILTER_ALL_RECITERS;
   const filteredReciters = useMemo(
@@ -606,6 +647,7 @@ const Dashboard = () => {
       .filter((reciter) => (
         selectedReciterFilter === RECITER_FILTER_ALL_STUDENTS ||
         selectedReciterFilter === RECITER_FILTER_ALL_RECITERS ||
+        selectedReciterFilter === RECITER_FILTER_CERTIFIED ||
         reciter.id === selectedReciterFilter
       ))
       .sort((left, right) => {
@@ -652,9 +694,13 @@ const Dashboard = () => {
       return [];
     }
 
+    const base = isCertifiedReciterView
+      ? sortedReciterStudentRows.filter(({ student }) => student.isCertified)
+      : sortedReciterStudentRows;
+
     const orderIndex = new Map(allStudentsReciterOrder.map((rowId, index) => [rowId, index]));
 
-    return [...sortedReciterStudentRows].sort((left, right) => {
+    return [...base].sort((left, right) => {
       const leftKey = `${left.reciter.id}:${left.student.id}`;
       const rightKey = `${right.reciter.id}:${right.student.id}`;
       const leftIndex = orderIndex.get(leftKey);
@@ -674,7 +720,7 @@ const Dashboard = () => {
 
       return leftIndex - rightIndex;
     });
-  }, [allStudentsReciterOrder, isAllStudentsReciterView, sortedReciterStudentRows]);
+  }, [allStudentsReciterOrder, isAllStudentsReciterView, isCertifiedReciterView, sortedReciterStudentRows]);
 
   useEffect(() => {
     if (!isAllStudentsReciterView) {
@@ -866,12 +912,13 @@ const Dashboard = () => {
       setReciterBranchFilter(managedBranchId);
       setStudentForm((current) => ({ ...current, branchId: managedBranchId }));
       setReciterForm((current) => ({ ...current, branchId: managedBranchId }));
+      setFinalExamBranch(managedBranchId);
     }
   }, [managedBranchId]);
 
   useEffect(() => {
     if (!availableDashboardMenu.some((item) => item.id === dashboardTab)) {
-      setDashboardTab(availableDashboardMenu[0]?.id ?? "courses");
+      setDashboardTab(availableDashboardMenu[0]?.id ?? "home");
     }
   }, [availableDashboardMenu, dashboardTab]);
 
@@ -2141,7 +2188,9 @@ const Dashboard = () => {
     </div>
   );
 
-  const renderQuestionsList = (assessmentType: AssessmentType, questions: CourseQuestion[]) => (
+  const renderQuestionsList = (assessmentType: AssessmentType, questions: CourseQuestion[]) => {
+    const permKey: PermissionKey = assessmentType === "pre" ? "edit_pre_questions" : assessmentType === "post" ? "edit_post_questions" : "edit_tasks";
+    return (
     <div className="space-y-3">
       {questions.length === 0 && (
         <div className={cn(dashboardEmptyStateClass, "p-4 text-sm text-muted-foreground")}>
@@ -2154,9 +2203,11 @@ const Dashboard = () => {
             <div>
               <div className="font-bold text-foreground">{index + 1}. {question.prompt} <span className="text-sm font-medium text-muted-foreground">• الدرجة: {question.points}</span></div>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => store.deleteQuestion(selectedCourse!.id, assessmentType, question.id)}>
-              حذف
-            </Button>
+            {hasPermission(permKey) && (
+              <Button variant="ghost" size="sm" onClick={() => store.deleteQuestion(selectedCourse!.id, assessmentType, question.id)}>
+                حذف
+              </Button>
+            )}
           </div>
           {question.type === "multiple" && (
             <div className="space-y-2 pt-2 text-sm text-foreground">
@@ -2168,7 +2219,8 @@ const Dashboard = () => {
         </div>
       ))}
     </div>
-  );
+    );
+  };
 
   const getAssessmentQuestionsForCourse = (courseId: string, assessmentType: AssessmentType) => {
     const course = data.courses.find((item) => item.id === courseId);
@@ -2539,6 +2591,85 @@ const Dashboard = () => {
     };
   }, [courseItems, data.attendance, data.courses, data.submissions, indicatorStudents, reciterByStudentId, indicatorsCourseId, indicatorsBranchId]);
 
+  const courseIndicatorsMetrics = useMemo(() => {
+    if (!courseIndicatorsCourseId) return null;
+    const course = courseItems.find((c) => c.id === courseIndicatorsCourseId);
+    if (!course) return null;
+
+    const branchStudents = getBranchStudents(data, courseIndicatorsBranch);
+    const branchLoginIds = new Set(branchStudents.map((s) => s.loginId));
+
+    const calcAssessment = (type: AssessmentType) => {
+      const latestByLoginId = getLatestSubmissionByLoginId(course.id, type);
+      const branchSubmissions = [...latestByLoginId.values()].filter((s) => branchLoginIds.has(s.loginId));
+      const scorers = branchSubmissions.filter((s) => {
+        const grade = getSubmissionGrade(course.id, type, s.id);
+        return grade.score >= 1;
+      });
+      const byLoginId = new Map<string, number>();
+      if (scorers.length === 0) return { avg: 0, count: 0, byLoginId };
+      const avg = scorers.reduce((sum, s) => {
+        const grade = getSubmissionGrade(course.id, type, s.id);
+        const pct = grade.total > 0 ? (grade.score / grade.total) * 100 : 0;
+        byLoginId.set(s.loginId, pct);
+        return sum + pct;
+      }, 0) / scorers.length;
+      return { avg, count: scorers.length, byLoginId };
+    };
+
+    const pre = calcAssessment("pre");
+    const post = calcAssessment("post");
+
+    // Rise: only students who scored ≥ 1 in BOTH pre and post
+    const bothLoginIds = [...pre.byLoginId.keys()].filter((id) => post.byLoginId.has(id));
+    const bothCount = bothLoginIds.length;
+    let rise = 0;
+    if (bothCount > 0) {
+      const preAvgBoth = bothLoginIds.reduce((sum, id) => sum + (pre.byLoginId.get(id) ?? 0), 0) / bothCount;
+      const postAvgBoth = bothLoginIds.reduce((sum, id) => sum + (post.byLoginId.get(id) ?? 0), 0) / bothCount;
+      rise = Math.max(-100, Math.min(100, postAvgBoth - preAvgBoth));
+    }
+
+    const attendedLoginIds = new Set(
+      data.attendance.filter((r) => r.courseId === course.id && branchLoginIds.has(r.loginId)).map((r) => r.loginId),
+    );
+    const attendance = branchStudents.length > 0 ? (attendedLoginIds.size / branchStudents.length) * 100 : 0;
+
+    // Per-student rows for export
+    const preLatest = getLatestSubmissionByLoginId(course.id, "pre");
+    const postLatest = getLatestSubmissionByLoginId(course.id, "post");
+    const studentRows = branchStudents.map((student) => {
+      const preSub = preLatest.get(student.loginId);
+      const postSub = postLatest.get(student.loginId);
+      const preGrade = preSub ? getSubmissionGrade(course.id, "pre", preSub.id) : null;
+      const postGrade = postSub ? getSubmissionGrade(course.id, "post", postSub.id) : null;
+      const prePct = preGrade && preGrade.score >= 1 && preGrade.total > 0 ? Math.round((preGrade.score / preGrade.total) * 100) : null;
+      const postPct = postGrade && postGrade.score >= 1 && postGrade.total > 0 ? Math.round((postGrade.score / postGrade.total) * 100) : null;
+      return {
+        name: student.name,
+        loginId: student.loginId,
+        prePct,
+        postPct,
+        diff: prePct !== null && postPct !== null ? postPct - prePct : null,
+        attended: attendedLoginIds.has(student.loginId),
+      };
+    });
+
+    return {
+      pre: pre.avg,
+      preCount: pre.count,
+      post: post.avg,
+      postCount: post.count,
+      rise,
+      bothCount,
+      attendance,
+      attendanceCount: attendedLoginIds.size,
+      totalStudents: branchStudents.length,
+      courseName: course.title,
+      studentRows,
+    };
+  }, [courseItems, courseIndicatorsCourseId, courseIndicatorsBranch, data.attendance, data.courses, data.submissions, data.students]);
+
   const summaryIndicators = [
     {
       key: "memorization",
@@ -2624,6 +2755,73 @@ const Dashboard = () => {
       textClassName: "text-sky-100",
     },
   ] as const;
+
+  const homeMetrics = useMemo(() => {
+    const students = homeBranchFilter === "all" ? data.students : getBranchStudents(data, homeBranchFilter);
+    const branchLoginIds = new Set(students.map((s) => s.loginId));
+    const totalStudents = students.length;
+    const courseIds = courseItems.map((c) => c.id);
+
+    const calcAssessment = (type: AssessmentType) => {
+      const testedSet = new Set<string>();
+      let totalPct = 0;
+      courseIds.forEach((courseId) => {
+        const latestMap = getLatestSubmissionByLoginId(courseId, type);
+        [...latestMap.values()].forEach((sub) => {
+          if (branchLoginIds.has(sub.loginId) && !testedSet.has(sub.loginId)) {
+            testedSet.add(sub.loginId);
+            const grade = getSubmissionGrade(courseId, type, sub.id);
+            if (grade.total > 0) totalPct += (grade.score / grade.total) * 100;
+          }
+        });
+      });
+      const count = testedSet.size;
+      const avg = count > 0 ? clampPercent(totalPct / count) : 0;
+      return { count, avg, loginIds: testedSet };
+    };
+
+    const pre = calcAssessment("pre");
+    const post = calcAssessment("post");
+    const bothCount = [...pre.loginIds].filter((id) => post.loginIds.has(id)).length;
+    const rise = Math.max(-100, Math.min(100, post.avg - pre.avg));
+
+    const taskIds = [...courseIds, ...getTasks(data).map((t) => t.id)];
+    const tasksTestedSet = new Set<string>();
+    taskIds.forEach((courseId) => {
+      const latestMap = getLatestSubmissionByLoginId(courseId, "tasks");
+      [...latestMap.values()].forEach((sub) => {
+        if (branchLoginIds.has(sub.loginId)) tasksTestedSet.add(sub.loginId);
+      });
+    });
+
+    const attendedSet = new Set(
+      data.attendance.filter((r) => courseIds.includes(r.courseId) && branchLoginIds.has(r.loginId)).map((r) => r.loginId),
+    );
+
+    const courseBreakdown = courseItems.map((course) => {
+      const preSubs = [...getLatestSubmissionByLoginId(course.id, "pre").values()].filter((s) => branchLoginIds.has(s.loginId));
+      const postSubs = [...getLatestSubmissionByLoginId(course.id, "post").values()].filter((s) => branchLoginIds.has(s.loginId));
+      const attended = new Set(data.attendance.filter((r) => r.courseId === course.id && branchLoginIds.has(r.loginId)).map((r) => r.loginId)).size;
+      const calcAvg = (subs: typeof preSubs, type: AssessmentType) => {
+        if (subs.length === 0) return 0;
+        return clampPercent(subs.reduce((sum, s) => {
+          const g = getSubmissionGrade(course.id, type, s.id);
+          return sum + (g.total > 0 ? (g.score / g.total) * 100 : 0);
+        }, 0) / subs.length);
+      };
+      return {
+        id: course.id,
+        title: course.title,
+        preCount: preSubs.length,
+        preAvg: calcAvg(preSubs, "pre"),
+        postCount: postSubs.length,
+        postAvg: calcAvg(postSubs, "post"),
+        attendanceCount: attended,
+      };
+    });
+
+    return { totalStudents, pre, post, bothCount, rise, tasksCount: tasksTestedSet.size, attendanceCount: attendedSet.size, courseBreakdown };
+  }, [homeBranchFilter, data.students, data.submissions, data.attendance, data.courses, courseItems]);
 
   const adminName = session.name;
   const activeMenuItem = availableDashboardMenu.find((item) => item.id === dashboardTab) ?? availableDashboardMenu[0];
@@ -2735,6 +2933,16 @@ const Dashboard = () => {
                     الإشراف
                   </Button>
                 )}
+                {canCreateCourses && (
+                  <Button variant="outline" className="rounded-full px-5" onClick={() => setCoursesManageOpen(true)}>
+                    الدورات
+                  </Button>
+                )}
+                {canCreateCourses && (
+                  <Button variant="outline" className="rounded-full px-5" onClick={() => setSatisfactionOpen(true)}>
+                    استبيان الرضا
+                  </Button>
+                )}
                 {dashboardTab === "courses" && (
                   <Button variant="outline" size="icon" className="rounded-full" aria-label="قوالب الإشعارات" onClick={() => {
                     const course = activeCourse;
@@ -2752,11 +2960,347 @@ const Dashboard = () => {
             <div className="mx-auto w-full max-w-[1280px] px-1 md:px-2">
               <div className="space-y-6">
 
+        {dashboardTab === "home" && (
+          <div className="space-y-5" dir="rtl">
+
+            {/* ─── Hero / program overview ─────────────────────────────────── */}
+            <div
+              className="relative overflow-hidden rounded-[1.75rem] p-7 text-white"
+              style={{ background: "linear-gradient(135deg, hsl(193 78% 20%), hsl(191 72% 34%))" }}
+            >
+              {/* dot pattern */}
+              <div
+                className="pointer-events-none absolute inset-0 opacity-[0.06]"
+                style={{
+                  backgroundImage: "radial-gradient(circle at 1px 1px, white 1px, transparent 0)",
+                  backgroundSize: "22px 22px",
+                }}
+              />
+              {/* glow blobs */}
+              <div className="pointer-events-none absolute -top-20 -left-20 h-72 w-72 rounded-full bg-white/10 blur-3xl" />
+              <div className="pointer-events-none absolute -bottom-20 -right-10 h-56 w-56 rounded-full bg-white/5 blur-3xl" />
+
+              <div className="relative z-10 flex flex-col gap-5 sm:flex-row sm:items-center">
+                {/* logos */}
+                <div className="flex shrink-0 items-center gap-3">
+                  <img src="/اللوقو-شفاف.png" alt="شعار البرنامج" className="h-[4.5rem] w-auto object-contain drop-shadow-lg" />
+                  <div className="h-10 w-px bg-white/25" />
+                  <img src="/شعار-الجمعية.png" alt="شعار الجمعية" className="h-[4.5rem] w-auto rounded-xl object-contain" />
+                </div>
+
+                {/* text */}
+                <div className="flex-1">
+                  <h2 className="text-xl font-extrabold leading-snug sm:text-2xl">برنامج رخصة ممارس</h2>
+                  <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-white/75">
+                    برنامج تأهيلي يُعنى بإعداد معلمي ومعلمات القرآن الكريم عبر أربع مجالات رئيسة:
+                    الشرعي، التعليمي، التربوي، والمهاري — بهدف تأهيلهم لقيادة الحلقة القرآنية بكفاءة وفاعلية.
+                  </p>
+                  <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-[0.82rem] text-white/90">
+                    <span className="flex items-center gap-1.5">
+                      <Users className="size-3.5 opacity-70" />
+                      <strong>{homeMetrics.totalStudents}</strong> متدرب مسجل
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <Database className="size-3.5 opacity-70" />
+                      <strong>{courseItems.length}</strong> دورة تدريبية
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <FileText className="size-3.5 opacity-70" />
+                      <strong>{homeMetrics.pre.count}</strong> أجروا القبلي
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <GraduationCap className="size-3.5 opacity-70" />
+                      <strong>{homeMetrics.post.count}</strong> أجروا البعدي
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ─── Filters + section title ─────────────────────────────────── */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <h3 className="text-[0.95rem] font-bold text-foreground">المؤشرات الإجمالية</h3>
+              <div className="flex items-center gap-2">
+                {([["all", "الكل"], ["male", "المعلمون"], ["female", "المعلمات"]] as const).map(([val, label]) => (
+                  <button
+                    key={val}
+                    onClick={() => setHomeBranchFilter(val)}
+                    className={`rounded-full px-4 py-1.5 text-sm font-medium transition-all ${
+                      homeBranchFilter === val
+                        ? "bg-primary text-white shadow-sm"
+                        : "border border-border/60 bg-white text-muted-foreground hover:border-primary/40 hover:text-primary"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* ─── KPI cards ───────────────────────────────────────────────── */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+
+              {/* Total enrolled */}
+              <div className={`${dashboardCardClass} rounded-[1.5rem] border border-border/60 p-6`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">إجمالي المتدربين</div>
+                    <div className="mt-2 text-4xl font-extrabold tabular-nums text-foreground">{homeMetrics.totalStudents}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">متدرب مسجل في البرنامج</div>
+                  </div>
+                  <div className="shrink-0 rounded-2xl p-3.5" style={{ background: "linear-gradient(135deg, #107699, #0e9ac0)" }}>
+                    <Users className="size-6 text-white" />
+                  </div>
+                </div>
+                <div className="mt-5 space-y-1">
+                  <div className="h-1.5 overflow-hidden rounded-full bg-muted/40">
+                    <div className="h-full rounded-full bg-primary transition-all" style={{ width: "100%" }} />
+                  </div>
+                  <div className="flex justify-between text-[0.7rem] text-muted-foreground">
+                    <span>المرجع الكلي</span>
+                    <span className="font-medium text-primary">100%</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Pre-exam */}
+              <div className={`${dashboardCardClass} rounded-[1.5rem] border border-border/60 p-6`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">الاختبار القبلي</div>
+                    <div className="mt-2 text-4xl font-extrabold tabular-nums text-foreground">{homeMetrics.pre.count}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">متدرب أجرى الاختبار القبلي</div>
+                  </div>
+                  <div className="shrink-0 rounded-2xl p-3.5" style={{ background: "linear-gradient(135deg, #1e40af, #2563eb)" }}>
+                    <FileText className="size-6 text-white" />
+                  </div>
+                </div>
+                <div className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                  متوسط الدرجات: {formatPercent(homeMetrics.pre.avg)}
+                </div>
+                <div className="mt-3 space-y-1">
+                  <div className="h-1.5 overflow-hidden rounded-full bg-muted/40">
+                    <div
+                      className="h-full rounded-full bg-blue-500 transition-all"
+                      style={{ width: `${homeMetrics.totalStudents > 0 ? (homeMetrics.pre.count / homeMetrics.totalStudents) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[0.7rem] text-muted-foreground">
+                    <span>من إجمالي المتدربين</span>
+                    <span className="font-medium text-blue-600">
+                      {homeMetrics.totalStudents > 0 ? Math.round((homeMetrics.pre.count / homeMetrics.totalStudents) * 100) : 0}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Post-exam */}
+              <div className={`${dashboardCardClass} rounded-[1.5rem] border border-border/60 p-6`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">الاختبار البعدي</div>
+                    <div className="mt-2 text-4xl font-extrabold tabular-nums text-foreground">{homeMetrics.post.count}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">متدرب أجرى الاختبار البعدي</div>
+                  </div>
+                  <div className="shrink-0 rounded-2xl p-3.5" style={{ background: "linear-gradient(135deg, #5b21b6, #7c3aed)" }}>
+                    <GraduationCap className="size-6 text-white" />
+                  </div>
+                </div>
+                <div className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">
+                  متوسط الدرجات: {formatPercent(homeMetrics.post.avg)}
+                </div>
+                <div className="mt-3 space-y-1">
+                  <div className="h-1.5 overflow-hidden rounded-full bg-muted/40">
+                    <div
+                      className="h-full rounded-full bg-violet-500 transition-all"
+                      style={{ width: `${homeMetrics.totalStudents > 0 ? (homeMetrics.post.count / homeMetrics.totalStudents) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[0.7rem] text-muted-foreground">
+                    <span>من إجمالي المتدربين</span>
+                    <span className="font-medium text-violet-600">
+                      {homeMetrics.totalStudents > 0 ? Math.round((homeMetrics.post.count / homeMetrics.totalStudents) * 100) : 0}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Rise/development */}
+              <div className={`${dashboardCardClass} rounded-[1.5rem] border border-border/60 p-6`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">نسبة التطور</div>
+                    <div
+                      className={`mt-2 flex items-end gap-2 text-4xl font-extrabold tabular-nums ${
+                        homeMetrics.rise > 0 ? "text-emerald-600" : homeMetrics.rise < 0 ? "text-red-500" : "text-muted-foreground"
+                      }`}
+                    >
+                      {homeMetrics.rise > 0 ? <TrendingUp className="mb-1 size-7" /> : homeMetrics.rise < 0 ? <TrendingDown className="mb-1 size-7" /> : <Minus className="mb-1 size-7" />}
+                      {Math.abs(Math.round(homeMetrics.rise))}%
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {homeMetrics.rise > 0 ? "ارتفاع" : homeMetrics.rise < 0 ? "انخفاض" : "مستقر"} — بين القبلي والبعدي
+                    </div>
+                  </div>
+                  <div
+                    className="shrink-0 rounded-2xl p-3.5"
+                    style={{
+                      background:
+                        homeMetrics.rise > 0
+                          ? "linear-gradient(135deg, #166534, #16a34a)"
+                          : homeMetrics.rise < 0
+                            ? "linear-gradient(135deg, #991b1b, #dc2626)"
+                            : "linear-gradient(135deg, #374151, #6b7280)",
+                    }}
+                  >
+                    {homeMetrics.rise > 0 ? (
+                      <TrendingUp className="size-6 text-white" />
+                    ) : homeMetrics.rise < 0 ? (
+                      <TrendingDown className="size-6 text-white" />
+                    ) : (
+                      <Minus className="size-6 text-white" />
+                    )}
+                  </div>
+                </div>
+                {/* pre → post comparison */}
+                <div className="mt-4 rounded-xl bg-muted/25 px-4 py-3">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>متوسط القبلي</span>
+                    <span>متوسط البعدي</span>
+                  </div>
+                  <div className="mt-1.5 flex items-center justify-between text-sm font-bold">
+                    <span className="text-blue-600">{formatPercent(homeMetrics.pre.avg)}</span>
+                    <div className="mx-3 flex-1 border-t border-dashed border-border/70" />
+                    <span className="text-violet-600">{formatPercent(homeMetrics.post.avg)}</span>
+                  </div>
+                  <div className="mt-1 text-center text-[0.68rem] text-muted-foreground">
+                    محسوب على {homeMetrics.bothCount} متدرب أجرى الاختبارين
+                  </div>
+                </div>
+              </div>
+
+              {/* Attendance */}
+              <div className={`${dashboardCardClass} rounded-[1.5rem] border border-border/60 p-6`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">الحضور</div>
+                    <div className="mt-2 text-4xl font-extrabold tabular-nums text-foreground">{homeMetrics.attendanceCount}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">متدرب حضر دورة واحدة على الأقل</div>
+                  </div>
+                  <div className="shrink-0 rounded-2xl p-3.5" style={{ background: "linear-gradient(135deg, #92400e, #d97706)" }}>
+                    <Users className="size-6 text-white" />
+                  </div>
+                </div>
+                <div className="mt-5 space-y-1">
+                  <div className="h-1.5 overflow-hidden rounded-full bg-muted/40">
+                    <div
+                      className="h-full rounded-full bg-amber-500 transition-all"
+                      style={{ width: `${homeMetrics.totalStudents > 0 ? (homeMetrics.attendanceCount / homeMetrics.totalStudents) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[0.7rem] text-muted-foreground">
+                    <span>من إجمالي المتدربين</span>
+                    <span className="font-medium text-amber-600">
+                      {homeMetrics.totalStudents > 0 ? Math.round((homeMetrics.attendanceCount / homeMetrics.totalStudents) * 100) : 0}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tasks */}
+              <div className={`${dashboardCardClass} rounded-[1.5rem] border border-border/60 p-6`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">المهام الأدائية</div>
+                    <div className="mt-2 text-4xl font-extrabold tabular-nums text-foreground">{homeMetrics.tasksCount}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">متدرب أرسل مهمة أدائية</div>
+                  </div>
+                  <div className="shrink-0 rounded-2xl p-3.5" style={{ background: "linear-gradient(135deg, #065f46, #059669)" }}>
+                    <Copy className="size-6 text-white" />
+                  </div>
+                </div>
+                <div className="mt-5 space-y-1">
+                  <div className="h-1.5 overflow-hidden rounded-full bg-muted/40">
+                    <div
+                      className="h-full rounded-full bg-emerald-500 transition-all"
+                      style={{ width: `${homeMetrics.totalStudents > 0 ? (homeMetrics.tasksCount / homeMetrics.totalStudents) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[0.7rem] text-muted-foreground">
+                    <span>من إجمالي المتدربين</span>
+                    <span className="font-medium text-emerald-600">
+                      {homeMetrics.totalStudents > 0 ? Math.round((homeMetrics.tasksCount / homeMetrics.totalStudents) * 100) : 0}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* ─── Per-course breakdown ─────────────────────────────────────── */}
+            {homeMetrics.courseBreakdown.length > 0 && (
+              <div className="space-y-3">
+                <h3 className="text-[0.95rem] font-bold text-foreground">تفصيل حسب الدورة</h3>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {homeMetrics.courseBreakdown.map((course) => {
+                    const courseRise = course.postAvg - course.preAvg;
+                    return (
+                      <div key={course.id} className={`${dashboardCardClass} rounded-[1.5rem] border border-border/60 p-5`}>
+                        {/* course title */}
+                        <div className="mb-4 flex items-start gap-2">
+                          <div className="mt-0.5 shrink-0 rounded-lg p-1.5" style={{ background: "linear-gradient(135deg, #107699, #0e9ac0)" }}>
+                            <Database className="size-3.5 text-white" />
+                          </div>
+                          <span className="text-sm font-bold leading-snug text-foreground">{course.title}</span>
+                        </div>
+
+                        {/* stats grid */}
+                        <div className="grid grid-cols-3 divide-x divide-x-reverse divide-border/50">
+                          {/* Pre */}
+                          <div className="pe-3 text-center">
+                            <div className="text-[0.68rem] text-muted-foreground">القبلي</div>
+                            <div className="mt-0.5 text-lg font-extrabold text-foreground">{course.preCount}</div>
+                            <div className="text-[0.68rem] font-semibold text-blue-600">{formatPercent(course.preAvg)}</div>
+                          </div>
+                          {/* Post */}
+                          <div className="px-3 text-center">
+                            <div className="text-[0.68rem] text-muted-foreground">البعدي</div>
+                            <div className="mt-0.5 text-lg font-extrabold text-foreground">{course.postCount}</div>
+                            <div className="text-[0.68rem] font-semibold text-violet-600">{formatPercent(course.postAvg)}</div>
+                          </div>
+                          {/* Attendance */}
+                          <div className="ps-3 text-center">
+                            <div className="text-[0.68rem] text-muted-foreground">الحضور</div>
+                            <div className="mt-0.5 text-lg font-extrabold text-foreground">{course.attendanceCount}</div>
+                            <div className="text-[0.68rem] text-muted-foreground">متدرب</div>
+                          </div>
+                        </div>
+
+                        {/* rise indicator */}
+                        <div className={`mt-4 flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold ${
+                          courseRise > 0 ? "bg-emerald-50 text-emerald-700" : courseRise < 0 ? "bg-red-50 text-red-600" : "bg-muted/40 text-muted-foreground"
+                        }`}>
+                          {courseRise > 0 ? <TrendingUp className="size-3.5" /> : courseRise < 0 ? <TrendingDown className="size-3.5" /> : <Minus className="size-3.5" />}
+                          نسبة التطور: {courseRise > 0 ? "+" : ""}{Math.round(courseRise)}%
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+          </div>
+        )}
+
         {dashboardTab === "students" && (
           <div className="space-y-6">
             <div className="flex items-center justify-between gap-4">
               <div className="text-right">
-                <h2 className="text-xl font-bold text-foreground">إدارة الطلاب</h2>
+                <h2 className="flex items-center gap-2 text-xl font-bold text-foreground">
+                  <SquarePen className="size-5" />
+                  تعديل الدرجات
+                </h2>
               </div>
               <div className="flex gap-2">
                 <TooltipProvider>
@@ -2772,10 +3316,16 @@ const Dashboard = () => {
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
-                <Button className="rounded-full px-5" onClick={() => openStudentEditor()}>
-                  <Plus className="size-4" />
-                  إضافة
+                <Button className="rounded-full px-5 gap-2" variant="outline" onClick={() => setManualGradesOpen(true)}>
+                  <Pencil className="size-4" />
+                  تعديل يدوي
                 </Button>
+                {hasPermission("add_student") && (
+                  <Button className="rounded-full px-5" onClick={() => openStudentEditor()}>
+                    <Plus className="size-4" />
+                    إضافة
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -2822,12 +3372,16 @@ const Dashboard = () => {
                             <TableCell className="text-right text-muted-foreground">{student.loginId}</TableCell>
                             <TableCell>
                               <div className="flex justify-end gap-2">
-                                <Button variant="outline" size="icon" className="h-9 w-9 rounded-xl" onClick={() => openStudentEditor(student.id)}>
-                                  <Pencil className="size-4" />
-                                </Button>
-                                <Button variant="outline" size="icon" className="h-9 w-9 rounded-xl text-destructive" onClick={() => handleDeleteStudent(student.id)}>
-                                  <Trash2 className="size-4" />
-                                </Button>
+                                {hasPermission("edit_student") && (
+                                  <Button variant="outline" size="icon" className="h-9 w-9 rounded-xl" onClick={() => openStudentEditor(student.id)}>
+                                    <Pencil className="size-4" />
+                                  </Button>
+                                )}
+                                {hasPermission("delete_student") && (
+                                  <Button variant="outline" size="icon" className="h-9 w-9 rounded-xl text-destructive" onClick={() => handleDeleteStudent(student.id)}>
+                                    <Trash2 className="size-4" />
+                                  </Button>
+                                )}
                               </div>
                             </TableCell>
                           </TableRow>
@@ -2866,10 +3420,12 @@ const Dashboard = () => {
                     اضغط على اسم المقرئ/الطالب لتعديل البيانات
                   </PopoverContent>
                 </Popover>
-                <Button className="rounded-full px-5" onClick={() => openReciterEditor()}>
-                  <Plus className="size-4" />
-                  إضافة
-                </Button>
+                {hasPermission("add_reciter") && (
+                  <Button className="rounded-full px-5" onClick={() => openReciterEditor()}>
+                    <Plus className="size-4" />
+                    إضافة
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -2908,6 +3464,7 @@ const Dashboard = () => {
                       <SelectContent>
                         <SelectItem value={RECITER_FILTER_ALL_STUDENTS}>جميع الطلاب</SelectItem>
                         <SelectItem value={RECITER_FILTER_ALL_RECITERS}>جميع المقرئين</SelectItem>
+                        <SelectItem value={RECITER_FILTER_CERTIFIED}>المجازون</SelectItem>
                         {branchReciters.map((reciter) => <SelectItem key={reciter.id} value={reciter.id}>{reciter.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
@@ -2962,6 +3519,9 @@ const Dashboard = () => {
                                   ) : (
                                     <div className="font-bold text-foreground">{student.name}</div>
                                   )}
+                                  {student.isCertified && (
+                                    <span className="inline-block rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-700">مجاز</span>
+                                  )}
                                   <div className="text-xs text-muted-foreground">المقرئ الحالي: {reciter.name}</div>
                                   {!hasTransferTarget && <div className="mt-1 text-xs text-muted-foreground">لا يوجد مقرئ آخر متاح في نفس الفرع.</div>}
                                 </div>
@@ -2969,6 +3529,25 @@ const Dashboard = () => {
                                   <div className="text-sm font-bold text-foreground">المقروء</div>
                                   <div className="flex justify-end">
                                     {renderPartGrid(student.id, student.completedParts)}
+                                  </div>
+                                  <div className="flex justify-end">
+                                    {student.isCertified ? (
+                                      <button
+                                        type="button"
+                                        className="inline-flex items-center gap-1 rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700"
+                                        onClick={() => store.toggleCertifiedStudent(student.id)}
+                                      >
+                                        مجاز ✓
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        className="inline-flex items-center gap-1 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground"
+                                        onClick={() => store.toggleCertifiedStudent(student.id)}
+                                      >
+                                        اعتماد
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
                               </CardContent>
@@ -2979,13 +3558,14 @@ const Dashboard = () => {
                     )}
 
                     <div className={cn("overflow-x-auto rounded-[1.25rem] border border-border/60 bg-white", isAllStudentsReciterView && "hidden md:block")}>
-                      <Table className={isAllStudentsReciterView ? "min-w-[760px]" : isSpecificReciterView ? "min-w-[760px]" : showReciterProgressColumn ? "min-w-[980px]" : "min-w-[720px]"}>
+                      <Table className={isAllStudentsReciterView ? "min-w-[900px]" : isSpecificReciterView ? "min-w-[760px]" : showReciterProgressColumn ? "min-w-[980px]" : "min-w-[720px]"}>
                       <TableHeader>
                         <TableRow className="hover:bg-transparent">
                           {isAllStudentsReciterView ? (
                             <>
                               <TableHead className="text-right">الطالب</TableHead>
                               <TableHead className="text-center">المقروء</TableHead>
+                              <TableHead className="text-center">الاعتماد</TableHead>
                             </>
                           ) : isSpecificReciterView ? (
                             <>
@@ -3027,7 +3607,10 @@ const Dashboard = () => {
                                     ) : (
                                       <div className="font-semibold text-foreground">{student.name}</div>
                                     )}
-                                    {!hasTransferTarget && <div className="text-[11px] text-muted-foreground">لا يوجد مقرئ آخر متاح في نفس الفرع</div>}
+                                    {student.isCertified && (
+                                      <span className="inline-block rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-700">مجاز</span>
+                                    )}
+                                  {!hasTransferTarget && <div className="text-[11px] text-muted-foreground">لا يوجد مقرئ آخر متاح في نفس الفرع</div>}
                                   </div>
                                   <div className="text-xs text-muted-foreground">{reciter.name}</div>
                                 </div>
@@ -3036,6 +3619,25 @@ const Dashboard = () => {
                                 <div className="flex flex-col items-center gap-3">
                                   {renderPartGrid(student.id, student.completedParts)}
                                 </div>
+                              </TableCell>
+                              <TableCell className="text-center align-middle">
+                                {student.isCertified ? (
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center gap-1 rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700 hover:bg-green-200 transition-colors"
+                                    onClick={() => store.toggleCertifiedStudent(student.id)}
+                                  >
+                                    مجاز ✓
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center gap-1 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground hover:border-green-500 hover:text-green-700 transition-colors"
+                                    onClick={() => store.toggleCertifiedStudent(student.id)}
+                                  >
+                                    اعتماد
+                                  </button>
+                                )}
                               </TableCell>
                             </TableRow>
                           );
@@ -3219,16 +3821,33 @@ const Dashboard = () => {
           };
 
           const handleToggle = (loginId: string) => {
+            setAttendanceCourseId(selectedCourseForAttendance?.id ?? "");
             const next = new Set(displayChecked);
             if (next.has(loginId)) next.delete(loginId); else next.add(loginId);
             setAttendanceChecked(next);
           };
 
+          const isAllSelected = branchStudents.length > 0 && branchStudents.every((s) => displayChecked.has(s.loginId));
+
+          const handleToggleAll = () => {
+            const courseId = selectedCourseForAttendance?.id ?? "";
+            setAttendanceCourseId(courseId);
+            if (isAllSelected) {
+              setAttendanceChecked(new Set());
+            } else {
+              setAttendanceChecked(new Set(branchStudents.map((s) => s.loginId)));
+            }
+          };
+
           const handleSelectAll = () => {
+            setAttendanceCourseId(selectedCourseForAttendance?.id ?? "");
             setAttendanceChecked(new Set(branchStudents.map((s) => s.loginId)));
           };
 
-          const handleDeselectAll = () => setAttendanceChecked(new Set());
+          const handleDeselectAll = () => {
+            setAttendanceCourseId(selectedCourseForAttendance?.id ?? "");
+            setAttendanceChecked(new Set());
+          };
 
           const handleSave = async () => {
             if (!selectedCourseForAttendance) return;
@@ -3336,13 +3955,16 @@ const Dashboard = () => {
               setAttendanceChecked(matched);
               const msg = unmatched.length > 0
                 ? `تم تحضير ${matched.size} طالب. لم يُتعرف على: ${unmatched.slice(0, 5).join("، ")}${unmatched.length > 5 ? ` +${unmatched.length - 5}` : ""}`
-                : `تم تحضير ${matched.size} طالب من الملف.`;
+                : `تم ${isTask ? "تحديد" : "تحضير"} ${matched.size} طالب من الملف.`;
               toast({ title: "تم قراءة الملف", description: msg });
               setAttendanceFileError("");
             } catch {
               setAttendanceFileError("تعذر قراءة الملف. جرّب حفظه كـ Excel Workbook (.xlsx).");
             }
           };
+
+          const isTask = selectedCourseForAttendance?.entityType === "task";
+          const presentLabel = isTask ? "منفذ" : "حاضر";
 
           if (!attendanceCourseId && selectedCourseForAttendance) {
             // initialise on first render without state update during render
@@ -3369,46 +3991,51 @@ const Dashboard = () => {
                         <Select value={attendanceBranchId} onValueChange={(v) => setAttendanceBranchId(v as BranchId)}>
                           <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue /></SelectTrigger>
                           <SelectContent className="text-right">
-                            <SelectItem value="male" className="justify-end pr-3 text-right">رجالي</SelectItem>
-                            <SelectItem value="female" className="justify-end pr-3 text-right">نسائي</SelectItem>
+                            <SelectItem value="male" className="justify-end pr-3 text-right">معلمين</SelectItem>
+                            <SelectItem value="female" className="justify-end pr-3 text-right">معلمات</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                     )}
                     <div className="space-y-2">
                       <label className="text-sm font-bold text-foreground">الدورة / التكليف</label>
-                      <Select
-                        value={attendanceCourseId || (selectedCourseForAttendance?.id ?? "")}
-                        onValueChange={handleCourseChange}
-                      >
-                        <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue placeholder="اختر الدورة" /></SelectTrigger>
-                        <SelectContent className="text-right">
-                          {courseItems.map((c) => <SelectItem key={c.id} value={c.id} className="justify-end pr-3 text-right">{c.title}</SelectItem>)}
-                          {getTasks(data).sort((a, b) => a.sortOrder - b.sortOrder).map((t) => <SelectItem key={t.id} value={t.id} className="justify-end pr-3 text-right">تكليف: {t.title}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                      <div className="flex items-center gap-2">
+                        <Select
+                          value={attendanceCourseId || (selectedCourseForAttendance?.id ?? "")}
+                          onValueChange={handleCourseChange}
+                        >
+                          <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue placeholder="اختر الدورة" /></SelectTrigger>
+                          <SelectContent className="text-right">
+                            {courseItems.map((c) => <SelectItem key={c.id} value={c.id} className="justify-end pr-3 text-right">{c.title}</SelectItem>)}
+                            {getTasks(data).sort((a, b) => a.sortOrder - b.sortOrder).map((t) => <SelectItem key={t.id} value={t.id} className="justify-end pr-3 text-right">تكليف: {t.title}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="shrink-0"
+                          onClick={() => attendanceFileInputRef.current?.click()}
+                          title="رفع ملف"
+                        >
+                          <FileUp className="size-4" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
 
                   {selectedCourseForAttendance && (
                     <>
                       <Separator />
-                      <div className="flex items-center justify-between gap-3 flex-wrap">
-                        <div className="flex gap-2 flex-wrap">
-                          <Button variant="outline" size="sm" onClick={handleSelectAll}>تحديد الكل</Button>
-                          <Button variant="outline" size="sm" onClick={handleDeselectAll}>إلغاء الكل</Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => attendanceFileInputRef.current?.click()}
-                          >
-                            <FileUp className="size-4" />
-                            رفع ملف
-                          </Button>
-                        </div>
-                        <span className="text-sm text-muted-foreground">
-                          {displayChecked.size} / {branchStudents.length} حاضر
-                        </span>
+                      <div className="flex items-center gap-3">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleToggleAll}
+                          className={cn(isAllSelected && "border-primary bg-primary/10 text-primary")}
+                        >
+                          <span className={cn("size-2.5 rounded-full ml-1.5", isAllSelected ? "bg-primary" : "bg-muted-foreground/30")} />
+                          تحديد الكل
+                        </Button>
                       </div>
 
                       {attendanceFileError && (
@@ -3422,29 +4049,42 @@ const Dashboard = () => {
                           <Table>
                             <TableHeader>
                               <TableRow>
-                                <TableHead className="text-right w-12">حاضر</TableHead>
                                 <TableHead className="text-right">الاسم</TableHead>
                                 <TableHead className="text-right">رقم الدخول</TableHead>
+                                {isTask && <TableHead className="text-right">الحالة</TableHead>}
+                                <TableHead className="text-right w-16">{presentLabel}</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
-                              {branchStudents.map((student) => (
-                                <TableRow
-                                  key={student.id}
-                                  className="cursor-pointer hover:bg-muted/30"
-                                  onClick={() => handleToggle(student.loginId)}
-                                >
-                                  <TableCell>
-                                    <Checkbox
-                                      checked={displayChecked.has(student.loginId)}
-                                      onCheckedChange={() => handleToggle(student.loginId)}
-                                      onClick={(e) => e.stopPropagation()}
-                                    />
-                                  </TableCell>
-                                  <TableCell className="font-medium">{student.name}</TableCell>
-                                  <TableCell className="text-muted-foreground">{student.loginId}</TableCell>
-                                </TableRow>
-                              ))}
+                              {branchStudents.map((student) => {
+                                const checked = displayChecked.has(student.loginId);
+                                const alreadyDone = isTask && (
+                                  data.submissions.some((s) => s.courseId === selectedCourseForAttendance.id && s.assessmentType === "tasks" && s.loginId === student.loginId) ||
+                                  data.attendance.some((r) => r.courseId === selectedCourseForAttendance.id && r.loginId === student.loginId)
+                                );
+                                return (
+                                  <TableRow
+                                    key={student.id}
+                                    className="cursor-pointer hover:bg-muted/30"
+                                    onClick={() => handleToggle(student.loginId)}
+                                  >
+                                    <TableCell className="font-medium">{student.name}</TableCell>
+                                    <TableCell className="text-muted-foreground">{student.loginId}</TableCell>
+                                    {isTask && (
+                                      <TableCell className={cn("text-xs font-medium", alreadyDone ? "text-emerald-700" : "text-rose-600")}>
+                                        {alreadyDone ? "منفذ" : "غير منفذ"}
+                                      </TableCell>
+                                    )}
+                                    <TableCell>
+                                      <Checkbox
+                                        checked={checked}
+                                        onCheckedChange={() => handleToggle(student.loginId)}
+                                        onClick={(e) => e.stopPropagation()}
+                                      />
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
                             </TableBody>
                           </Table>
                         </div>
@@ -3452,7 +4092,7 @@ const Dashboard = () => {
 
                       <div className="flex justify-start">
                         <Button onClick={() => void handleSave()} disabled={attendanceSaving}>
-                          {attendanceSaving ? "جاري الحفظ..." : "حفظ التحضير"}
+                          {attendanceSaving ? "جاري الحفظ..." : isTask ? "حفظ المهام" : "حفظ التحضير"}
                         </Button>
                       </div>
                     </>
@@ -3494,18 +4134,6 @@ const Dashboard = () => {
                       <SelectContent>
                         <SelectItem value="all">جميع الفروع</SelectItem>
                         {data.branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.label}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <div className="text-sm font-medium text-muted-foreground">اختر الدورة</div>
-                    <Select value={indicatorsCourseId} onValueChange={setIndicatorsCourseId}>
-                      <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">جميع الدورات</SelectItem>
-                        {courseItems.map((course) => <SelectItem key={course.id} value={course.id}>{course.title}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
@@ -3656,44 +4284,444 @@ const Dashboard = () => {
           </div>
         )}
 
-        {dashboardTab === "courses" && (
-          <div className="space-y-6">
-            <Card className={dashboardCardClass}>
-              <CardHeader className="text-right">
-                <CardTitle className="text-xl">إدارة الدورات</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-5">
-                {canCreateCourses && (
-                <div className="space-y-3 text-right">
-                  <div className="text-sm font-medium text-muted-foreground">الدورة المفعلة:</div>
-                  <Select value={activeCourse?.id ?? ""} onValueChange={(value) => void handleActivateCourseSelect(value)}>
-                    <SelectTrigger className="flex-row-reverse bg-white text-right [&>span]:w-full [&>span]:text-right">
-                      <SelectValue placeholder="اختر دورة" />
-                    </SelectTrigger>
-                    <SelectContent className="border-border/70 bg-white text-right shadow-lg backdrop-blur-none">
-                      {courseItems.map((course) => <SelectItem key={course.id} value={course.id} className="justify-end pr-8 text-right">{course.title}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
+        {dashboardTab === "permissions" && (() => {
+          const permissionGroups: Array<{ label: string; permissions: Array<{ key: PermissionKey; label: string }> }> = [
+            {
+              label: "الطلاب",
+              permissions: [
+                { key: "add_student", label: "إضافة طالب" },
+                { key: "delete_student", label: "حذف طالب" },
+                { key: "edit_student", label: "تعديل بيانات طالب" },
+              ],
+            },
+            {
+              label: "الاختبارات",
+              permissions: [
+                { key: "edit_pre_questions", label: "تعديل أسئلة الاختبار القبلي" },
+                { key: "edit_post_questions", label: "تعديل أسئلة الاختبار البعدي" },
+                { key: "edit_tasks", label: "تعديل المهام الأدائية" },
+                { key: "open_pre_exam", label: "فتح الاختبار القبلي" },
+                { key: "open_post_exam", label: "فتح الاختبار البعدي" },
+              ],
+            },
+            {
+              label: "الإقراء",
+              permissions: [
+                { key: "add_reciter", label: "إضافة مقرئ" },
+                { key: "delete_reciter", label: "حذف مقرئ" },
+                { key: "edit_reciter", label: "تعديل بيانات مقرئ" },
+                { key: "transfer_reciter_student", label: "نقل الطالب المرتبط بمقرئ" },
+              ],
+            },
+            {
+              label: "الصفحات",
+              permissions: [
+                { key: "page_notifications", label: "صفحة الإشعارات" },
+                { key: "page_results", label: "صفحة النتائج" },
+              ],
+            },
+          ];
+
+          return (
+            <div className="grid gap-6 md:grid-cols-2">
+              {(["male_manager", "female_manager"] as const).map((role) => (
+                <Card key={role} className={dashboardCardClass}>
+                  <CardHeader>
+                    <CardDescription>إدارة الصلاحيات</CardDescription>
+                    <CardTitle className="text-xl">{role === "male_manager" ? "مسؤول المعلمين" : "مسؤول المعلمات"}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-1 pb-5">
+                    {permissionGroups.map((group) => (
+                      <div key={group.label}>
+                        <div className="pt-4 pb-2 text-xs font-extrabold uppercase tracking-wide text-muted-foreground">{group.label}</div>
+                        {group.permissions.map((perm) => {
+                          const isEnabled = (data.rolePermissions[role]?.[perm.key] as boolean | undefined) ?? true;
+                          return (
+                            <div key={perm.key} className="flex items-center justify-between border-b border-border/40 py-3 last:border-0">
+                              <span className={cn("text-sm font-medium", !isEnabled && "text-muted-foreground")}>{perm.label}</span>
+                              <Switch
+                                checked={isEnabled}
+                                onCheckedChange={(v) => void store.setRolePermission(role, perm.key, v)}
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          );
+        })()}
+
+        {dashboardTab === "finalexam" && (() => {
+          const effectiveBranch = managedBranchId ?? finalExamBranch;
+          const branchQuestions = data.finalExamQuestions.filter((q) => q.branchCode === effectiveBranch).sort((a, b) => a.sortOrder - b.sortOrder);
+          const branchSubmissions = data.finalExamSubmissions.filter((s) => s.branchCode === effectiveBranch);
+          const isEnabled = data.finalExamSettings[effectiveBranch];
+          const otherBranch: BranchId = effectiveBranch === "male" ? "female" : "male";
+          const finalExamLink = typeof window !== "undefined" ? `${window.location.origin}/final-exam` : "/final-exam";
+
+          const handleFinalExamAddQuestion = async () => {
+            const prompt = finalExamQuestionForm.prompt.trim();
+            if (!prompt) { setFinalExamQuestionError("أدخل نص السؤال."); return; }
+            const options = finalExamQuestionForm.type === "multiple"
+              ? finalExamQuestionForm.optionsText.split("|").map((o) => o.trim()).filter(Boolean)
+              : finalExamQuestionForm.type === "truefalse" ? ["صح", "خطأ"] : [];
+            if (finalExamQuestionForm.type === "multiple" && options.length < 2) { setFinalExamQuestionError("أدخل خيارين على الأقل مفصولين بـ |"); return; }
+            const pts = Number(finalExamQuestionForm.points);
+            if (!Number.isFinite(pts) || pts < 0) { setFinalExamQuestionError("أدخل درجة صحيحة."); return; }
+            setFinalExamQuestionError("");
+            try {
+              await store.addFinalExamQuestion(effectiveBranch, { prompt, type: finalExamQuestionForm.type, options, allowFile: finalExamQuestionForm.allowFile === "yes", points: pts, correctAnswer: finalExamQuestionForm.correctAnswer.trim() });
+              setFinalExamQuestionForm({ prompt: "", type: "multiple", optionsText: "", points: "1", correctAnswer: "", allowFile: "no" });
+            } catch (err) { setFinalExamQuestionError(err instanceof Error ? err.message : "تعذر إضافة السؤال."); }
+          };
+
+          const handleFinalExamSplit = async () => {
+            if (!finalExamSplitText.trim()) { setFinalExamQuestionError("الصق الأسئلة أولاً."); return; }
+            const parsed = parseImportedQuestionsFromText(finalExamSplitText);
+            if (!parsed.length) { setFinalExamQuestionError("لم يتم التعرف على أسئلة."); return; }
+            for (const q of parsed) {
+              await store.addFinalExamQuestion(effectiveBranch, { prompt: q.prompt, type: q.type, options: q.options, allowFile: false, points: 1, correctAnswer: "" });
+            }
+            setFinalExamSplitText("");
+            setFinalExamQuestionError(`تم إضافة ${parsed.length} سؤال.`);
+          };
+
+          return (
+            <div className="grid gap-6 xl:grid-cols-[0.65fr_0.35fr]">
+              <div className="space-y-6">
+                {/* Branch selector */}
+                {!managedBranchId && (
+                  <Card className={dashboardCardClass}>
+                    <CardContent className="flex items-center gap-4 p-4">
+                      <div className="text-sm font-bold text-foreground shrink-0">الفرع</div>
+                      <div className="flex gap-2">
+                        {(["male", "female"] as BranchId[]).map((b) => (
+                          <button key={b} type="button" onClick={() => setFinalExamBranch(b)} className={cn("rounded-full px-5 py-2 text-sm font-bold transition-smooth border", finalExamBranch === b ? "bg-primary text-white border-primary shadow-lg shadow-primary/20" : "bg-white text-foreground border-border/60 hover:border-primary/40")}>
+                            {branchLabels[b]}
+                          </button>
+                        ))}
+                      </div>
+                      <Button size="sm" variant={isEnabled ? "default" : "outline"} className={cn("mr-auto rounded-full px-5", isEnabled && "bg-emerald-600 hover:bg-emerald-700")} onClick={() => void store.toggleFinalExamEnabled(effectiveBranch)}>
+                        <Power className="size-3.5 ml-1.5" />
+                        {isEnabled ? "مفعّل" : "غير مفعّل"}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
+                {managedBranchId && (
+                  <Card className={dashboardCardClass}>
+                    <CardContent className="flex items-center gap-4 p-4">
+                      <div className="text-sm font-bold text-foreground">فرع: {branchLabels[effectiveBranch]}</div>
+                      <Button size="sm" variant={isEnabled ? "default" : "outline"} className={cn("mr-auto rounded-full px-5", isEnabled && "bg-emerald-600 hover:bg-emerald-700")} onClick={() => void store.toggleFinalExamEnabled(effectiveBranch)}>
+                        <Power className="size-3.5 ml-1.5" />
+                        {isEnabled ? "مفعّل" : "غير مفعّل"}
+                      </Button>
+                    </CardContent>
+                  </Card>
                 )}
 
-                <div className="space-y-2 text-right">
-                  <div className="flex items-center gap-3">
-                    <Input value={courseTitle} onChange={(event) => setCourseTitle(event.target.value)} placeholder="اسم الدورة" className="flex-1 text-right" disabled={!canCreateCourses} />
-                    {canCreateCourses && (
-                      <Button onClick={handleAddCourse} className="shrink-0 rounded-full px-5 md:min-w-32">
-                        <Plus className="size-4" />
-                        إضافة
-                      </Button>
-                    )}
+                {/* Question editor */}
+                <Card className={dashboardCardClass}>
+                  <CardHeader><CardTitle className="text-xl">أسئلة {branchLabels[effectiveBranch]}</CardTitle></CardHeader>
+                  <CardContent className="space-y-5">
+                    {/* Split paste */}
+                    <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-muted/20 p-4 space-y-3">
+                      <label className="text-sm font-bold text-foreground">تقسيم الأسئلة</label>
+                      <div className="flex gap-2">
+                        <Textarea value={finalExamSplitText} onChange={(e) => setFinalExamSplitText(e.target.value)} placeholder={"الصق الأسئلة هنا...\n١. ما هو...\nأ. خيار 1\nب. خيار 2"} className="min-h-[80px] flex-1 text-sm" />
+                        <Button type="button" className="h-auto rounded-2xl px-4 self-stretch" onClick={() => void handleFinalExamSplit()} disabled={!finalExamSplitText.trim()}>تقسيم</Button>
+                      </div>
+                    </div>
+
+                    {/* Add form */}
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2 md:col-span-2">
+                        <label className="text-sm font-bold text-foreground">السؤال</label>
+                        <Textarea value={finalExamQuestionForm.prompt} onChange={(e) => setFinalExamQuestionForm((c) => ({ ...c, prompt: e.target.value }))} placeholder="اكتب السؤال" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-bold text-foreground">نوع السؤال</label>
+                        <Select value={finalExamQuestionForm.type} onValueChange={(v) => setFinalExamQuestionForm((c) => ({ ...c, type: v as "multiple" | "text" | "truefalse" }))}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="multiple">اختيار من متعدد</SelectItem>
+                            <SelectItem value="truefalse">صح وخطأ</SelectItem>
+                            <SelectItem value="text">نص</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-bold text-foreground">درجة السؤال</label>
+                        <Input value={finalExamQuestionForm.points} onChange={(e) => setFinalExamQuestionForm((c) => ({ ...c, points: e.target.value }))} placeholder="1" />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-bold text-foreground">الإجابة الصحيحة</label>
+                        {finalExamQuestionForm.type === "truefalse" ? (
+                          <Select value={finalExamQuestionForm.correctAnswer} onValueChange={(v) => setFinalExamQuestionForm((c) => ({ ...c, correctAnswer: v }))}>
+                            <SelectTrigger><SelectValue placeholder="اختر" /></SelectTrigger>
+                            <SelectContent><SelectItem value="صح">صح</SelectItem><SelectItem value="خطأ">خطأ</SelectItem></SelectContent>
+                          </Select>
+                        ) : (
+                          <Input value={finalExamQuestionForm.correctAnswer} onChange={(e) => setFinalExamQuestionForm((c) => ({ ...c, correctAnswer: e.target.value }))} placeholder="للدرجات التلقائية" />
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-bold text-foreground">إرفاق ملف</label>
+                        <Select value={finalExamQuestionForm.allowFile} onValueChange={(v) => setFinalExamQuestionForm((c) => ({ ...c, allowFile: v as "yes" | "no" }))}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent><SelectItem value="no">لا يسمح</SelectItem><SelectItem value="yes">يسمح</SelectItem></SelectContent>
+                        </Select>
+                      </div>
+                      {finalExamQuestionForm.type === "multiple" && (
+                        <div className="space-y-2 md:col-span-2">
+                          <label className="text-sm font-bold text-foreground">الخيارات</label>
+                          <Input value={finalExamQuestionForm.optionsText} onChange={(e) => setFinalExamQuestionForm((c) => ({ ...c, optionsText: e.target.value }))} placeholder="خيار 1 | خيار 2 | خيار 3" />
+                        </div>
+                      )}
+                    </div>
+                    {finalExamQuestionError && <p className="text-sm font-medium text-destructive">{finalExamQuestionError}</p>}
+                    <Button onClick={() => void handleFinalExamAddQuestion()}>إضافة سؤال</Button>
+                    <Separator />
+
+                    {/* Questions list */}
+                    <div className="space-y-3">
+                      {branchQuestions.length === 0 && <div className={cn(dashboardEmptyStateClass, "p-4 text-sm text-muted-foreground")}>لا توجد أسئلة بعد.</div>}
+                      {branchQuestions.map((question, index) => (
+                        <div key={question.id} className={cn(dashboardPlainPanelClass, "p-4")}>
+                          <div className="mb-2 flex items-start justify-between gap-3">
+                            <div className="font-bold text-foreground">{index + 1}. {question.prompt} <span className="text-sm font-medium text-muted-foreground">• الدرجة: {question.points}</span></div>
+                            <Button variant="ghost" size="sm" onClick={() => void store.deleteFinalExamQuestion(question.id)}>حذف</Button>
+                          </div>
+                          {(question.type === "multiple" || question.type === "truefalse") && (
+                            <div className="space-y-1 pt-2 text-sm">
+                              {question.options.map((opt) => (
+                                <div key={opt} className={cn(opt.trim() === question.correctAnswer.trim() ? "font-bold text-emerald-700" : "text-foreground")}>{opt}</div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Submissions */}
+                <Card className={dashboardCardClass}>
+                  <CardHeader><CardTitle className="text-xl">الإجابات - {branchLabels[effectiveBranch]}</CardTitle></CardHeader>
+                  <CardContent className="space-y-3">
+                    {branchSubmissions.length === 0 && <div className={cn(dashboardEmptyStateClass, "p-4 text-sm text-muted-foreground")}>لا توجد إجابات بعد.</div>}
+                    {branchSubmissions.map((submission) => {
+                      const total = branchQuestions.reduce((s, q) => s + q.points, 0);
+                      const score = typeof submission.manualScore === "number" ? submission.manualScore : null;
+                      return (
+                        <div key={submission.id} className={cn(dashboardPlainPanelClass, "p-4")}>
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <div className="font-bold text-foreground">{submission.studentName}</div>
+                              <div className="text-xs text-muted-foreground">{submission.loginCode} · {new Date(submission.submittedAt).toLocaleDateString("ar-SA")}</div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {finalExamScoreEdit?.submissionId === submission.id ? (
+                                <div className="flex items-center gap-2">
+                                  <Input
+                                    className="h-8 w-20 rounded-xl text-center"
+                                    value={finalExamScoreEdit.value}
+                                    onChange={(e) => setFinalExamScoreEdit((c) => c ? { ...c, value: e.target.value } : null)}
+                                  />
+                                  <Button size="sm" className="rounded-xl h-8" onClick={async () => {
+                                    if (!finalExamScoreEdit) return;
+                                    const n = Number(finalExamScoreEdit.value);
+                                    if (!Number.isFinite(n) || n < 0) return;
+                                    await store.setFinalExamManualScore(submission.id, n);
+                                    setFinalExamScoreEdit(null);
+                                  }}>حفظ</Button>
+                                  <Button size="sm" variant="ghost" className="rounded-xl h-8" onClick={() => setFinalExamScoreEdit(null)}>إلغاء</Button>
+                                </div>
+                              ) : (
+                                <>
+                                  <Badge variant="outline" className="border-primary/20 text-primary">{score != null ? `${score} / ${total}` : `— / ${total}`}</Badge>
+                                  <Button variant="outline" size="sm" className="rounded-xl h-8" onClick={() => setFinalExamScoreEdit({ submissionId: submission.id, value: score != null ? String(score) : "" })}>
+                                    <Pencil className="size-3.5" />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Right sidebar */}
+              <div className="space-y-6">
+                <Card className={dashboardCardClass}>
+                  <CardHeader><CardDescription>الرابط الثابت</CardDescription><CardTitle className="text-xl">الاختبار النهائي</CardTitle></CardHeader>
+                  <CardContent className="space-y-3 text-sm text-muted-foreground">
+                    <p>الرابط ثابت — يُظهر الاختبار النهائي حسب فرع الطالب.</p>
+                    <div className={cn(dashboardMutedPanelClass, "break-all p-4")}>{finalExamLink}</div>
+                    <Button variant="outline" className="w-full" onClick={() => { void navigator.clipboard.writeText(finalExamLink); toast({ title: "تم النسخ" }); }}>
+                      <Copy className="size-4 ml-2" />
+                      نسخ الرابط
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                {/* Copy / Move */}
+                {!managedBranchId && (
+                  <Card className={dashboardCardClass}>
+                    <CardHeader><CardDescription>نسخ أو نقل الأسئلة</CardDescription><CardTitle className="text-xl">من {branchLabels[effectiveBranch]} إلى {branchLabels[otherBranch]}</CardTitle></CardHeader>
+                    <CardContent className="space-y-3">
+                      <p className="text-sm text-muted-foreground">سيتم استبدال أسئلة {branchLabels[otherBranch]} الحالية بأسئلة {branchLabels[effectiveBranch]}.</p>
+                      <div className="flex gap-2">
+                        <Button variant="outline" className="flex-1 rounded-full" onClick={() => setFinalExamCopyConfirm({ from: effectiveBranch, to: otherBranch, move: false })}>
+                          <Copy className="size-3.5 ml-1.5" />
+                          نسخ
+                        </Button>
+                        <Button variant="outline" className="flex-1 rounded-full border-amber-300 text-amber-700 hover:bg-amber-50" onClick={() => setFinalExamCopyConfirm({ from: effectiveBranch, to: otherBranch, move: true })}>
+                          <ArrowRightLeft className="size-3.5 ml-1.5" />
+                          نقل
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                <Card className={dashboardCardClass}>
+                  <CardHeader><CardTitle className="text-xl">إحصائيات</CardTitle></CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    <div className="flex justify-between"><span className="text-muted-foreground">معلمين - الأسئلة</span><Badge variant="outline">{data.finalExamQuestions.filter((q) => q.branchCode === "male").length}</Badge></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">معلمات - الأسئلة</span><Badge variant="outline">{data.finalExamQuestions.filter((q) => q.branchCode === "female").length}</Badge></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">معلمين - الإجابات</span><Badge variant="outline">{data.finalExamSubmissions.filter((s) => s.branchCode === "male").length}</Badge></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">معلمات - الإجابات</span><Badge variant="outline">{data.finalExamSubmissions.filter((s) => s.branchCode === "female").length}</Badge></div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          );
+        })()}
+
+        {dashboardTab === "courses" && (
+          <div className="space-y-6">
+
+            {/* Course Assessment Indicators */}
+            <Card className={dashboardCardClass}>
+              <CardHeader>
+                <CardTitle className="text-lg">مؤشرات الدورة</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium text-muted-foreground">الفرع</div>
+                    <Select value={courseIndicatorsBranch} onValueChange={(v) => setCourseIndicatorsBranch(v as BranchId)}>
+                      <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {data.branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  {courseError && <p className="text-sm font-medium text-destructive">{courseError}</p>}
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium text-muted-foreground">الدورة</div>
+                    <Select value={courseIndicatorsCourseId} onValueChange={setCourseIndicatorsCourseId}>
+                      <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
+                        <SelectValue placeholder="اختر الدورة" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {courseItems.map((c) => <SelectItem key={c.id} value={c.id}>{c.title}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
+
+                {courseIndicatorsMetrics ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-2 text-xs"
+                        onClick={() => {
+                          const branchLabel = data.branches.find((b) => b.id === courseIndicatorsBranch)?.label ?? courseIndicatorsBranch;
+                          const wsData = [
+                            ["الاسم", "رقم الدخول", "الاختبار القبلي %", "الاختبار البعدي %", "الفرق", "الحضور"],
+                            ...courseIndicatorsMetrics.studentRows.map((r) => [
+                              r.name,
+                              r.loginId,
+                              r.prePct ?? "",
+                              r.postPct ?? "",
+                              r.diff ?? "",
+                              r.attended ? "حضر" : "غائب",
+                            ]),
+                            [],
+                            ["الإجمالي", "", `${Math.round(courseIndicatorsMetrics.pre)}%`, `${Math.round(courseIndicatorsMetrics.post)}%`, `${Math.round(courseIndicatorsMetrics.rise) >= 0 ? "+" : ""}${Math.round(courseIndicatorsMetrics.rise)}%`, `${Math.round(courseIndicatorsMetrics.attendance)}%`],
+                          ];
+                          const ws = XLSX.utils.aoa_to_sheet(wsData);
+                          const wb = XLSX.utils.book_new();
+                          XLSX.utils.book_append_sheet(wb, ws, "مؤشرات");
+                          XLSX.writeFile(wb, `مؤشرات-${courseIndicatorsMetrics.courseName}-${branchLabel}.xlsx`);
+                        }}
+                      >
+                        <Download className="size-3.5" />
+                        تصدير
+                      </Button>
+                      <div className="text-xs text-muted-foreground">{courseIndicatorsMetrics.courseName} — {data.branches.find((b) => b.id === courseIndicatorsBranch)?.label}</div>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    {/* Pre exam */}
+                    <div className="rounded-[1.5rem] border border-border/60 bg-white p-5 text-center shadow-sm">
+                      <FileText className="mx-auto mb-2 size-5 text-blue-500" aria-hidden="true" />
+                      <div className="text-3xl font-black text-blue-600">{formatPercent(courseIndicatorsMetrics.pre)}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{courseIndicatorsMetrics.preCount} / {courseIndicatorsMetrics.totalStudents} طالب</div>
+                      <div className="mt-2 text-sm font-bold text-foreground">الاختبار القبلي</div>
+                    </div>
+                    {/* Post exam */}
+                    <div className="rounded-[1.5rem] border border-border/60 bg-white p-5 text-center shadow-sm">
+                      <FileText className="mx-auto mb-2 size-5 text-emerald-500" aria-hidden="true" />
+                      <div className="text-3xl font-black text-emerald-600">{formatPercent(courseIndicatorsMetrics.post)}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{courseIndicatorsMetrics.postCount} / {courseIndicatorsMetrics.totalStudents} طالب</div>
+                      <div className="mt-2 text-sm font-bold text-foreground">الاختبار البعدي</div>
+                    </div>
+                    {/* Rise / fall */}
+                    <div className="rounded-[1.5rem] border border-border/60 bg-white p-5 text-center shadow-sm">
+                      {courseIndicatorsMetrics.rise > 0 ? (
+                        <TrendingUp className="mx-auto mb-2 size-5 text-emerald-500" aria-hidden="true" />
+                      ) : courseIndicatorsMetrics.rise < 0 ? (
+                        <TrendingDown className="mx-auto mb-2 size-5 text-destructive" aria-hidden="true" />
+                      ) : (
+                        <Minus className="mx-auto mb-2 size-5 text-muted-foreground" aria-hidden="true" />
+                      )}
+                      <div className={cn("text-3xl font-black", courseIndicatorsMetrics.rise > 0 ? "text-emerald-600" : courseIndicatorsMetrics.rise < 0 ? "text-destructive" : "text-muted-foreground")}>
+                        {courseIndicatorsMetrics.rise > 0 ? "+" : ""}{Math.round(courseIndicatorsMetrics.rise)}%
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">{courseIndicatorsMetrics.bothCount} طالب اختبروا كليهما</div>
+                      <div className="mt-2 text-sm font-bold text-foreground">
+                        {courseIndicatorsMetrics.rise > 0 ? "ارتفاع" : courseIndicatorsMetrics.rise < 0 ? "انخفاض" : "مستقر"}
+                      </div>
+                    </div>
+                    {/* Attendance */}
+                    <div className="rounded-[1.5rem] border border-border/60 bg-white p-5 text-center shadow-sm">
+                      <Users className="mx-auto mb-2 size-5 text-orange-400" aria-hidden="true" />
+                      <div className="text-3xl font-black text-orange-500">{formatPercent(courseIndicatorsMetrics.attendance)}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{courseIndicatorsMetrics.attendanceCount} / {courseIndicatorsMetrics.totalStudents} طالب</div>
+                      <div className="mt-2 text-sm font-bold text-foreground">الحضور</div>
+                    </div>
+                  </div>
+                  </div>
+                ) : (
+                  <div className={cn(dashboardEmptyStateClass, "p-4 text-center text-sm text-muted-foreground")}>اختر دورة لعرض المؤشرات</div>
+                )}
               </CardContent>
             </Card>
 
-            <div className="space-y-4">
-              <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleCourseOrderDragEnd}>
+            <div className="space-y-4">              <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleCourseOrderDragEnd}>
                 <SortableContext items={courseItems.map((c) => c.id)} strategy={rectSortingStrategy}>
                   <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
                     {courseItems.length === 0 && <Card className={cn(dashboardEmptyStateClass, "md:col-span-2 lg:col-span-3")}><CardContent className="p-6 text-sm text-muted-foreground">لا توجد دورات بعد.</CardContent></Card>}
@@ -3755,6 +4783,8 @@ const Dashboard = () => {
                             key={item.type}
                             type="button"
                             onClick={() => {
+                              const permKey: PermissionKey = item.type === "pre" ? "open_pre_exam" : "open_post_exam";
+                              if (!hasPermission(permKey)) return;
                               const isOpen = course.isActive && item.active;
                               if (isOpen) {
                                 // Manager: only deactivate their branch
@@ -3964,7 +4994,9 @@ const Dashboard = () => {
                           </div>
                           {questionErrors[assessmentType] && <p className="text-sm font-medium text-destructive">{questionErrors[assessmentType]}</p>}
                           {questionImportMessages[assessmentType] && <p className="text-sm font-medium text-emerald-700">{questionImportMessages[assessmentType]}</p>}
+                          {hasPermission(assessmentType === "pre" ? "edit_pre_questions" : assessmentType === "post" ? "edit_post_questions" : "edit_tasks") && (
                           <Button onClick={() => handleAddQuestion(assessmentType)}>حفظ في هذه الدورة فقط</Button>
+                          )}
                           <Separator />
                           {renderQuestionsList(assessmentType, questions)}
                         </CardContent>
@@ -4222,8 +5254,8 @@ const Dashboard = () => {
                       <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {!assessmentRestrictToBranchOnly && <SelectItem value="all" className="justify-end pr-3 text-right">جميع الفروع</SelectItem>}
-                        {assessmentBlockedBranch !== "male" && <SelectItem value="male" className="justify-end pr-3 text-right">الفرع الرجالي</SelectItem>}
-                        {assessmentBlockedBranch !== "female" && <SelectItem value="female" className="justify-end pr-3 text-right">الفرع النسائي</SelectItem>}
+                        {assessmentBlockedBranch !== "male" && <SelectItem value="male" className="justify-end pr-3 text-right">معلمين</SelectItem>}
+                        {assessmentBlockedBranch !== "female" && <SelectItem value="female" className="justify-end pr-3 text-right">معلمات</SelectItem>}
                       </SelectContent>
                     </Select>
                   </div>
@@ -4346,6 +5378,28 @@ const Dashboard = () => {
                     ? null
                     : Number(r.manualScore),
               })),
+          );
+        }}
+      />
+
+      <ManualGradesDialog
+        open={manualGradesOpen}
+        onOpenChange={setManualGradesOpen}
+        courses={[...courseItems, ...getTasks(data).sort((a, b) => a.sortOrder - b.sortOrder)]}
+        students={data.students}
+        submissions={data.submissions}
+        defaultCourseId={resultsCourse?.id}
+        defaultAssessmentType={resultsType !== "attendance" ? resultsType : "pre"}
+        onSave={async (cId, aType, rows) => {
+          await store.bulkImportAssessments(
+            cId,
+            aType,
+            rows.map((r) => ({
+              studentName: r.studentName,
+              loginId: r.loginId,
+              answers: [{ questionId: "__score_override__", value: String(r.score) }],
+              manualScore: r.score,
+            })),
           );
         }}
       />
@@ -4544,6 +5598,165 @@ const Dashboard = () => {
             <Button variant="outline" className="rounded-full px-5" onClick={() => setAdminsOpen(false)} disabled={adminSubmitting}>إلغاء</Button>
             <Button className="rounded-full px-5" onClick={handleSaveAdmin} disabled={adminSubmitting}>{adminSubmitting ? "جارٍ الحفظ..." : "إضافة"}</Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={coursesManageOpen} onOpenChange={setCoursesManageOpen}>
+        <DialogContent className="max-w-lg overflow-hidden rounded-[2rem] border border-primary/15 bg-white/95 p-0 text-right shadow-[0_28px_80px_rgba(8,65,89,0.16)] [&>button]:hidden">
+          <div className="flex items-center justify-between border-b border-border/60 px-5 py-4">
+            <button type="button" className="text-muted-foreground hover:text-foreground" onClick={() => setCoursesManageOpen(false)}><X className="size-5" /></button>
+            <DialogTitle className="text-lg font-bold">إدارة الدورات</DialogTitle>
+          </div>
+          <div className="space-y-4 px-5 py-4">
+            <div className="flex items-center gap-3">
+              <Input
+                value={courseTitle}
+                onChange={(e) => setCourseTitle(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && void handleAddCourse()}
+                placeholder="اسم الدورة"
+                className="flex-1 text-right"
+              />
+              <Button onClick={handleAddCourse} className="shrink-0 rounded-full px-5">
+                <Plus className="size-4" />
+                إضافة
+              </Button>
+            </div>
+            {courseError && <p className="text-sm font-medium text-destructive">{courseError}</p>}
+            <div className="max-h-72 space-y-2 overflow-y-auto">
+              {courseItems.length === 0 && (
+                <p className="py-4 text-center text-sm text-muted-foreground">لا توجد دورات بعد.</p>
+              )}
+              {courseItems.map((course) => (
+                <div key={course.id} className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-white px-4 py-3">
+                  <div className="flex shrink-0 gap-2">
+                    <Button variant="outline" size="icon" className="h-8 w-8 rounded-xl" onClick={() => handleEditCourse(course.id, course.title)}>
+                      <Pencil className="size-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl text-destructive" onClick={() => handleDeleteCourse(course.id)}>
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </div>
+                  <span className="truncate text-sm font-medium text-foreground">{course.title}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={satisfactionOpen} onOpenChange={setSatisfactionOpen}>
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto rounded-[2rem] border border-primary/15 bg-white/95 p-0 text-right shadow-[0_28px_80px_rgba(8,65,89,0.16)] [&>button]:hidden">
+          <div className="flex items-center justify-between border-b border-border/60 px-5 py-4">
+            <button type="button" className="text-muted-foreground hover:text-foreground" onClick={() => setSatisfactionOpen(false)}><X className="size-5" /></button>
+            <DialogTitle className="text-lg font-bold">استبيان الرضا</DialogTitle>
+          </div>
+          <div className="flex gap-2 border-b border-border/60 px-5 py-3">
+            <button type="button" onClick={() => setSatisfactionTab("questions")} className={cn("rounded-full px-4 py-1.5 text-sm font-bold transition-smooth", satisfactionTab === "questions" ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground")}>الأسئلة</button>
+            <button type="button" onClick={() => setSatisfactionTab("results")} className={cn("rounded-full px-4 py-1.5 text-sm font-bold transition-smooth", satisfactionTab === "results" ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground")}>النتائج</button>
+          </div>
+          {satisfactionTab === "questions" && (
+            <div className="space-y-4 px-5 py-4">
+              <div className="space-y-3 rounded-xl border border-border/60 p-4">
+                <div className="text-sm font-bold text-foreground">إضافة سؤال جديد</div>
+                <Input value={newSurveyPrompt} onChange={(e) => setNewSurveyPrompt(e.target.value)} placeholder="نص السؤال" className="text-right" />
+                <div className="flex items-center gap-3">
+                  <select value={newSurveyType} onChange={(e) => setNewSurveyType(e.target.value as "rating" | "text")} className="rounded-xl border border-border/60 bg-white px-3 py-2 text-sm text-right">
+                    <option value="rating">تقييم (0-10)</option>
+                    <option value="text">نص حر</option>
+                  </select>
+                  <label className="flex items-center gap-2 text-sm text-foreground">
+                    <input type="checkbox" checked={newSurveyRequired} onChange={(e) => setNewSurveyRequired(e.target.checked)} className="rounded" />
+                    إلزامي
+                  </label>
+                </div>
+                <Button
+                  className="rounded-full px-5"
+                  onClick={async () => {
+                    if (!newSurveyPrompt.trim()) return;
+                    await store.addSatisfactionQuestion({ prompt: newSurveyPrompt.trim(), type: newSurveyType, isRequired: newSurveyRequired });
+                    setNewSurveyPrompt("");
+                  }}
+                >
+                  <Plus className="size-4" />
+                  إضافة
+                </Button>
+              </div>
+              <div className="space-y-2">
+                {data.satisfactionQuestions.length === 0 && (
+                  <p className="py-4 text-center text-sm text-muted-foreground">لا توجد أسئلة بعد.</p>
+                )}
+                {data.satisfactionQuestions.map((q) => (
+                  <div key={q.id} className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-white px-4 py-3">
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 rounded-xl text-destructive" onClick={() => void store.deleteSatisfactionQuestion(q.id)}>
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                    <div className="min-w-0 text-right">
+                      <div className="truncate text-sm font-medium text-foreground">{q.prompt}</div>
+                      <div className="text-xs text-muted-foreground">{q.type === "rating" ? "تقييم 0-10" : "نص حر"}{q.isRequired ? " · إلزامي" : ""}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {satisfactionTab === "results" && (() => {
+            const coursesWithResponses = data.courses.filter((c) =>
+              data.satisfactionResponses.some((r) => r.courseId === c.id),
+            );
+            const selectedCourse = data.courses.find((c) => c.id === satisfactionResultsCourseId) ?? coursesWithResponses[0];
+
+            return (
+              <div className="space-y-4 px-5 py-4">
+                {coursesWithResponses.length === 0 ? (
+                  <p className="py-4 text-center text-sm text-muted-foreground">لا توجد استجابات بعد.</p>
+                ) : (
+                  <>
+                    <select
+                      value={selectedCourse?.id ?? ""}
+                      onChange={(e) => setSatisfactionResultsCourseId(e.target.value)}
+                      className="w-full rounded-xl border border-border/60 bg-white px-3 py-2 text-sm text-right"
+                    >
+                      {coursesWithResponses.map((c) => (
+                        <option key={c.id} value={c.id}>{c.title}</option>
+                      ))}
+                    </select>
+                    {selectedCourse && data.satisfactionQuestions.map((q) => {
+                      const courseResponses = data.satisfactionResponses.filter((r) => r.courseId === selectedCourse.id && r.questionId === q.id);
+                      if (courseResponses.length === 0) return null;
+
+                      if (q.type === "rating") {
+                        const ratingValues = courseResponses.map((r) => r.ratingValue).filter((v): v is number => v != null);
+                        const avg = ratingValues.length > 0 ? (ratingValues.reduce((a, b) => a + b, 0) / ratingValues.length).toFixed(1) : "-";
+                        return (
+                          <div key={q.id} className="rounded-xl border border-border/60 p-4">
+                            <div className="mb-2 text-sm font-bold text-foreground">{q.prompt}</div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-2xl font-extrabold text-primary">{avg}</span>
+                              <span className="text-xs text-muted-foreground">/ 10 · {ratingValues.length} مشاركة</span>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div key={q.id} className="rounded-xl border border-border/60 p-4">
+                          <div className="mb-2 text-sm font-bold text-foreground">{q.prompt}</div>
+                          <div className="space-y-2">
+                            {courseResponses.map((r) => (
+                              <div key={r.id} className="rounded-lg bg-muted/20 px-3 py-2 text-sm text-foreground">
+                                <span className="ml-2 text-xs font-medium text-muted-foreground">{r.studentName}:</span>
+                                {r.textValue}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
+              </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
@@ -4971,6 +6184,7 @@ const Dashboard = () => {
           </DialogHeader>
 
           <div className="space-y-3 px-6 py-5">
+            {hasPermission("transfer_reciter_student") && (
             <Button
               variant="outline"
               className="w-full justify-center rounded-full px-5"
@@ -4989,14 +6203,19 @@ const Dashboard = () => {
               <ArrowRightLeft className="size-4" />
               نقل الطالب المرتبط
             </Button>
+            )}
+            {hasPermission("edit_reciter") && (
             <Button variant="outline" className="w-full justify-center rounded-full px-5" onClick={handleEditFromReciterActions}>
               <Pencil className="size-4" />
               تعديل المقرئ
             </Button>
+            )}
+            {hasPermission("delete_reciter") && (
             <Button variant="outline" className="w-full justify-center rounded-full px-5 text-destructive hover:text-destructive" onClick={handleDeleteFromReciterActions}>
               <Trash2 className="size-4" />
               حذف المقرئ
             </Button>
+            )}
           </div>
 
           <div className="flex justify-end border-t border-border/60 px-6 py-5">
@@ -5089,6 +6308,30 @@ const Dashboard = () => {
           <AlertDialogFooter className="justify-start gap-2 px-5 py-4 sm:justify-start sm:space-x-0">
             <AlertDialogAction className="rounded-full bg-destructive px-4 text-destructive-foreground hover:bg-destructive/90" onClick={confirmDeleteReciter}>
               {reciterDeleting ? "جارٍ الحذف..." : "حذف"}
+            </AlertDialogAction>
+            <AlertDialogCancel className="mt-0 rounded-full px-4">إلغاء</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={Boolean(finalExamCopyConfirm)} onOpenChange={(open) => !open && setFinalExamCopyConfirm(null)}>
+        <AlertDialogContent className="rounded-[1.75rem] border border-border/60 text-right">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-right">
+              {finalExamCopyConfirm?.move ? "نقل الأسئلة" : "نسخ الأسئلة"}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-right">
+              {finalExamCopyConfirm && `سيتم ${finalExamCopyConfirm.move ? "نقل" : "نسخ"} أسئلة ${branchLabels[finalExamCopyConfirm.from]} إلى ${branchLabels[finalExamCopyConfirm.to]}. سيتم حذف الأسئلة الحالية في ${branchLabels[finalExamCopyConfirm.to]}.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="justify-start gap-2 sm:justify-start sm:space-x-0">
+            <AlertDialogAction className="rounded-full px-4" onClick={async () => {
+              if (!finalExamCopyConfirm) return;
+              await store.copyFinalExamQuestions(finalExamCopyConfirm.from, finalExamCopyConfirm.to, finalExamCopyConfirm.move);
+              setFinalExamCopyConfirm(null);
+              toast({ title: "تم بنجاح" });
+            }}>
+              {finalExamCopyConfirm?.move ? "نقل" : "نسخ"}
             </AlertDialogAction>
             <AlertDialogCancel className="mt-0 rounded-full px-4">إلغاء</AlertDialogCancel>
           </AlertDialogFooter>

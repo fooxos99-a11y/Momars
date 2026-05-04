@@ -6,6 +6,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import CoursePage from "./pages/CoursePage.tsx";
+import FinalExamPage from "./pages/FinalExamPage.tsx";
 import AdminAssessmentPage from "./pages/AdminAssessmentPage.tsx";
 import Dashboard from "./pages/Dashboard.tsx";
 import Index from "./pages/Index.tsx";
@@ -72,6 +73,7 @@ const AnimatedRoutes = () => {
         <Route path="/course/pre" element={<CoursePage assessmentType="pre" />} />
         <Route path="/course/post" element={<CoursePage assessmentType="post" />} />
         <Route path="/course/tasks" element={<TasksPage />} />
+        <Route path="/final-exam" element={<FinalExamPage />} />
         {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
         <Route path="*" element={<NotFound />} />
       </Routes>

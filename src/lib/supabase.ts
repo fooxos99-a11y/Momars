@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+﻿import { createClient } from "@supabase/supabase-js";
 import type {
   AccessSession,
   AssessmentType,
@@ -9,8 +9,12 @@ import type {
   CourseQuestion,
   CourseRecord,
   DashboardData,
+  FinalExamQuestion,
+  FinalExamSubmission,
   NotificationRecord,
   RecordEntityType,
+  SatisfactionQuestion,
+  SatisfactionResponse,
   StudentRecord,
   SubmissionAnswer,
   TaskMode,
@@ -190,8 +194,8 @@ const dashboardRoles = [
 ];
 
 const defaultBranches = [
-  { id: "male" as const, label: "رجالي" },
-  { id: "female" as const, label: "نسائي" },
+  { id: "male" as const, label: "معلمين" },
+  { id: "female" as const, label: "معلمات" },
 ];
 
 const isTrueFalseOptions = (options: string[]) => {
@@ -255,10 +259,13 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
   const branches = await getBranchRecords();
   const branchCodeById = new Map(branches.map((branch) => [branch.id as string, branch.code as BranchId]));
 
-  const [{ data: students, error: studentsError }, { data: studentParts, error: studentPartsError }] = await Promise.all([
-    supabase.from("students").select("id, full_name, login_code, note, branch_id, created_at"),
-    supabase.from("student_parts").select("student_id, part_number"),
-  ]);
+  const studentsWithCertifiedResponse = await supabase.from("students").select("id, full_name, login_code, note, is_certified, branch_id, created_at");
+  const studentsResponse = studentsWithCertifiedResponse.error && isMissingFieldError(studentsWithCertifiedResponse.error, "is_certified")
+    ? await supabase.from("students").select("id, full_name, login_code, note, branch_id, created_at")
+    : studentsWithCertifiedResponse;
+  const { data: studentParts, error: studentPartsError } = await supabase.from("student_parts").select("student_id, part_number");
+
+  const { data: students, error: studentsError } = studentsResponse;
 
   if (studentsError) {
     throw studentsError;
@@ -283,6 +290,7 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
     loginId: student.login_code as string,
     branchId: branchCodeById.get(student.branch_id as string) ?? "male",
     note: (student.note as string) ?? "",
+    isCertified: Boolean(student.is_certified),
     completedParts: [...(completedPartsByStudentId.get(student.id as string) ?? [])].sort((left, right) => left - right),
     createdAt: (student.created_at as string) ?? new Date().toISOString(),
   }));
@@ -531,6 +539,47 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
         createdByRole: (notification.created_by_role as UserRole | null) ?? undefined,
       }));
 
+  const satisfactionQuestionsResponse = await supabase
+    .from("satisfaction_questions")
+    .select("id, prompt, type, is_required, sort_order, created_at")
+    .order("sort_order");
+
+  const satisfactionResponsesResponse = isMissingRelationError(satisfactionQuestionsResponse.error ?? { message: "" }, "satisfaction_questions")
+    ? { data: [], error: null }
+    : await supabase
+        .from("satisfaction_responses")
+        .select("id, course_id, question_id, login_code, student_name, rating_value, text_value, submitted_at");
+
+  const normalizedSatisfactionQuestions: SatisfactionQuestion[] = isMissingRelationError(satisfactionQuestionsResponse.error ?? { message: "" }, "satisfaction_questions")
+    ? []
+    : (satisfactionQuestionsResponse.data ?? []).map((q) => ({
+        id: q.id as string,
+        prompt: q.prompt as string,
+        type: (q.type as string) === "text" ? "text" : "rating",
+        isRequired: Boolean(q.is_required),
+        sortOrder: (q.sort_order as number) ?? 0,
+        createdAt: (q.created_at as string) ?? new Date().toISOString(),
+      }));
+
+  const normalizedSatisfactionResponses: SatisfactionResponse[] = (satisfactionResponsesResponse.data ?? []).map((r) => ({
+    id: r.id as string,
+    courseId: r.course_id as string,
+    questionId: r.question_id as string,
+    loginCode: r.login_code as string,
+    studentName: r.student_name as string,
+    ratingValue: (r.rating_value as number | null) ?? null,
+    textValue: (r.text_value as string | null) ?? "",
+    submittedAt: (r.submitted_at as string) ?? new Date().toISOString(),
+  }));
+
+  const finalExamData = await loadFinalExamDataFromDatabase().catch(() => ({
+    questions: [] as FinalExamQuestion[],
+    submissions: [] as FinalExamSubmission[],
+    settings: { male: false, female: false },
+  }));
+
+  const rolePermissions = await loadRolePermissionsFromDatabase().catch(() => ({} as Record<string, Record<string, boolean>>));
+
   return {
     roles: dashboardRoles,
     branches: branches.length > 0
@@ -543,10 +592,16 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
     submissions: normalizedSubmissions,
     attendance: normalizedAttendance,
     notifications: normalizedNotifications,
+    satisfactionQuestions: normalizedSatisfactionQuestions,
+    satisfactionResponses: normalizedSatisfactionResponses,
+    finalExamQuestions: finalExamData.questions,
+    finalExamSubmissions: finalExamData.submissions,
+    finalExamSettings: finalExamData.settings,
+    rolePermissions,
   };
 };
 
-export const addStudentToDatabase = async (student: Omit<StudentRecord, "id" | "completedParts" | "createdAt">) => {
+export const addStudentToDatabase = async (student: Omit<StudentRecord, "id" | "completedParts" | "createdAt" | "isCertified">) => {
   const { data, error } = await supabase.rpc("create_student_account", {
     student_name: student.name.trim(),
     student_login_code: student.loginId.trim(),
@@ -645,6 +700,10 @@ export const updateStudentInDatabase = async (studentId: string, updates: Partia
 
   if (typeof updates.note === "string") {
     payload.note = updates.note;
+  }
+
+  if (typeof updates.isCertified === "boolean") {
+    payload.is_certified = updates.isCertified;
   }
 
   if (updates.branchId) {
@@ -1133,23 +1192,6 @@ export const bulkUpsertSubmissionsToDatabase = async (
       .from("course_submission_answers")
       .insert(answersToInsert);
     if (insertAnswersError) throw insertAnswersError;
-  }
-
-  /* 5) register attendance for post-assessment submissions */
-  if (assessmentType === "post") {
-    const attendanceRecords = normalizedSubmissions.map((submission) => ({
-      course_id: courseId,
-      student_id: studentIdByLogin.get(submission.loginId) ?? null,
-      student_name: submission.studentName,
-      login_code: submission.loginId,
-      source: "post-test",
-    }));
-
-    const { error: attendanceError } = await supabase
-      .from("course_attendance")
-      .upsert(attendanceRecords, { onConflict: "course_id,login_code" });
-
-    if (attendanceError) throw attendanceError;
   }
 
   return normalizedSubmissions
@@ -1737,6 +1779,227 @@ export const deleteNotificationFromDatabase = async (notificationId: string) => 
   if (error) {
     throw error;
   }
+};
+
+export const addSatisfactionQuestionToDatabase = async (input: { prompt: string; type: "rating" | "text"; isRequired: boolean; sortOrder: number }) => {
+  const { data, error } = await supabase
+    .from("satisfaction_questions")
+    .insert({ prompt: input.prompt.trim(), type: input.type, is_required: input.isRequired, sort_order: input.sortOrder })
+    .select("id, created_at")
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return { id: data.id as string, createdAt: (data.created_at as string | null) ?? new Date().toISOString() };
+};
+
+export const deleteSatisfactionQuestionFromDatabase = async (questionId: string) => {
+  const { error } = await supabase.from("satisfaction_questions").delete().eq("id", questionId);
+
+  if (error) {
+    throw error;
+  }
+};
+
+export const submitSatisfactionResponsesToDatabase = async (responses: Array<{ courseId: string; questionId: string; loginCode: string; studentName: string; ratingValue: number | null; textValue: string }>) => {
+  const rows = responses.map((r) => ({
+    course_id: r.courseId,
+    question_id: r.questionId,
+    login_code: r.loginCode,
+    student_name: r.studentName,
+    rating_value: r.ratingValue,
+    text_value: r.textValue || null,
+  }));
+
+  const { data, error } = await supabase
+    .from("satisfaction_responses")
+    .upsert(rows, { onConflict: "course_id,question_id,login_code" })
+    .select("id, course_id, question_id, login_code");
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    courseId: r.course_id as string,
+    questionId: r.question_id as string,
+    loginCode: r.login_code as string,
+  }));
+};
+
+// ── Final Exam ─────────────────────────────────────────────────────────────
+
+export const loadFinalExamDataFromDatabase = async (): Promise<{
+  questions: FinalExamQuestion[];
+  submissions: FinalExamSubmission[];
+  settings: { male: boolean; female: boolean };
+}> => {
+  const [settingsRes, questionsRes, submissionsRes, answersRes] = await Promise.all([
+    supabase.from("final_exam_settings").select("branch_code, is_enabled"),
+    supabase.from("final_exam_questions").select("id, branch_code, question_type, prompt, options, allow_file, points, correct_answer, attachment_name, attachment_type, attachment_data_url, sort_order, created_at").order("sort_order"),
+    supabase.from("final_exam_submissions").select("id, branch_code, student_name, login_code, manual_score, submitted_at"),
+    supabase.from("final_exam_submission_answers").select("id, submission_id, question_id, answer_text, file_name, file_type, file_data_url"),
+  ]);
+
+  const settings: { male: boolean; female: boolean } = { male: false, female: false };
+  for (const row of settingsRes.data ?? []) {
+    const code = row.branch_code as string;
+    if (code === "male" || code === "female") {
+      settings[code] = Boolean(row.is_enabled);
+    }
+  }
+
+  const questions: FinalExamQuestion[] = (questionsRes.data ?? []).map((q) => {
+    const rawOptions = q.options as unknown;
+    const options: string[] = Array.isArray(rawOptions) ? (rawOptions as string[]).filter(Boolean) : [];
+    const qType = (q.question_type as string) === "text" ? "text" : "multiple";
+    const isTrueFalse = qType === "multiple" && options.length === 2 && options.every((o) => o === "صح" || o === "خطأ");
+    return {
+      id: q.id as string,
+      branchCode: (q.branch_code as string) === "female" ? "female" : "male",
+      type: isTrueFalse ? "truefalse" : qType,
+      prompt: q.prompt as string,
+      options,
+      allowFile: Boolean(q.allow_file),
+      points: (q.points as number) ?? 1,
+      correctAnswer: (q.correct_answer as string) ?? "",
+      attachmentName: (q.attachment_name as string) ?? "",
+      attachmentType: (q.attachment_type as string) ?? "",
+      attachmentDataUrl: (q.attachment_data_url as string) ?? "",
+      sortOrder: (q.sort_order as number) ?? 0,
+      createdAt: (q.created_at as string) ?? new Date().toISOString(),
+    };
+  });
+
+  const answersBySubmissionId = new Map<string, SubmissionAnswer[]>();
+  for (const a of answersRes.data ?? []) {
+    const sid = a.submission_id as string;
+    const current = answersBySubmissionId.get(sid) ?? [];
+    current.push({ questionId: a.question_id as string, value: (a.answer_text as string) ?? "", fileName: (a.file_name as string | null) ?? undefined, fileType: (a.file_type as string | null) ?? undefined, fileDataUrl: (a.file_data_url as string | null) ?? undefined });
+    answersBySubmissionId.set(sid, current);
+  }
+
+  const submissions: FinalExamSubmission[] = (submissionsRes.data ?? []).map((s) => ({
+    id: s.id as string,
+    branchCode: (s.branch_code as string) === "female" ? "female" : "male",
+    studentName: s.student_name as string,
+    loginCode: s.login_code as string,
+    manualScore: (s.manual_score as number | null) ?? null,
+    answers: answersBySubmissionId.get(s.id as string) ?? [],
+    submittedAt: (s.submitted_at as string) ?? new Date().toISOString(),
+  }));
+
+  return { questions, submissions, settings };
+};
+
+export const addFinalExamQuestionToDatabase = async (branchCode: BranchId, question: { prompt: string; type: "multiple" | "text" | "truefalse"; options: string[]; allowFile: boolean; points: number; correctAnswer: string; sortOrder: number }) => {
+  const { data, error } = await supabase
+    .from("final_exam_questions")
+    .insert({
+      branch_code: branchCode,
+      question_type: question.type === "truefalse" ? "multiple" : question.type,
+      prompt: question.prompt.trim(),
+      options: question.type === "truefalse" ? ["صح", "خطأ"] : question.options,
+      allow_file: question.allowFile,
+      points: question.points,
+      correct_answer: question.correctAnswer,
+      sort_order: question.sortOrder,
+    })
+    .select("id, created_at")
+    .single();
+
+  if (error) throw error;
+  return { id: data.id as string, createdAt: (data.created_at as string) ?? new Date().toISOString() };
+};
+
+export const deleteFinalExamQuestionFromDatabase = async (id: string) => {
+  const { error } = await supabase.from("final_exam_questions").delete().eq("id", id);
+  if (error) throw error;
+};
+
+export const toggleFinalExamEnabledInDatabase = async (branchCode: BranchId, isEnabled: boolean) => {
+  const { error } = await supabase
+    .from("final_exam_settings")
+    .upsert({ branch_code: branchCode, is_enabled: isEnabled }, { onConflict: "branch_code" });
+  if (error) throw error;
+};
+
+export const submitFinalExamToDatabase = async (submission: { branchCode: BranchId; studentName: string; loginCode: string; answers: SubmissionAnswer[] }) => {
+  const { data: existingCheck } = await supabase.from("final_exam_submissions").select("id").eq("login_code", submission.loginCode).maybeSingle();
+  if (existingCheck?.id) throw new Error("تم إرسال الاختبار النهائي مسبقًا.");
+
+  const { data: inserted, error: subError } = await supabase
+    .from("final_exam_submissions")
+    .insert({ branch_code: submission.branchCode, student_name: submission.studentName, login_code: submission.loginCode })
+    .select("id, submitted_at")
+    .single();
+  if (subError) throw subError;
+
+  if (submission.answers.length > 0) {
+    const { error: answersError } = await supabase.from("final_exam_submission_answers").insert(
+      submission.answers.filter((a) => a.questionId !== "__score_override__").map((a) => ({
+        submission_id: inserted.id,
+        question_id: a.questionId,
+        answer_text: a.value,
+        file_name: a.fileName ?? null,
+        file_type: a.fileType ?? null,
+        file_data_url: a.fileDataUrl ?? null,
+      })),
+    );
+    if (answersError) throw answersError;
+  }
+
+  return { id: inserted.id as string, submittedAt: (inserted.submitted_at as string) ?? new Date().toISOString() };
+};
+
+export const copyFinalExamQuestionsInDatabase = async (from: BranchId, to: BranchId, move: boolean) => {
+  const { data: sourceQuestions, error } = await supabase
+    .from("final_exam_questions")
+    .select("question_type, prompt, options, allow_file, points, correct_answer, attachment_name, attachment_type, attachment_data_url, sort_order")
+    .eq("branch_code", from)
+    .order("sort_order");
+  if (error) throw error;
+
+  if ((sourceQuestions ?? []).length === 0) return;
+
+  // Delete existing destination questions
+  await supabase.from("final_exam_questions").delete().eq("branch_code", to);
+
+  // Insert copies
+  const { error: insertError } = await supabase.from("final_exam_questions").insert(
+    (sourceQuestions ?? []).map((q) => ({ ...q, branch_code: to })),
+  );
+  if (insertError) throw insertError;
+
+  if (move) {
+    await supabase.from("final_exam_questions").delete().eq("branch_code", from);
+  }
+};
+
+export const setFinalExamManualScoreInDatabase = async (submissionId: string, score: number | null) => {
+  const { error } = await supabase.from("final_exam_submissions").update({ manual_score: score }).eq("id", submissionId);
+  if (error) throw error;
+};
+
+// ─── Role Permissions ───────────────────────────────────────────────────────
+
+export const loadRolePermissionsFromDatabase = async (): Promise<Record<string, Record<string, boolean>>> => {
+  const { data, error } = await supabase.from("role_permissions").select("role, permission_key, is_enabled");
+  if (error) { console.warn("[supabase] role_permissions load failed:", error.message); return {}; }
+  const result: Record<string, Record<string, boolean>> = { male_manager: {}, female_manager: {} };
+  for (const row of data ?? []) {
+    if (!result[row.role]) result[row.role] = {};
+    result[row.role][row.permission_key] = row.is_enabled;
+  }
+  return result;
+};
+
+export const setRolePermissionInDatabase = async (role: string, key: string, isEnabled: boolean) => {
+  const { error } = await supabase.from("role_permissions").upsert({ role, permission_key: key, is_enabled: isEnabled }, { onConflict: "role,permission_key" });
+  if (error) throw error;
 };
 
 export const savePushSubscription = async (loginCode: string, subscription: PushSubscriptionJSON) => {

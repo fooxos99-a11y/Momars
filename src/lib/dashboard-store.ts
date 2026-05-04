@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+﻿import React, { createContext, useContext, useEffect, useState } from "react";
 import {
   activateCourseInDatabase,
   addCourseToDatabase,
@@ -23,6 +23,17 @@ import {
   updateCourseInDatabase,
   updateCoursesSortOrderInDatabase,
   updateStudentInDatabase,
+  addSatisfactionQuestionToDatabase,
+  deleteSatisfactionQuestionFromDatabase,
+  submitSatisfactionResponsesToDatabase,
+  addFinalExamQuestionToDatabase,
+  deleteFinalExamQuestionFromDatabase,
+  toggleFinalExamEnabledInDatabase,
+  submitFinalExamToDatabase,
+  copyFinalExamQuestionsInDatabase,
+  setFinalExamManualScoreInDatabase,
+  loadRolePermissionsFromDatabase,
+  setRolePermissionInDatabase,
 } from "@/lib/supabase";
 
 export type UserRole = "admin" | "male_manager" | "female_manager" | "student" | "reciter" | "trainee";
@@ -31,6 +42,12 @@ export type AssessmentType = "pre" | "post" | "tasks";
 export type QuestionType = "multiple" | "text" | "truefalse";
 export type RecordEntityType = "course" | "task";
 export type TaskMode = "questions" | "document";
+export type PermissionKey =
+  | "add_student" | "delete_student" | "edit_student"
+  | "edit_pre_questions" | "edit_post_questions" | "edit_tasks"
+  | "open_pre_exam" | "open_post_exam"
+  | "page_notifications" | "page_results"
+  | "add_reciter" | "delete_reciter" | "edit_reciter" | "transfer_reciter_student";
 
 export interface CourseBranchAvailability {
   pre: boolean;
@@ -66,6 +83,7 @@ export interface StudentRecord {
   loginId: string;
   branchId: BranchId;
   note: string;
+  isCertified: boolean;
   completedParts: number[];
   createdAt: string;
 }
@@ -176,6 +194,52 @@ export interface NotificationRecord {
   createdByName?: string;
 }
 
+export interface SatisfactionQuestion {
+  id: string;
+  prompt: string;
+  type: "rating" | "text";
+  isRequired: boolean;
+  sortOrder: number;
+  createdAt: string;
+}
+
+export interface SatisfactionResponse {
+  id: string;
+  courseId: string;
+  questionId: string;
+  loginCode: string;
+  studentName: string;
+  ratingValue: number | null;
+  textValue: string;
+  submittedAt: string;
+}
+
+export interface FinalExamQuestion {
+  id: string;
+  branchCode: BranchId;
+  type: "multiple" | "text" | "truefalse";
+  prompt: string;
+  options: string[];
+  allowFile: boolean;
+  points: number;
+  correctAnswer: string;
+  attachmentName: string;
+  attachmentType: string;
+  attachmentDataUrl: string;
+  sortOrder: number;
+  createdAt: string;
+}
+
+export interface FinalExamSubmission {
+  id: string;
+  branchCode: BranchId;
+  studentName: string;
+  loginCode: string;
+  manualScore: number | null | undefined;
+  answers: SubmissionAnswer[];
+  submittedAt: string;
+}
+
 export interface DashboardData {
   roles: RoleDefinition[];
   branches: Branch[];
@@ -186,6 +250,12 @@ export interface DashboardData {
   submissions: CourseSubmission[];
   attendance: AttendanceRecord[];
   notifications: NotificationRecord[];
+  satisfactionQuestions: SatisfactionQuestion[];
+  satisfactionResponses: SatisfactionResponse[];
+  finalExamQuestions: FinalExamQuestion[];
+  finalExamSubmissions: FinalExamSubmission[];
+  finalExamSettings: { male: boolean; female: boolean };
+  rolePermissions: Record<string, Record<string, boolean>>;
 }
 
 const adminAccounts = [
@@ -240,8 +310,8 @@ const initialData: DashboardData = {
     { id: "trainee", label: "متدرب (معلم)" },
   ],
   branches: [
-    { id: "male", label: "رجالي" },
-    { id: "female", label: "نسائي" },
+    { id: "male", label: "معلمين" },
+    { id: "female", label: "معلمات" },
   ],
   students: [],
   reciters: [],
@@ -250,6 +320,12 @@ const initialData: DashboardData = {
   submissions: [],
   attendance: [],
   notifications: [],
+  satisfactionQuestions: [],
+  satisfactionResponses: [],
+  finalExamQuestions: [],
+  finalExamSubmissions: [],
+  finalExamSettings: { male: false, female: false },
+  rolePermissions: { male_manager: {}, female_manager: {} },
 };
 
 const normalizeQuestion = (question: CourseQuestion): CourseQuestion => ({
@@ -416,6 +492,20 @@ const normalizeData = (input?: Partial<DashboardData>): DashboardData => {
           }))
           .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
       : initialData.notifications,
+    satisfactionQuestions: Array.isArray(input?.satisfactionQuestions)
+      ? input.satisfactionQuestions
+      : initialData.satisfactionQuestions,
+    satisfactionResponses: Array.isArray(input?.satisfactionResponses)
+      ? input.satisfactionResponses
+      : initialData.satisfactionResponses,
+    finalExamQuestions: Array.isArray(input?.finalExamQuestions)
+      ? input.finalExamQuestions
+      : initialData.finalExamQuestions,
+    finalExamSubmissions: Array.isArray(input?.finalExamSubmissions)
+      ? input.finalExamSubmissions
+      : initialData.finalExamSubmissions,
+    finalExamSettings: input?.finalExamSettings ?? initialData.finalExamSettings,
+    rolePermissions: input?.rolePermissions ?? initialData.rolePermissions,
   };
 };
 
@@ -482,13 +572,37 @@ const useCreateDashboardStore = () => {
     setData((current) => ({ ...current, notifications: updater(current.notifications) }));
   };
 
+  const setSatisfactionQuestions = (updater: (questions: SatisfactionQuestion[]) => SatisfactionQuestion[]) => {
+    setData((current) => ({ ...current, satisfactionQuestions: updater(current.satisfactionQuestions) }));
+  };
+
+  const setSatisfactionResponses = (updater: (responses: SatisfactionResponse[]) => SatisfactionResponse[]) => {
+    setData((current) => ({ ...current, satisfactionResponses: updater(current.satisfactionResponses) }));
+  };
+
+  const setFinalExamQuestions = (updater: (questions: FinalExamQuestion[]) => FinalExamQuestion[]) => {
+    setData((current) => ({ ...current, finalExamQuestions: updater(current.finalExamQuestions) }));
+  };
+
+  const setFinalExamSubmissions = (updater: (submissions: FinalExamSubmission[]) => FinalExamSubmission[]) => {
+    setData((current) => ({ ...current, finalExamSubmissions: updater(current.finalExamSubmissions) }));
+  };
+
+  const setFinalExamSettings = (updater: (settings: { male: boolean; female: boolean }) => { male: boolean; female: boolean }) => {
+    setData((current) => ({ ...current, finalExamSettings: updater(current.finalExamSettings) }));
+  };
+
+  const setRolePermissions = (updater: (perms: Record<string, Record<string, boolean>>) => Record<string, Record<string, boolean>>) => {
+    setData((current) => ({ ...current, rolePermissions: updater(current.rolePermissions) }));
+  };
+
   return {
     data,
     isHydrated,
     loadError,
-    addStudent: async (student: Omit<StudentRecord, "id" | "completedParts" | "createdAt">) => {
+    addStudent: async (student: Omit<StudentRecord, "id" | "completedParts" | "createdAt" | "isCertified">) => {
       const tempStudentId = createId();
-      setStudents((students) => [...students, { id: tempStudentId, completedParts: [], createdAt: new Date().toISOString(), ...student }]);
+      setStudents((students) => [...students, { id: tempStudentId, completedParts: [], createdAt: new Date().toISOString(), isCertified: false, ...student }]);
 
       try {
         const studentId = await addStudentToDatabase(student);
@@ -520,6 +634,21 @@ const useCreateDashboardStore = () => {
 
       try {
         await updateStudentInDatabase(studentId, updates);
+      } catch (error) {
+        setStudents(() => previousStudents);
+        throw error;
+      }
+    },
+    toggleCertifiedStudent: async (studentId: string) => {
+      const student = data.students.find((s) => s.id === studentId);
+      if (!student) return;
+      const isCertified = !student.isCertified;
+      const previousStudents = data.students;
+      setStudents((students) =>
+        students.map((s) => s.id === studentId ? { ...s, isCertified } : s),
+      );
+      try {
+        await updateStudentInDatabase(studentId, { isCertified });
       } catch (error) {
         setStudents(() => previousStudents);
         throw error;
@@ -893,7 +1022,6 @@ const useCreateDashboardStore = () => {
       const tempSubmissionId = createId();
       const tempSubmittedAt = new Date().toISOString();
       const previousSubmissions = data.submissions;
-      const previousAttendance = data.attendance;
 
       setSubmissions((submissions) => [
         ...submissions,
@@ -909,32 +1037,6 @@ const useCreateDashboardStore = () => {
         },
       ]);
 
-      if (assessmentType === "post") {
-        setAttendance((attendance) => {
-          const alreadyPrepared = attendance.find((record) => record.courseId === courseId && record.loginId === submission.loginId);
-
-          if (alreadyPrepared) {
-            return attendance.map((record) =>
-              record.courseId === courseId && record.loginId === submission.loginId
-                ? { ...record, studentName: submission.studentName }
-                : record,
-            );
-          }
-
-          return [
-            ...attendance,
-            {
-              id: createId(),
-              courseId,
-              studentName: submission.studentName,
-              loginId: submission.loginId,
-              source: "post-test",
-              createdAt: new Date().toISOString(),
-            },
-          ];
-        });
-      }
-
       try {
         const insertedSubmission = await submitAssessmentToDatabase(courseId, assessmentType, submission);
         setSubmissions((submissions) =>
@@ -946,7 +1048,6 @@ const useCreateDashboardStore = () => {
         );
       } catch (error) {
         setSubmissions(() => previousSubmissions);
-        setAttendance(() => previousAttendance);
         throw error;
       }
     },
@@ -1114,6 +1215,163 @@ const useCreateDashboardStore = () => {
         await deleteNotificationFromDatabase(notificationId);
       } catch (error) {
         setNotifications(() => previousNotifications);
+        throw error;
+      }
+    },
+    addSatisfactionQuestion: async (question: { prompt: string; type: "rating" | "text"; isRequired: boolean }) => {
+      const tempId = createId();
+      const sortOrder = data.satisfactionQuestions.length;
+      const now = new Date().toISOString();
+      setSatisfactionQuestions((questions) => [...questions, { id: tempId, ...question, sortOrder, createdAt: now }]);
+      try {
+        const saved = await addSatisfactionQuestionToDatabase({ ...question, sortOrder });
+        setSatisfactionQuestions((questions) =>
+          questions.map((q) => q.id === tempId ? { ...q, id: saved.id, createdAt: saved.createdAt } : q),
+        );
+      } catch (error) {
+        setSatisfactionQuestions((questions) => questions.filter((q) => q.id !== tempId));
+        throw error;
+      }
+    },
+    deleteSatisfactionQuestion: async (questionId: string) => {
+      const previousQuestions = data.satisfactionQuestions;
+      const previousResponses = data.satisfactionResponses;
+      setSatisfactionQuestions((questions) => questions.filter((q) => q.id !== questionId));
+      setSatisfactionResponses((responses) => responses.filter((r) => r.questionId !== questionId));
+      try {
+        await deleteSatisfactionQuestionFromDatabase(questionId);
+      } catch (error) {
+        setSatisfactionQuestions(() => previousQuestions);
+        setSatisfactionResponses(() => previousResponses);
+        throw error;
+      }
+    },
+    submitSatisfactionResponses: async (responses: Array<{ courseId: string; questionId: string; loginCode: string; studentName: string; ratingValue: number | null; textValue: string }>) => {
+      const now = new Date().toISOString();
+      const tempResponses: SatisfactionResponse[] = responses.map((r) => ({
+        id: createId(),
+        ...r,
+        submittedAt: now,
+      }));
+      setSatisfactionResponses((current) => {
+        // Remove any existing responses for same course+question+loginCode then add new
+        const keys = new Set(responses.map((r) => `${r.courseId}:${r.questionId}:${r.loginCode}`));
+        const filtered = current.filter((r) => !keys.has(`${r.courseId}:${r.questionId}:${r.loginCode}`));
+        return [...filtered, ...tempResponses];
+      });
+      try {
+        const saved = await submitSatisfactionResponsesToDatabase(responses);
+        setSatisfactionResponses((current) =>
+          current.map((r) => {
+            const match = saved.find((s) => s.courseId === r.courseId && s.questionId === r.questionId && s.loginCode === r.loginCode);
+            return match ? { ...r, id: match.id } : r;
+          }),
+        );
+      } catch (error) {
+        setSatisfactionResponses((current) => {
+          const keys = new Set(responses.map((r) => `${r.courseId}:${r.questionId}:${r.loginCode}`));
+          return current.filter((r) => !keys.has(`${r.courseId}:${r.questionId}:${r.loginCode}`));
+        });
+        throw error;
+      }
+    },
+    addFinalExamQuestion: async (branchCode: BranchId, question: { prompt: string; type: "multiple" | "text" | "truefalse"; options: string[]; allowFile: boolean; points: number; correctAnswer: string }) => {
+      const tempId = createId();
+      const sortOrder = data.finalExamQuestions.filter((q) => q.branchCode === branchCode).length;
+      const now = new Date().toISOString();
+      const tempQ: FinalExamQuestion = { id: tempId, branchCode, ...question, attachmentName: "", attachmentType: "", attachmentDataUrl: "", sortOrder, createdAt: now };
+      setFinalExamQuestions((questions) => [...questions, tempQ]);
+      try {
+        const saved = await addFinalExamQuestionToDatabase(branchCode, { ...question, sortOrder });
+        setFinalExamQuestions((questions) => questions.map((q) => q.id === tempId ? { ...q, id: saved.id, createdAt: saved.createdAt } : q));
+      } catch (error) {
+        setFinalExamQuestions((questions) => questions.filter((q) => q.id !== tempId));
+        throw error;
+      }
+    },
+    deleteFinalExamQuestion: async (id: string) => {
+      const prev = data.finalExamQuestions;
+      setFinalExamQuestions((questions) => questions.filter((q) => q.id !== id));
+      try {
+        await deleteFinalExamQuestionFromDatabase(id);
+      } catch (error) {
+        setFinalExamQuestions(() => prev);
+        throw error;
+      }
+    },
+    toggleFinalExamEnabled: async (branchCode: BranchId) => {
+      const prevSettings = data.finalExamSettings;
+      const newVal = !prevSettings[branchCode];
+      setFinalExamSettings((s) => ({ ...s, [branchCode]: newVal }));
+      try {
+        await toggleFinalExamEnabledInDatabase(branchCode, newVal);
+      } catch (error) {
+        setFinalExamSettings(() => prevSettings);
+        throw error;
+      }
+    },
+    submitFinalExam: async (submission: { branchCode: BranchId; studentName: string; loginCode: string; answers: SubmissionAnswer[] }) => {
+      const existing = data.finalExamSubmissions.find((s) => s.loginCode === submission.loginCode);
+      if (existing) throw new Error("تم إرسال الاختبار النهائي مسبقًا.");
+      const tempId = createId();
+      const now = new Date().toISOString();
+      const temp: FinalExamSubmission = { id: tempId, ...submission, manualScore: null, submittedAt: now };
+      const prev = data.finalExamSubmissions;
+      setFinalExamSubmissions((s) => [...s, temp]);
+      try {
+        const saved = await submitFinalExamToDatabase(submission);
+        setFinalExamSubmissions((s) => s.map((item) => item.id === tempId ? { ...item, id: saved.id, submittedAt: saved.submittedAt } : item));
+      } catch (error) {
+        setFinalExamSubmissions(() => prev);
+        throw error;
+      }
+    },
+    copyFinalExamQuestions: async (from: BranchId, to: BranchId, move: boolean) => {
+      const sourceQuestions = data.finalExamQuestions.filter((q) => q.branchCode === from);
+      if (sourceQuestions.length === 0) return;
+      const prevQuestions = data.finalExamQuestions;
+      const newQuestions: FinalExamQuestion[] = sourceQuestions.map((q) => ({
+        ...q,
+        id: createId(),
+        branchCode: to,
+        sortOrder: data.finalExamQuestions.filter((item) => item.branchCode === to).length,
+        createdAt: new Date().toISOString(),
+      }));
+      setFinalExamQuestions((questions) => {
+        const withoutTo = questions.filter((q) => q.branchCode !== to);
+        const withTo = move ? withoutTo.filter((q) => q.branchCode !== from) : withoutTo;
+        return [...withTo, ...newQuestions];
+      });
+      try {
+        await copyFinalExamQuestionsInDatabase(from, to, move);
+        // reload from DB to get real IDs
+        const reloaded = await (await import("@/lib/supabase")).loadFinalExamDataFromDatabase();
+        setFinalExamQuestions(() => reloaded.questions);
+      } catch (error) {
+        setFinalExamQuestions(() => prevQuestions);
+        throw error;
+      }
+    },
+    setFinalExamManualScore: async (submissionId: string, score: number | null) => {
+      const prev = data.finalExamSubmissions;
+      setFinalExamSubmissions((s) => s.map((item) => item.id === submissionId ? { ...item, manualScore: score } : item));
+      try {
+        await setFinalExamManualScoreInDatabase(submissionId, score);
+      } catch (error) {
+        setFinalExamSubmissions(() => prev);
+        throw error;
+      }
+    },
+    setRolePermission: async (role: string, key: PermissionKey, isEnabled: boolean) => {
+      const prev = data.rolePermissions;
+      setRolePermissions((perms) => ({
+        ...perms,
+        [role]: { ...(perms[role] ?? {}), [key]: isEnabled },
+      }));
+      try {
+        await setRolePermissionInDatabase(role, key, isEnabled);
+      } catch (error) {
+        setRolePermissions(() => prev);
         throw error;
       }
     },

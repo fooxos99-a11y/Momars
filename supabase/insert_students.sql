@@ -1,11 +1,11 @@
--- أولاً: تأكد من وجود الفرعين
+﻿-- أولاً: تأكد من وجود الفرعين
 INSERT INTO public.branches (code, name)
 VALUES
-  ('male', 'الفرع الرجالي'),
-  ('female', 'الفرع النسائي')
+  ('male', 'معلمين'),
+  ('female', 'معلمات')
 ON CONFLICT (code) DO NOTHING;
 
--- إدراج طلاب الفرع الرجالي
+-- إدراج طلاب معلمين
 INSERT INTO public.students (full_name, login_code, branch_id)
 SELECT s.full_name, s.login_code, b.id
 FROM (VALUES
@@ -74,7 +74,7 @@ FROM (VALUES
 JOIN public.branches b ON b.code = 'male'
 ON CONFLICT (login_code) DO NOTHING;
 
--- إدراج طالبات الفرع النسائي
+-- إدراج طالبات معلمات
 INSERT INTO public.students (full_name, login_code, branch_id)
 SELECT s.full_name, s.login_code, b.id
 FROM (VALUES

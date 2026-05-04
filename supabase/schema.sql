@@ -1,4 +1,4 @@
-create extension if not exists pgcrypto;
+﻿create extension if not exists pgcrypto;
 
 do $$
 begin
@@ -108,6 +108,89 @@ alter table public.courses add column if not exists task_template_name text not 
 alter table public.courses add column if not exists task_template_content text not null default '';
 alter table public.courses add column if not exists youtube_url text not null default '';
 alter table public.courses add column if not exists sort_order integer not null default 0;
+
+alter table public.students add column if not exists is_certified boolean not null default false;
+
+create table if not exists public.satisfaction_questions (
+  id uuid primary key default gen_random_uuid(),
+  prompt text not null,
+  type text not null default 'rating' check (type in ('rating', 'text')),
+  is_required boolean not null default true,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
+alter table if exists public.satisfaction_questions disable row level security;
+
+create table if not exists public.satisfaction_responses (
+  id uuid primary key default gen_random_uuid(),
+  course_id uuid not null references public.courses(id) on delete cascade,
+  question_id uuid not null references public.satisfaction_questions(id) on delete cascade,
+  login_code text not null,
+  student_name text not null,
+  rating_value integer check (rating_value between 0 and 10),
+  text_value text,
+  submitted_at timestamptz not null default now(),
+  unique (course_id, question_id, login_code)
+);
+
+alter table if exists public.satisfaction_responses disable row level security;
+
+-- Final exam (standalone, per-branch)
+create table if not exists public.final_exam_settings (
+  branch_code text not null primary key check (branch_code in ('male', 'female')),
+  is_enabled boolean not null default false
+);
+alter table if exists public.final_exam_settings disable row level security;
+insert into public.final_exam_settings (branch_code, is_enabled)
+values ('male', false), ('female', false)
+on conflict (branch_code) do nothing;
+
+create table if not exists public.final_exam_questions (
+  id uuid primary key default gen_random_uuid(),
+  branch_code text not null check (branch_code in ('male', 'female')),
+  question_type text not null check (question_type in ('multiple', 'text')),
+  prompt text not null,
+  options jsonb not null default '[]'::jsonb,
+  allow_file boolean not null default false,
+  points integer not null default 1 check (points >= 0),
+  correct_answer text not null default '',
+  attachment_name text not null default '',
+  attachment_type text not null default '',
+  attachment_data_url text not null default '',
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now()
+);
+alter table if exists public.final_exam_questions disable row level security;
+
+create table if not exists public.final_exam_submissions (
+  id uuid primary key default gen_random_uuid(),
+  branch_code text not null check (branch_code in ('male', 'female')),
+  student_name text not null,
+  login_code text not null unique,
+  manual_score numeric,
+  submitted_at timestamptz not null default now()
+);
+alter table if exists public.final_exam_submissions disable row level security;
+
+create table if not exists public.final_exam_submission_answers (
+  id uuid primary key default gen_random_uuid(),
+  submission_id uuid not null references public.final_exam_submissions(id) on delete cascade,
+  question_id uuid not null references public.final_exam_questions(id) on delete cascade,
+  answer_text text,
+  file_name text,
+  file_type text,
+  file_data_url text
+);
+alter table if exists public.final_exam_submission_answers disable row level security;
+
+create table if not exists public.role_permissions (
+  role text not null check (role in ('male_manager', 'female_manager')),
+  permission_key text not null,
+  is_enabled boolean not null default true,
+  primary key (role, permission_key)
+);
+alter table if exists public.role_permissions disable row level security;
 
 -- Allow manual attendance source
 alter table public.course_attendance drop constraint if exists course_attendance_source_check;
@@ -219,8 +302,8 @@ alter table if exists public.notifications disable row level security;
 
 insert into public.branches (code, name)
 values
-  ('male', 'رجالي'),
-  ('female', 'نسائي')
+  ('male', 'معلمين'),
+  ('female', 'معلمات')
 on conflict (code) do update
 set name = excluded.name;
 

@@ -1,4 +1,4 @@
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+﻿import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FileText, ListChecks, Plus, ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
@@ -18,7 +18,7 @@ import { getAssessmentAvailabilityDeadline, getDefaultAssessmentNotificationTemp
 import { getDocumentPreviewText, hasMeaningfulDocumentContent } from "@/lib/document-content";
 import { parseImportedQuestionsFromText, type ImportedQuestionDraft } from "@/lib/question-import";
 
-const branchLabels: Record<BranchId, string> = { male: "رجالي", female: "نسائي" };
+const branchLabels: Record<BranchId, string> = { male: "معلمين", female: "معلمات" };
 
 const formatDurationMinutes = (minutes: number) => {
   if (!Number.isFinite(minutes) || minutes <= 0) {
@@ -897,8 +897,8 @@ const AdminTasksTab = ({ canEdit = true, managedBranchId = null }: AdminTasksTab
                     <Select value={taskTimerBranch ?? "male"} onValueChange={(v) => setTaskTimerBranch(v as BranchId)}>
                       <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="male" className="justify-end pr-3 text-right">الفرع الرجالي</SelectItem>
-                        <SelectItem value="female" className="justify-end pr-3 text-right">الفرع النسائي</SelectItem>
+                        <SelectItem value="male" className="justify-end pr-3 text-right">معلمين</SelectItem>
+                        <SelectItem value="female" className="justify-end pr-3 text-right">معلمات</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

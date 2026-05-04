@@ -46,6 +46,8 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
   const [resetKey, setResetKey] = useState(0);
   const [loginDialogOpen, setLoginDialogOpen] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<{ name?: string; type?: string; dataUrl: string } | null>(null);
+  const [satisfactionAnswers, setSatisfactionAnswers] = useState<Record<string, { ratingValue: number | null; textValue: string }>>({});
+  const [satisfactionError, setSatisfactionError] = useState("");
   const [searchParams] = useSearchParams();
 
   const questions = useMemo(() => {
@@ -81,6 +83,45 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
   }, [activeCourse, assessmentType, data.submissions, student]);
 
   const canInteractWithAssessment = Boolean(student) && isAssessmentEnabled && !existingSubmission;
+
+  const alreadySubmittedSatisfaction = useMemo(() => {
+    if (!activeCourse || !student) return false;
+    return data.satisfactionQuestions.length > 0 && data.satisfactionQuestions.every((q) =>
+      data.satisfactionResponses.some((r) => r.courseId === activeCourse.id && r.questionId === q.id && r.loginCode === student.loginId),
+    );
+  }, [activeCourse, student, data.satisfactionQuestions, data.satisfactionResponses]);
+
+  const handleSatisfactionSubmit = async () => {
+    if (!activeCourse || !student) return;
+    const questions = data.satisfactionQuestions;
+    for (const q of questions) {
+      if (q.isRequired) {
+        if (q.type === "rating" && satisfactionAnswers[q.id]?.ratingValue == null) {
+          setSatisfactionError("أجب على جميع الأسئلة الإلزامية.");
+          return;
+        }
+        if (q.type === "text" && !satisfactionAnswers[q.id]?.textValue?.trim()) {
+          setSatisfactionError("أجب على جميع الأسئلة الإلزامية.");
+          return;
+        }
+      }
+    }
+    setSatisfactionError("");
+    try {
+      await store.submitSatisfactionResponses(
+        questions.map((q) => ({
+          courseId: activeCourse.id,
+          questionId: q.id,
+          loginCode: student.loginId,
+          studentName: student.name,
+          ratingValue: q.type === "rating" ? (satisfactionAnswers[q.id]?.ratingValue ?? null) : null,
+          textValue: q.type === "text" ? (satisfactionAnswers[q.id]?.textValue ?? "") : "",
+        })),
+      );
+    } catch {
+      setSatisfactionError("تعذر إرسال الاستبيان. حاول مرة أخرى.");
+    }
+  };
 
   useEffect(() => {
     if (!isHydrated) {
@@ -498,6 +539,61 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
               )}
             </CardContent>
             </Card>
+
+            {assessmentType === "post" && student && existingSubmission && data.satisfactionQuestions.length > 0 && !alreadySubmittedSatisfaction && (
+              <Card className="relative mt-6 overflow-hidden rounded-[2rem] border border-white/80 bg-white shadow-[0_24px_70px_rgba(8,65,89,0.16)] backdrop-blur-xl">
+                <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-primary/10 via-primary/5 to-transparent" aria-hidden />
+                <CardContent className="relative space-y-5 px-4 pb-5 pt-5 sm:px-6 sm:pb-6 sm:pt-6">
+                  <div className="space-y-1 text-right">
+                    <div className="text-xl font-extrabold text-foreground">استبيان الرضا</div>
+                    <div className="text-sm text-muted-foreground">آراؤك تساعدنا في تحسين البرنامج. الاستبيان لا يؤثر على درجاتك.</div>
+                  </div>
+                  {data.satisfactionQuestions.map((question, index) => (
+                    <div key={question.id} className="rounded-[1.75rem] border border-primary/10 bg-[#f6fbfd] p-4 shadow-[0_10px_30px_rgba(8,65,89,0.06)] sm:p-5">
+                      <div className="mb-3 text-base font-extrabold leading-8 text-foreground">{index + 1}. {question.prompt}{question.isRequired && <span className="mr-1 text-destructive">*</span>}</div>
+                      {question.type === "rating" ? (
+                        <div className="flex flex-wrap gap-2">
+                          {Array.from({ length: 11 }, (_, i) => i).map((val) => (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => setSatisfactionAnswers((current) => ({ ...current, [question.id]: { ratingValue: val, textValue: "" } }))}
+                              className={cn(
+                                "h-10 w-10 rounded-full border text-sm font-bold transition-smooth",
+                                satisfactionAnswers[question.id]?.ratingValue === val
+                                  ? "border-primary bg-primary text-white shadow-[0_8px_20px_rgba(16,118,153,0.3)]"
+                                  : "border-primary/20 bg-white text-foreground hover:border-primary hover:bg-primary/5",
+                              )}
+                            >
+                              {val}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <Textarea
+                          value={satisfactionAnswers[question.id]?.textValue ?? ""}
+                          onChange={(event) => setSatisfactionAnswers((current) => ({ ...current, [question.id]: { ratingValue: null, textValue: event.target.value } }))}
+                          placeholder="اكتب رأيك هنا"
+                          className="min-h-28 rounded-2xl border-primary/15 bg-white/95 text-base focus-visible:ring-primary/40"
+                        />
+                      )}
+                    </div>
+                  ))}
+                  {satisfactionError && <p className="rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm font-medium text-destructive">{satisfactionError}</p>}
+                  <div className="flex pt-2">
+                    <Button className="w-full rounded-full px-8 py-6 text-base font-extrabold shadow-gold sm:mr-auto sm:w-auto" onClick={() => void handleSatisfactionSubmit()}>
+                      إرسال الاستبيان
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {assessmentType === "post" && student && existingSubmission && data.satisfactionQuestions.length > 0 && alreadySubmittedSatisfaction && (
+              <div className="mt-6 rounded-[1.75rem] border border-emerald-200 bg-emerald-50/95 px-5 py-4 text-right text-sm font-bold text-emerald-700">
+                شكرًا! تم استلام استبيان الرضا.
+              </div>
+            )}
           </div>
         </div>
       </div>

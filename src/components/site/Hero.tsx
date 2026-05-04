@@ -23,11 +23,18 @@ const Hero = () => {
 
       <div className="container relative z-10 py-32 lg:py-0">
         <div className="mx-auto max-w-4xl text-center text-white animate-fade-up">
-            <img
-              src="/اللوقو-شفاف.png"
-              alt="شعار برنامج رخصة ممارس"
-              className="site-logo site-logo-top mx-auto mb-6 h-20 w-auto object-contain sm:h-24 md:h-28"
-            />
+            <div className="mx-auto mb-6 flex items-center justify-center gap-5">
+              <img
+                src="/اللوقو-شفاف.png"
+                alt="شعار برنامج رخصة ممارس"
+                className="site-logo site-logo-top h-20 w-auto object-contain sm:h-24 md:h-28"
+              />
+              <img
+                src="/شعار-الجمعية.png"
+                alt="شعار الجمعية"
+                className="h-20 w-auto rounded-xl object-contain sm:h-24 md:h-28"
+              />
+            </div>
             <div className="mx-auto mb-8 h-1 w-24 rounded-full bg-primary-foreground/70" />
             <h1 className="text-4xl md:text-6xl lg:text-7xl font-extrabold leading-[1.15] mb-6 drop-shadow-sm">
               برنامج رخصة ممارس

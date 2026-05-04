@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { Eye, Bell, BellOff, BellRing, BookOpen, Database } from "lucide-react";
-import { Link, Navigate, useSearchParams } from "react-router-dom";
+﻿import { useEffect, useMemo, useState } from "react";
+import { Eye, Bell, BellOff, BellRing, BookOpen, ClipboardList, ClipboardCheck, GraduationCap, ListChecks, Users } from "lucide-react";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import {
   getActiveTask,
   getAssessmentQuestions,
   getStudentByLoginId,
+  getTasks,
   loadAccessSession,
   saveAccessSession,
   useDashboardStore,
@@ -32,7 +33,11 @@ const parts = Array.from({ length: 30 }, (_, index) => index + 1);
 const normalizeAnswer = (value: string) => value.trim().toLowerCase();
 
 const studentMenu = [
-  { id: "courses", label: "الدورات", icon: Database },
+  { id: "pre", label: "الاختبار القبلي", icon: ClipboardList },
+  { id: "post", label: "الاختبار البعدي", icon: ClipboardCheck },
+  { id: "tasks", label: "المهام الأدائية", icon: ListChecks },
+  { id: "finalexam", label: "الاختبار النهائي", icon: GraduationCap },
+  { id: "attendance", label: "التحضير", icon: Users },
   { id: "reading", label: "القراءة", icon: BookOpen },
   { id: "notifications", label: "التنبيهات", icon: Bell },
 ] as const;
@@ -40,11 +45,12 @@ const studentMenu = [
 const StudentPage = () => {
   const store = useDashboardStore();
   const { data, isHydrated } = store;
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [studentLoginId, setStudentLoginId] = useState("");
   const [studentResolved, setStudentResolved] = useState(false);
   const [loginAttempted, setLoginAttempted] = useState(false);
-  const [studentTab, setStudentTab] = useState<"courses" | "reading" | "notifications">("courses");
+  const [studentTab, setStudentTab] = useState<"pre" | "post" | "tasks" | "finalexam" | "attendance" | "reading" | "notifications">("pre");
   const [detailsSubmissionId, setDetailsSubmissionId] = useState<string | null>(null);
   const [databaseAssignedReciter, setDatabaseAssignedReciter] = useState<DatabaseStudentReciter | null>(null);
 
@@ -233,6 +239,55 @@ const StudentPage = () => {
     return activeTask?.id ?? null;
   }, [data, student?.branchId]);
 
+  const preRows = useMemo(() => {
+    if (!student) return [];
+    return getCourses(data).map((course) => {
+      const submission = data.submissions
+        .filter((s) => s.courseId === course.id && s.assessmentType === "pre" && s.loginId === student.loginId)
+        .sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime())[0] ?? null;
+      const grade = submission
+        ? getSubmissionGrade(course.id, "pre", submission.id)
+        : { score: 0, total: course.preQuestions.reduce((s, q) => s + q.points, 0) };
+      return { course, submission, score: grade.score, total: grade.total };
+    });
+  }, [data, data.submissions, student]);
+
+  const postRows = useMemo(() => {
+    if (!student) return [];
+    return getCourses(data).map((course) => {
+      const submission = data.submissions
+        .filter((s) => s.courseId === course.id && s.assessmentType === "post" && s.loginId === student.loginId)
+        .sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime())[0] ?? null;
+      const grade = submission
+        ? getSubmissionGrade(course.id, "post", submission.id)
+        : { score: 0, total: course.postQuestions.reduce((s, q) => s + q.points, 0) };
+      return { course, submission, score: grade.score, total: grade.total };
+    });
+  }, [data, data.submissions, student]);
+
+  const tasksRows = useMemo(() => {
+    if (!student) return [];
+    return getTasks(data).sort((a, b) => a.sortOrder - b.sortOrder).map((task) => {
+      const hasSubmission = data.submissions.some(
+        (s) => s.courseId === task.id && s.assessmentType === "tasks" && s.loginId === student.loginId,
+      );
+      const hasAttendance = data.attendance.some(
+        (r) => r.courseId === task.id && r.loginId === student.loginId,
+      );
+      return { task, done: hasSubmission || hasAttendance };
+    });
+  }, [data, data.submissions, data.attendance, student]);
+
+  const attendanceRows = useMemo(() => {
+    if (!student) return [];
+    return getCourses(data).map((course) => {
+      const present = data.attendance.some(
+        (r) => r.courseId === course.id && r.loginId === student.loginId,
+      );
+      return { course, present };
+    });
+  }, [data, data.attendance, student]);
+
   const { pushPermission, requestPushPermission, isPushRegistered, pushStatusNote } = usePushNotifications(studentLoginId || null);
 
   if (!isHydrated || !studentResolved) {
@@ -339,40 +394,111 @@ const StudentPage = () => {
             </div>
 
             <div className="mx-auto w-full max-w-[1280px] px-1 md:px-2">
-              {studentTab === "courses" && (
-                <Card className="rounded-[1.5rem] border-white/80 bg-white/95 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
-                  <CardHeader>
-                    <CardTitle className="text-xl">الدورات</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Accordion type="single" collapsible defaultValue={activeTaskCourseId ?? undefined} className="space-y-4">
-                      {courseRows.map(({ course, rows }) => (
-                        <AccordionItem key={course.id} value={course.id} className="overflow-hidden rounded-[1.5rem] border border-border/60 bg-white px-4">
-                          <AccordionTrigger className="text-right text-base font-bold hover:no-underline">{course.title}</AccordionTrigger>
-                          <AccordionContent className="space-y-3 pb-4">
-                            {rows.map((row) => (
-                              <div key={row.assessmentType} className="flex flex-col gap-3 rounded-[1.25rem] border border-primary/10 bg-muted/10 p-4 md:flex-row md:items-center md:justify-between">
-                                <div>
-                                  <div className="font-bold text-foreground">{assessmentLabels[row.assessmentType]}</div>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                  <Badge variant="outline" className="border-primary/20 text-primary">
-                                    {row.score} / {row.total}
-                                  </Badge>
-                                  {row.submissionId ? (
-                                    <Button variant="outline" size="icon" className="h-9 w-9 rounded-xl" onClick={() => setDetailsSubmissionId(row.submissionId)}>
-                                      <Eye className="size-4" />
-                                    </Button>
-                                  ) : (
-                                    <span className="text-xs text-muted-foreground">لم يرسل</span>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                          </AccordionContent>
-                        </AccordionItem>
+              {(studentTab === "pre" || studentTab === "post") && (() => {
+                const rows = studentTab === "pre" ? preRows : postRows;
+                const label = studentTab === "pre" ? "الاختبار القبلي" : "الاختبار البعدي";
+                return (
+                  <Card className="rounded-[1.5rem] border-white/80 bg-white/95 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
+                    <CardHeader><CardTitle className="text-xl">{label}</CardTitle></CardHeader>
+                    <CardContent className="space-y-3">
+                      {rows.length === 0 && (
+                        <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-white/70 p-5 text-sm text-muted-foreground">لا توجد دورات.</div>
+                      )}
+                      {rows.map(({ course, submission, score, total }) => (
+                        <div key={course.id} className="flex items-center justify-between gap-3 rounded-[1.25rem] border border-border/60 bg-white p-4">
+                          <div className="font-bold text-foreground">{course.title}</div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Badge variant="outline" className="border-primary/20 text-primary">{score} / {total}</Badge>
+                            {submission ? (
+                              <Button variant="outline" size="icon" className="h-8 w-8 rounded-xl" onClick={() => setDetailsSubmissionId(submission.id)}>
+                                <Eye className="size-4" />
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">لم يرسل</span>
+                            )}
+                          </div>
+                        </div>
                       ))}
-                    </Accordion>
+                    </CardContent>
+                  </Card>
+                );
+              })()}
+
+              {studentTab === "tasks" && (
+                <Card className="rounded-[1.5rem] border-white/80 bg-white/95 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
+                  <CardHeader><CardTitle className="text-xl">المهام الأدائية</CardTitle></CardHeader>
+                  <CardContent className="space-y-3">
+                    {tasksRows.length === 0 && (
+                      <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-white/70 p-5 text-sm text-muted-foreground">لا توجد مهام.</div>
+                    )}
+                    {tasksRows.map(({ task, done }) => (
+                      <div key={task.id} className="flex items-center justify-between gap-3 rounded-[1.25rem] border border-border/60 bg-white p-4">
+                        <div className="font-bold text-foreground">{task.title}</div>
+                        <Badge className={cn("shrink-0", done ? "bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-100" : "bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-50")} variant="outline">
+                          {done ? "منفذ" : "غير منفذ"}
+                        </Badge>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              {studentTab === "finalexam" && (() => {
+                const branchCode = student.branchId;
+                const isEnabled = data.finalExamSettings[branchCode];
+                const existingFinalSub = data.finalExamSubmissions.find((s) => s.loginCode === student.loginId);
+                const finalQuestions = data.finalExamQuestions.filter((q) => q.branchCode === branchCode);
+                const getScore = () => {
+                  if (!existingFinalSub) return null;
+                  if (typeof existingFinalSub.manualScore === "number") return { score: existingFinalSub.manualScore, total: finalQuestions.reduce((s, q) => s + q.points, 0) };
+                  const total = finalQuestions.reduce((s, q) => s + q.points, 0);
+                  const ansMap = new Map(existingFinalSub.answers.map((a) => [a.questionId, a.value]));
+                  const score = finalQuestions.reduce((s, q) => {
+                    const ans = ansMap.get(q.id) ?? "";
+                    return q.correctAnswer.trim() && ans.trim().toLowerCase() === q.correctAnswer.trim().toLowerCase() ? s + q.points : s;
+                  }, 0);
+                  return { score, total };
+                };
+                const grade = getScore();
+                return (
+                  <Card className="rounded-[1.5rem] border-white/80 bg-white/95 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
+                    <CardHeader><CardTitle className="text-xl">الاختبار النهائي</CardTitle></CardHeader>
+                    <CardContent className="space-y-4">
+                      {existingFinalSub ? (
+                        <div className="rounded-2xl border border-sky-200 bg-sky-50/80 p-4 text-right">
+                          <div className="text-base font-extrabold text-sky-800">تم تقديم الاختبار</div>
+                          {grade && <div className="mt-2 text-sm text-sky-700">النتيجة: {grade.score} / {grade.total}</div>}
+                        </div>
+                      ) : isEnabled ? (
+                        <div className="space-y-3">
+                          <div className="text-sm text-muted-foreground">الاختبار النهائي متاح الآن.</div>
+                          <Button className="rounded-full px-6" onClick={() => navigate(`/final-exam?login=${encodeURIComponent(student.loginId)}`)}>
+                            ابدأ الاختبار النهائي
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-muted-foreground">الاختبار النهائي غير متاح حاليًا.</div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })()}
+
+              {studentTab === "attendance" && (
+                <Card className="rounded-[1.5rem] border-white/80 bg-white/95 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
+                  <CardHeader><CardTitle className="text-xl">التحضير</CardTitle></CardHeader>
+                  <CardContent className="space-y-3">
+                    {attendanceRows.length === 0 && (
+                      <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-white/70 p-5 text-sm text-muted-foreground">لا توجد دورات.</div>
+                    )}
+                    {attendanceRows.map(({ course, present }) => (
+                      <div key={course.id} className="flex items-center justify-between gap-3 rounded-[1.25rem] border border-border/60 bg-white p-4">
+                        <div className="font-bold text-foreground">{course.title}</div>
+                        <Badge className={cn("shrink-0", present ? "bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-100" : "bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-50")} variant="outline">
+                          {present ? "حاضر" : "غائب"}
+                        </Badge>
+                      </div>
+                    ))}
                   </CardContent>
                 </Card>
               )}
@@ -382,7 +508,7 @@ const StudentPage = () => {
                   <Card className="rounded-[1.5rem] border-white/80 bg-white/95 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
                     <CardContent className="space-y-5">
                       <div className="rounded-[1.25rem] border border-border/60 bg-muted/20 p-4">
-                        <div className="text-sm text-muted-foreground">اسم المقرئ</div>
+                        <div className="text-sm text-muted-foreground">عرض القرآن</div>
                         <div className="mt-2 text-lg font-bold text-foreground">{assignedReciter?.name ?? "لا يوجد مقرئ مرتبط"}</div>
                       </div>
                       <div className="rounded-[1.25rem] border border-border/60 bg-white p-4">
@@ -470,7 +596,7 @@ const StudentPage = () => {
                             <Badge variant="outline" className="border-primary/20 text-primary">
                               {notification.targetLoginIds && notification.targetLoginIds.length > 0
                                 ? `محدد (${notification.targetLoginIds.length})`
-                                : notification.targetBranchId ? (notification.targetBranchId === "male" ? "رجالي" : "نسائي") : "عام"}
+                                : notification.targetBranchId ? (notification.targetBranchId === "male" ? "معلمين" : "معلمات") : "عام"}
                             </Badge>
                           </div>
                           <div className="mt-3 text-xs text-muted-foreground">
