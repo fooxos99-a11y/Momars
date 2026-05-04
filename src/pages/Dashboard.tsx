@@ -547,6 +547,8 @@ const Dashboard = () => {
   const [attendanceBranchId, setAttendanceBranchId] = useState<BranchId>("male");
   const [attendanceChecked, setAttendanceChecked] = useState<Set<string>>(new Set());
   const [attendanceSaving, setAttendanceSaving] = useState(false);
+  const [attendanceFileError, setAttendanceFileError] = useState("");
+  const attendanceFileInputRef = useRef<HTMLInputElement | null>(null);
   const [resultsCourseId, setResultsCourseId] = useState("");
   const [resultsBranchId, setResultsBranchId] = useState<IndicatorsBranchFilter>("male");
   const [resultsType, setResultsType] = useState<"attendance" | AssessmentType>("attendance");
@@ -3210,6 +3212,7 @@ const Dashboard = () => {
 
           const handleCourseChange = (courseId: string) => {
             setAttendanceCourseId(courseId);
+            setAttendanceFileError("");
             setAttendanceChecked(new Set(
               data.attendance.filter((r) => r.courseId === courseId).map((r) => r.loginId),
             ));
@@ -3241,12 +3244,119 @@ const Dashboard = () => {
             }
           };
 
+          const handleAttendanceFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (!file) return;
+            setAttendanceFileError("");
+
+            try {
+              const arrayBuffer = await file.arrayBuffer();
+              let workbook: XLSX.WorkBook | null = null;
+              try { workbook = XLSX.read(arrayBuffer, { type: "array" }); } catch { /* try next */ }
+              if (!workbook) {
+                try { workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: "array" }); } catch { /* try next */ }
+              }
+              if (!workbook) throw new Error("excel-read-failed");
+
+              if (workbook.SheetNames.length === 0) {
+                setAttendanceFileError("تعذر العثور على ورقة داخل ملف الإكسل.");
+                return;
+              }
+
+              // collect all non-empty cells as candidate login IDs / names
+              const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+              const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, blankrows: false }) as unknown[][];
+
+              // Detect header row
+              const normalizeCell = (v: unknown) => String(v ?? "").trim().replace(/\s+/g, " ");
+              const firstRow = (rows[0] ?? []).map(normalizeCell);
+              const isLoginCol = (h: string) => h.includes("دخول") || h.includes("كود") || h.includes("login") || h.includes("code") || h.includes("رقم");
+              const isNameCol = (h: string) => h.includes("اسم") || h.includes("name");
+              const hasHeader = firstRow.some(isLoginCol) || firstRow.some(isNameCol);
+              const header = hasHeader ? firstRow : [];
+              const dataRows = rows.slice(hasHeader ? 1 : 0);
+
+              let loginColIdx = hasHeader ? header.findIndex(isLoginCol) : -1;
+              let nameColIdx = hasHeader ? header.findIndex(isNameCol) : -1;
+
+              if (!hasHeader) {
+                // auto-detect: pick columns with most filled cells
+                const colCounts = new Map<number, number>();
+                for (const row of dataRows) {
+                  (row as unknown[]).forEach((cell, ci) => {
+                    if (normalizeCell(cell)) colCounts.set(ci, (colCounts.get(ci) ?? 0) + 1);
+                  });
+                }
+                const sorted = [...colCounts.entries()].sort((a, b) => b[1] - a[1]);
+                if (sorted.length > 0) nameColIdx = sorted[0][0];
+                if (sorted.length > 1) loginColIdx = sorted[1][0];
+              }
+
+              // Build lookup maps from the branch students
+              const loginMap = new Map(branchStudents.map((s) => [s.loginId.trim(), s.loginId]));
+              const nameMap = new Map(branchStudents.map((s) => [
+                s.name.trim().replace(/\s+/g, " "),
+                s.loginId,
+              ]));
+
+              const matched = new Set<string>();
+              const unmatched: string[] = [];
+
+              for (const row of dataRows) {
+                const r = row as unknown[];
+                const rawLogin = loginColIdx >= 0 ? normalizeCell(r[loginColIdx]) : "";
+                const rawName = nameColIdx >= 0 ? normalizeCell(r[nameColIdx]) : "";
+
+                let resolvedLoginId: string | undefined;
+                if (rawLogin) resolvedLoginId = loginMap.get(rawLogin);
+                if (!resolvedLoginId && rawName) resolvedLoginId = nameMap.get(rawName);
+                // fuzzy: try matching name substring
+                if (!resolvedLoginId && rawName) {
+                  for (const [sName, sLogin] of nameMap) {
+                    if (sName.includes(rawName) || rawName.includes(sName)) {
+                      resolvedLoginId = sLogin;
+                      break;
+                    }
+                  }
+                }
+
+                if (resolvedLoginId) {
+                  matched.add(resolvedLoginId);
+                } else if (rawLogin || rawName) {
+                  unmatched.push(rawLogin || rawName);
+                }
+              }
+
+              if (matched.size === 0) {
+                setAttendanceFileError("لم يتم التعرف على أي طالب من الملف. تأكد من وجود عمود رقم الدخول أو الاسم.");
+                return;
+              }
+
+              setAttendanceChecked(matched);
+              const msg = unmatched.length > 0
+                ? `تم تحضير ${matched.size} طالب. لم يُتعرف على: ${unmatched.slice(0, 5).join("، ")}${unmatched.length > 5 ? ` +${unmatched.length - 5}` : ""}`
+                : `تم تحضير ${matched.size} طالب من الملف.`;
+              toast({ title: "تم قراءة الملف", description: msg });
+              setAttendanceFileError("");
+            } catch {
+              setAttendanceFileError("تعذر قراءة الملف. جرّب حفظه كـ Excel Workbook (.xlsx).");
+            }
+          };
+
           if (!attendanceCourseId && selectedCourseForAttendance) {
             // initialise on first render without state update during render
           }
 
           return (
             <div className="space-y-5">
+              <input
+                ref={attendanceFileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="hidden"
+                onChange={handleAttendanceFileSelect}
+              />
               <Card className={dashboardCardClass}>
                 <CardHeader>
                   <CardTitle className="text-xl">التحضير</CardTitle>
@@ -3284,14 +3394,26 @@ const Dashboard = () => {
                     <>
                       <Separator />
                       <div className="flex items-center justify-between gap-3 flex-wrap">
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
                           <Button variant="outline" size="sm" onClick={handleSelectAll}>تحديد الكل</Button>
                           <Button variant="outline" size="sm" onClick={handleDeselectAll}>إلغاء الكل</Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => attendanceFileInputRef.current?.click()}
+                          >
+                            <FileUp className="size-4" />
+                            رفع ملف
+                          </Button>
                         </div>
                         <span className="text-sm text-muted-foreground">
                           {displayChecked.size} / {branchStudents.length} حاضر
                         </span>
                       </div>
+
+                      {attendanceFileError && (
+                        <p className="text-sm font-medium text-destructive">{attendanceFileError}</p>
+                      )}
 
                       {branchStudents.length === 0 ? (
                         <div className={cn(dashboardEmptyStateClass, "p-5 text-sm text-muted-foreground")}>لا يوجد طلاب في هذا الفرع.</div>
