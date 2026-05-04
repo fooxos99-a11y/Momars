@@ -16,6 +16,7 @@ import {
   loadDashboardDataFromDatabase,
   resetDashboardDataInDatabase,
   saveReciterToDatabase,
+  setManualAttendanceInDatabase,
   submitAssessmentToDatabase,
   toggleStudentPartInDatabase,
   updateTaskTemplateInDatabase,
@@ -160,7 +161,7 @@ export interface AttendanceRecord {
   courseId: string;
   studentName: string;
   loginId: string;
-  source: "post-test";
+  source: "post-test" | "manual";
   createdAt: string;
 }
 
@@ -727,6 +728,31 @@ const useCreateDashboardStore = () => {
           .map((c, i) => ({ ...c, sortOrder: i })),
       );
       void updateCoursesSortOrderInDatabase(orderedIds);
+    },
+    setManualAttendance: async (courseId: string, presentStudents: StudentRecord[]) => {
+      const prevAttendance = data.attendance;
+      const newRecords: AttendanceRecord[] = presentStudents.map((student) => ({
+        id: createId(),
+        courseId,
+        studentName: student.name,
+        loginId: student.loginId,
+        source: "manual" as const,
+        createdAt: new Date().toISOString(),
+      }));
+      setAttendance((attendance) => [
+        ...attendance.filter((r) => r.courseId !== courseId),
+        ...newRecords,
+      ]);
+      try {
+        await setManualAttendanceInDatabase(courseId, presentStudents.map((s) => ({
+          loginId: s.loginId,
+          studentName: s.name,
+          studentId: s.id,
+        })));
+      } catch (error) {
+        setAttendance(() => prevAttendance);
+        throw error;
+      }
     },
     deleteCourse: async (courseId: string) => {
       const previousCourses = data.courses;

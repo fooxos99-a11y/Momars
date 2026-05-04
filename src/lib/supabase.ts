@@ -512,7 +512,7 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
     courseId: attendance.course_id as string,
     studentName: attendance.student_name as string,
     loginId: attendance.login_code as string,
-    source: "post-test" as const,
+    source: (attendance.source as string) === "manual" ? "manual" as const : "post-test" as const,
     createdAt: (attendance.created_at as string) ?? new Date().toISOString(),
   }));
 
@@ -996,23 +996,6 @@ export const submitAssessmentToDatabase = async (
     }
   }
 
-  if (assessmentType === "post") {
-    const { error: attendanceError } = await supabase.from("course_attendance").upsert(
-      {
-        course_id: courseId,
-        student_id: (student?.id as string | undefined) ?? null,
-        student_name: submission.studentName,
-        login_code: submission.loginId,
-        source: "post-test",
-      },
-      { onConflict: "course_id,login_code" },
-    );
-
-    if (attendanceError) {
-      throw attendanceError;
-    }
-  }
-
   return {
     id: insertedSubmission.id as string,
     submittedAt: (insertedSubmission.submitted_at as string) ?? new Date().toISOString(),
@@ -1180,6 +1163,33 @@ export const bulkUpsertSubmissionsToDatabase = async (
       };
     })
     .filter((item): item is { id: string; submittedAt: string; loginId: string } => item !== null);
+};
+
+export const setManualAttendanceInDatabase = async (
+  courseId: string,
+  presentStudents: Array<{ loginId: string; studentName: string; studentId: string | null }>,
+) => {
+  // Delete all existing attendance records for this course
+  const { error: deleteError } = await supabase
+    .from("course_attendance")
+    .delete()
+    .eq("course_id", courseId);
+  if (deleteError) throw deleteError;
+
+  if (presentStudents.length === 0) return;
+
+  const { error: insertError } = await supabase
+    .from("course_attendance")
+    .insert(
+      presentStudents.map((student) => ({
+        course_id: courseId,
+        student_id: student.studentId,
+        student_name: student.studentName,
+        login_code: student.loginId,
+        source: "manual",
+      })),
+    );
+  if (insertError) throw insertError;
 };
 
 export const resetDashboardDataInDatabase = async () => {

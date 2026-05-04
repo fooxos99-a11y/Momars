@@ -396,6 +396,7 @@ const parseBulkStudentsFromWorksheet = (rows: unknown[][], defaultBranchId: Bran
 const dashboardMenu = [
   { id: "courses", label: "الدورات", icon: Database, hint: "المحتوى والروابط" },
   { id: "tasks", label: "التكاليف", icon: Copy, hint: "تكاليف مستقلة" },
+  { id: "attendance", label: "التحضير", icon: Users, hint: "تحضير الطلاب" },
   { id: "notifications", label: "الإشعارات", icon: Bell, hint: "إرسال التنبيهات" },
   { id: "reciters", label: "الإقراء", icon: BookOpen, hint: "إدارة الحسابات" },
   { id: "students", label: "الطلاب", icon: Users, hint: "إدارة الطلاب" },
@@ -494,7 +495,7 @@ const Dashboard = () => {
 
   const store = useDashboardStore();
   const { data, loadError } = store;
-  const [dashboardTab, setDashboardTab] = useState<"students" | "reciters" | "reader" | "courses" | "tasks" | "notifications" | "indicators" | "results" | "statistics">("courses");
+  const [dashboardTab, setDashboardTab] = useState<"students" | "reciters" | "reader" | "courses" | "tasks" | "attendance" | "notifications" | "indicators" | "results" | "statistics">("courses");
   const [studentsOpen, setStudentsOpen] = useState(false);
   const [studentEntryMode, setStudentEntryMode] = useState<"single" | "bulk">("single");
   const [selectedBranch, setSelectedBranch] = useState<IndicatorsBranchFilter>(managedBranchId ?? "male");
@@ -542,6 +543,10 @@ const Dashboard = () => {
   const [splitText, setSplitText] = useState({ pre: "", post: "", tasks: "" });
   const questionPdfImportInputRef = useRef<HTMLInputElement | null>(null);
   const courseOrderRef = useRef<string[]>([]);
+  const [attendanceCourseId, setAttendanceCourseId] = useState("");
+  const [attendanceBranchId, setAttendanceBranchId] = useState<BranchId>("male");
+  const [attendanceChecked, setAttendanceChecked] = useState<Set<string>>(new Set());
+  const [attendanceSaving, setAttendanceSaving] = useState(false);
   const [resultsCourseId, setResultsCourseId] = useState("");
   const [resultsBranchId, setResultsBranchId] = useState<IndicatorsBranchFilter>("male");
   const [resultsType, setResultsType] = useState<"attendance" | AssessmentType>("attendance");
@@ -3186,6 +3191,155 @@ const Dashboard = () => {
         )}
 
         {dashboardTab === "tasks" && <AdminTasksTab canEdit={canCreateCourses} managedBranchId={managedBranchId} />}
+
+        {dashboardTab === "attendance" && (() => {
+          const allCourses = [...courseItems, ...getTasks(data).sort((a, b) => a.sortOrder - b.sortOrder)];
+          const effectiveBranchId: BranchId = managedBranchId ?? attendanceBranchId;
+          const branchStudents = getBranchStudents(data, effectiveBranchId).sort((a, b) => a.name.localeCompare(b.name, "ar"));
+          const selectedCourseForAttendance = allCourses.find((c) => c.id === attendanceCourseId) ?? allCourses[0] ?? null;
+
+          const presentForCourse = new Set(
+            data.attendance
+              .filter((r) => r.courseId === (selectedCourseForAttendance?.id ?? ""))
+              .map((r) => r.loginId),
+          );
+
+          const displayChecked = attendanceCourseId === (selectedCourseForAttendance?.id ?? "")
+            ? attendanceChecked
+            : presentForCourse;
+
+          const handleCourseChange = (courseId: string) => {
+            setAttendanceCourseId(courseId);
+            setAttendanceChecked(new Set(
+              data.attendance.filter((r) => r.courseId === courseId).map((r) => r.loginId),
+            ));
+          };
+
+          const handleToggle = (loginId: string) => {
+            const next = new Set(displayChecked);
+            if (next.has(loginId)) next.delete(loginId); else next.add(loginId);
+            setAttendanceChecked(next);
+          };
+
+          const handleSelectAll = () => {
+            setAttendanceChecked(new Set(branchStudents.map((s) => s.loginId)));
+          };
+
+          const handleDeselectAll = () => setAttendanceChecked(new Set());
+
+          const handleSave = async () => {
+            if (!selectedCourseForAttendance) return;
+            setAttendanceSaving(true);
+            try {
+              const present = branchStudents.filter((s) => displayChecked.has(s.loginId));
+              await store.setManualAttendance(selectedCourseForAttendance.id, present);
+              toast({ title: "تم الحفظ", description: "تم حفظ التحضير بنجاح." });
+            } catch {
+              toast({ title: "خطأ", description: "تعذر حفظ التحضير.", variant: "destructive" });
+            } finally {
+              setAttendanceSaving(false);
+            }
+          };
+
+          if (!attendanceCourseId && selectedCourseForAttendance) {
+            // initialise on first render without state update during render
+          }
+
+          return (
+            <div className="space-y-5">
+              <Card className={dashboardCardClass}>
+                <CardHeader>
+                  <CardTitle className="text-xl">التحضير</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {!managedBranchId && (
+                      <div className="space-y-2">
+                        <label className="text-sm font-bold text-foreground">الفرع</label>
+                        <Select value={attendanceBranchId} onValueChange={(v) => setAttendanceBranchId(v as BranchId)}>
+                          <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue /></SelectTrigger>
+                          <SelectContent className="text-right">
+                            <SelectItem value="male" className="justify-end pr-3 text-right">رجالي</SelectItem>
+                            <SelectItem value="female" className="justify-end pr-3 text-right">نسائي</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-foreground">الدورة / التكليف</label>
+                      <Select
+                        value={attendanceCourseId || (selectedCourseForAttendance?.id ?? "")}
+                        onValueChange={handleCourseChange}
+                      >
+                        <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue placeholder="اختر الدورة" /></SelectTrigger>
+                        <SelectContent className="text-right">
+                          {courseItems.map((c) => <SelectItem key={c.id} value={c.id} className="justify-end pr-3 text-right">{c.title}</SelectItem>)}
+                          {getTasks(data).sort((a, b) => a.sortOrder - b.sortOrder).map((t) => <SelectItem key={t.id} value={t.id} className="justify-end pr-3 text-right">تكليف: {t.title}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {selectedCourseForAttendance && (
+                    <>
+                      <Separator />
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <div className="flex gap-2">
+                          <Button variant="outline" size="sm" onClick={handleSelectAll}>تحديد الكل</Button>
+                          <Button variant="outline" size="sm" onClick={handleDeselectAll}>إلغاء الكل</Button>
+                        </div>
+                        <span className="text-sm text-muted-foreground">
+                          {displayChecked.size} / {branchStudents.length} حاضر
+                        </span>
+                      </div>
+
+                      {branchStudents.length === 0 ? (
+                        <div className={cn(dashboardEmptyStateClass, "p-5 text-sm text-muted-foreground")}>لا يوجد طلاب في هذا الفرع.</div>
+                      ) : (
+                        <div className="rounded-[1.25rem] border border-border/60 bg-white overflow-hidden">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="text-right w-12">حاضر</TableHead>
+                                <TableHead className="text-right">الاسم</TableHead>
+                                <TableHead className="text-right">رقم الدخول</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {branchStudents.map((student) => (
+                                <TableRow
+                                  key={student.id}
+                                  className="cursor-pointer hover:bg-muted/30"
+                                  onClick={() => handleToggle(student.loginId)}
+                                >
+                                  <TableCell>
+                                    <Checkbox
+                                      checked={displayChecked.has(student.loginId)}
+                                      onCheckedChange={() => handleToggle(student.loginId)}
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                  </TableCell>
+                                  <TableCell className="font-medium">{student.name}</TableCell>
+                                  <TableCell className="text-muted-foreground">{student.loginId}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
+
+                      <div className="flex justify-start">
+                        <Button onClick={() => void handleSave()} disabled={attendanceSaving}>
+                          {attendanceSaving ? "جاري الحفظ..." : "حفظ التحضير"}
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          );
+        })()}
 
         {dashboardTab === "indicators" && (
           <div className="space-y-6">

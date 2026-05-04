@@ -109,6 +109,13 @@ alter table public.courses add column if not exists task_template_content text n
 alter table public.courses add column if not exists youtube_url text not null default '';
 alter table public.courses add column if not exists sort_order integer not null default 0;
 
+-- Allow manual attendance source
+alter table public.course_attendance drop constraint if exists course_attendance_source_check;
+alter table public.course_attendance add constraint course_attendance_source_check check (source in ('post-test', 'manual'));
+-- Drop unique constraint on (course_id, login_code) and replace with (course_id, login_code, source)
+alter table public.course_attendance drop constraint if exists course_attendance_course_id_login_code_key;
+create unique index if not exists course_attendance_course_login_source_idx on public.course_attendance (course_id, login_code, source);
+
 create table if not exists public.notifications (
   id uuid primary key default gen_random_uuid(),
   title text not null,
