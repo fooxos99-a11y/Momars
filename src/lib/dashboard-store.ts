@@ -930,6 +930,15 @@ const useCreateDashboardStore = () => {
       const previousSubmissions = data.submissions;
       const affectedLoginIds = new Set(submissions.map((s) => s.loginId));
 
+      /* Helper: embed __score_override__ in answers so the score survives even if
+         manualScore field is lost (e.g. column missing, future refetch, revert). */
+      const enrichAnswers = (answers: SubmissionAnswer[], manualScore?: number | null): SubmissionAnswer[] => {
+        if (typeof manualScore === "number" && Number.isFinite(manualScore) && manualScore >= 0) {
+          return [...answers.filter((a) => a.questionId !== "__score_override__"), { questionId: "__score_override__", value: String(manualScore) }];
+        }
+        return answers;
+      };
+
       /* optimistic local update so the dashboard reflects all imported rows immediately */
       setSubmissions((prev) => {
         const filtered = prev.filter(
@@ -943,7 +952,7 @@ const useCreateDashboardStore = () => {
             assessmentType,
             studentName: sub.studentName,
             loginId: sub.loginId,
-            answers: sub.answers,
+            answers: enrichAnswers(sub.answers, sub.manualScore),
             manualScore: sub.manualScore ?? null,
             submittedAt: now,
           };
@@ -967,7 +976,7 @@ const useCreateDashboardStore = () => {
               assessmentType,
               studentName: sub.studentName,
               loginId: sub.loginId,
-              answers: sub.answers,
+              answers: enrichAnswers(sub.answers, sub.manualScore),
               manualScore: sub.manualScore ?? null,
               submittedAt: res.submittedAt,
             };

@@ -1086,9 +1086,7 @@ export const bulkUpsertSubmissionsToDatabase = async (
     .insert(submissionsPayload)
     .select("id, submitted_at, login_code");
 
-  let manualScoreFallbackMode = false;
   if (insertedSubmissionsResponse.error && isMissingFieldError(insertedSubmissionsResponse.error, "manual_score")) {
-    manualScoreFallbackMode = true;
     insertedSubmissionsResponse = await supabase
       .from("course_submissions")
       .insert(submissionsPayload.map(({ manual_score, ...rest }) => rest))
@@ -1118,13 +1116,17 @@ export const bulkUpsertSubmissionsToDatabase = async (
       file_type: answer.fileType ?? null,
       file_data_url: answer.fileDataUrl ?? null,
     }));
-    // When manual_score column is unavailable, persist it as a __score_override__ answer
-    // so getSubmissionGrade can still apply the correct score
+    // Always persist manual score as __score_override__ answer for maximum durability.
+    // This ensures the score survives even if manual_score column is unavailable or
+    // the field is lost during a future DB schema change.
     if (
-      manualScoreFallbackMode &&
       typeof submission.manualScore === "number" &&
-      Number.isFinite(submission.manualScore)
+      Number.isFinite(submission.manualScore) &&
+      submission.manualScore >= 0
     ) {
+      // Remove any existing override to avoid duplicates, then add fresh
+      const overrideIdx = baseAnswers.findIndex((a) => a.question_id === "__score_override__");
+      if (overrideIdx >= 0) baseAnswers.splice(overrideIdx, 1);
       baseAnswers.push({
         submission_id: inserted.id,
         question_id: "__score_override__",
