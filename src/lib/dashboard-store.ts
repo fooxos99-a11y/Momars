@@ -452,13 +452,19 @@ const persistDashboardData = (nextData: DashboardData, sourceId?: string) => {
 };
 
 export const useDashboardStore = () => {
-  const [data, setData] = useState<DashboardData>(() => loadDashboardData());
+  const [data, setData] = useState<DashboardData>(initialData);
   const [bootstrapData] = useState<DashboardData>(() => loadDashboardData());
   const [isHydrated, setIsHydrated] = useState(!isBrowser);
   const sourceIdRef = useRef(createId());
   const suppressPersistRef = useRef(false);
+  const hasMountedRef = useRef(false);
 
   useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
+
     if (suppressPersistRef.current) {
       suppressPersistRef.current = false;
       return;
@@ -771,8 +777,9 @@ export const useDashboardStore = () => {
         ),
       );
     },
-    toggleStudentPart: (studentId: string, partNumber: number) => {
+    toggleStudentPart: async (studentId: string, partNumber: number) => {
       let shouldMarkComplete = false;
+      const previousStudents = data.students;
 
       setStudents((students) =>
         students.map((student) => {
@@ -790,12 +797,17 @@ export const useDashboardStore = () => {
         }),
       );
 
-      void toggleStudentPartInDatabase({
-        studentId,
-        reciterId: null,
-        partNumber,
-        shouldMarkComplete,
-      }).catch(() => undefined);
+      try {
+        await toggleStudentPartInDatabase({
+          studentId,
+          reciterId: null,
+          partNumber,
+          shouldMarkComplete,
+        });
+      } catch (error) {
+        setStudents(() => previousStudents);
+        throw error;
+      }
     },
     addCourse: async (
       title: string,
@@ -1044,6 +1056,8 @@ export const useDashboardStore = () => {
 
       const tempSubmissionId = createId();
       const tempSubmittedAt = new Date().toISOString();
+      const previousSubmissions = data.submissions;
+      const previousAttendance = data.attendance;
 
       setSubmissions((submissions) => [
         ...submissions,
@@ -1094,8 +1108,10 @@ export const useDashboardStore = () => {
               : currentSubmission,
           ),
         );
-      } catch {
-        // Keep the locally submitted assessment when database sync is unavailable.
+      } catch (error) {
+        setSubmissions(() => previousSubmissions);
+        setAttendance(() => previousAttendance);
+        throw error;
       }
     },
     resetData: () => {
