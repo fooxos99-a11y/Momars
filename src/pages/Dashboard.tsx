@@ -5376,14 +5376,20 @@ const Dashboard = () => {
                     disabled={assessmentNoTimeLimit}
                   />
                 </div>
-                <label className="flex cursor-pointer items-center justify-end gap-2 text-sm">
-                  <span className="font-medium text-foreground">بدون مهلة (مفتوح حتى الإغلاق اليدوي)</span>
+                <label className="flex cursor-pointer items-center justify-start gap-2 text-sm">
+                  <span
+                    onClick={() => setAssessmentNoTimeLimit((v) => !v)}
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${assessmentNoTimeLimit ? "border-primary bg-primary" : "border-border bg-white"}`}
+                  >
+                    {assessmentNoTimeLimit && <span className="h-2 w-2 rounded-full bg-white" />}
+                  </span>
                   <input
                     type="checkbox"
                     checked={assessmentNoTimeLimit}
                     onChange={(e) => setAssessmentNoTimeLimit(e.target.checked)}
-                    className="h-4 w-4 accent-primary"
+                    className="sr-only"
                   />
+                  <span className="font-medium text-foreground">بدون مهلة (مفتوح حتى الإغلاق اليدوي)</span>
                 </label>
                 {assessmentAvailabilityError && <p className="text-sm font-medium text-destructive">{assessmentAvailabilityError}</p>}
                 <div className="flex justify-end gap-3">
