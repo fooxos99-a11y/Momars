@@ -107,6 +107,7 @@ alter table public.courses add column if not exists task_template_id uuid;
 alter table public.courses add column if not exists task_template_name text not null default '';
 alter table public.courses add column if not exists task_template_content text not null default '';
 alter table public.courses add column if not exists youtube_url text not null default '';
+alter table public.courses add column if not exists sort_order integer not null default 0;
 
 create table if not exists public.notifications (
   id uuid primary key default gen_random_uuid(),

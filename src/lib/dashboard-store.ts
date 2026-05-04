@@ -20,6 +20,7 @@ import {
   toggleStudentPartInDatabase,
   updateTaskTemplateInDatabase,
   updateCourseInDatabase,
+  updateCoursesSortOrderInDatabase,
   updateStudentInDatabase,
 } from "@/lib/supabase";
 
@@ -121,6 +122,7 @@ export interface CourseRecord {
   taskTemplateName: string;
   taskTemplateContent: string;
   youtubeUrl: string;
+  sortOrder: number;
   preQuestions: CourseQuestion[];
   postQuestions: CourseQuestion[];
   taskQuestions: CourseQuestion[];
@@ -361,6 +363,7 @@ const normalizeData = (input?: Partial<DashboardData>): DashboardData => {
           taskTemplateName: course.taskTemplateName ?? "",
           taskTemplateContent: course.taskTemplateContent ?? "",
           youtubeUrl: course.youtubeUrl ?? "",
+          sortOrder: course.sortOrder ?? 0,
           createdAt: course.createdAt ?? new Date().toISOString(),
           preQuestions: (course.preQuestions ?? []).map(normalizeQuestion),
           postQuestions: (course.postQuestions ?? []).map(normalizeQuestion),
@@ -643,6 +646,7 @@ const useCreateDashboardStore = () => {
           taskTemplateName: options?.taskTemplateName ?? "",
           taskTemplateContent: options?.taskTemplateContent ?? "",
           youtubeUrl: options?.youtubeUrl ?? "",
+          sortOrder: data.courses.length,
           preQuestions: [],
           postQuestions: [],
           taskQuestions: [],
@@ -716,6 +720,13 @@ const useCreateDashboardStore = () => {
         setCourses(() => previousCourses);
         throw error;
       }
+    },
+    reorderCourses: (orderedIds: string[]) => {
+      setCourses((courses) =>
+        [...courses].sort((a, b) => orderedIds.indexOf(a.id) - orderedIds.indexOf(b.id))
+          .map((c, i) => ({ ...c, sortOrder: i })),
+      );
+      void updateCoursesSortOrderInDatabase(orderedIds);
     },
     deleteCourse: async (courseId: string) => {
       const previousCourses = data.courses;

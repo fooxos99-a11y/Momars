@@ -541,12 +541,7 @@ const Dashboard = () => {
   const [isImportingQuestions, setIsImportingQuestions] = useState({ pre: false, post: false, tasks: false });
   const [splitText, setSplitText] = useState({ pre: "", post: "", tasks: "" });
   const questionPdfImportInputRef = useRef<HTMLInputElement | null>(null);
-  const courseOrderRef = useRef<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem("courseOrder") ?? "[]") as string[]; } catch { return []; }
-  } as unknown as string[]);
-  const [courseOrder, setCourseOrder] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem("courseOrder") ?? "[]") as string[]; } catch { return []; }
-  });
+  const courseOrderRef = useRef<string[]>([]);
   const [resultsCourseId, setResultsCourseId] = useState("");
   const [resultsBranchId, setResultsBranchId] = useState<IndicatorsBranchFilter>("male");
   const [resultsType, setResultsType] = useState<"attendance" | AssessmentType>("attendance");
@@ -736,29 +731,19 @@ const Dashboard = () => {
   );
   const courseItems = useMemo(() => {
     const courses = getCourses(data);
-    const newIds = courses.map((c) => c.id).filter((id) => !courseOrder.includes(id));
-    if (newIds.length > 0) {
-      const updated = [...courseOrder, ...newIds];
-      setCourseOrder(updated);
-      localStorage.setItem("courseOrder", JSON.stringify(updated));
-    }
-    const order = courseOrder.length > 0 ? courseOrder : courses.map((c) => c.id);
-    return [...courses].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data]);  // intentionally exclude courseOrder to avoid infinite loop
+    return [...courses].sort((a, b) => a.sortOrder - b.sortOrder);
+  }, [data]);
 
   const handleCourseOrderDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    setCourseOrder((prev) => {
-      const oldIdx = prev.indexOf(String(active.id));
-      const newIdx = prev.indexOf(String(over.id));
-      if (oldIdx === -1 || newIdx === -1) return prev;
-      const next = arrayMove(prev, oldIdx, newIdx);
-      localStorage.setItem("courseOrder", JSON.stringify(next));
-      return next;
-    });
-  }, []);
+    const currentIds = courseItems.map((c) => c.id);
+    const oldIdx = currentIds.indexOf(String(active.id));
+    const newIdx = currentIds.indexOf(String(over.id));
+    if (oldIdx === -1 || newIdx === -1) return;
+    const next = arrayMove(currentIds, oldIdx, newIdx);
+    store.reorderCourses(next);
+  }, [courseItems, store]);
 
   const dndSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),

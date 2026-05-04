@@ -335,7 +335,7 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
 
   const coursesWithBranchSettingsResponse = await supabase
     .from("courses")
-    .select("id, title, entity_type, task_mode, task_template_id, task_template_name, task_template_content, youtube_url, is_active, is_pre_enabled, is_post_enabled, is_tasks_enabled, male_pre_enabled, female_pre_enabled, male_post_enabled, female_post_enabled, male_tasks_enabled, female_tasks_enabled, assessment_windows, assessment_notification_templates, created_at");
+    .select("id, title, entity_type, task_mode, task_template_id, task_template_name, task_template_content, youtube_url, is_active, is_pre_enabled, is_post_enabled, is_tasks_enabled, male_pre_enabled, female_pre_enabled, male_post_enabled, female_post_enabled, male_tasks_enabled, female_tasks_enabled, assessment_windows, assessment_notification_templates, sort_order, created_at");
   const coursesResponse = coursesWithBranchSettingsResponse.error && (
     isMissingFieldError(coursesWithBranchSettingsResponse.error, "male_pre_enabled") ||
     isMissingFieldError(coursesWithBranchSettingsResponse.error, "female_pre_enabled") ||
@@ -346,7 +346,7 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
     isMissingFieldError(coursesWithBranchSettingsResponse.error, "assessment_windows") ||
     isMissingFieldError(coursesWithBranchSettingsResponse.error, "assessment_notification_templates")
   )
-    ? await supabase.from("courses").select("id, title, entity_type, task_mode, task_template_id, task_template_name, task_template_content, youtube_url, is_active, is_pre_enabled, is_post_enabled, is_tasks_enabled, created_at")
+    ? await supabase.from("courses").select("id, title, entity_type, task_mode, task_template_id, task_template_name, task_template_content, youtube_url, is_active, is_pre_enabled, is_post_enabled, is_tasks_enabled, sort_order, created_at")
     : coursesWithBranchSettingsResponse;
 
   const [questionsResponse, submissionsWithManualScoreResponse, answersResponse, attendanceResponse] = await Promise.all([
@@ -461,6 +461,7 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
       taskTemplateName: (course.task_template_name as string | null) ?? "",
       taskTemplateContent: (course.task_template_content as string | null) ?? "",
       youtubeUrl: (course.youtube_url as string | null) ?? "",
+      sortOrder: (course.sort_order as number | null) ?? 0,
       preQuestions: groupedQuestions.pre,
       postQuestions: groupedQuestions.post,
       taskQuestions: groupedQuestions.tasks,
@@ -837,6 +838,13 @@ export const deleteCourseFromDatabase = async (courseId: string) => {
   if (error) {
     throw error;
   }
+};
+
+export const updateCoursesSortOrderInDatabase = async (orderedIds: string[]) => {
+  const updates = orderedIds.map((id, index) =>
+    supabase.from("courses").update({ sort_order: index }).eq("id", id),
+  );
+  await Promise.all(updates);
 };
 
 export const activateCourseInDatabase = async (courseId: string, settings?: { pre: boolean; post: boolean; tasks: boolean }) => {
