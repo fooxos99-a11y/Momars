@@ -2365,30 +2365,8 @@ const Dashboard = () => {
       });
 
       const testedStudentsCount = latestSubmissions.length;
-      
-      // Try to calculate based on correct answers first
-      const stats = latestSubmissions.reduce(
-        (sum, submission) => {
-          const submissionStats = getSubmissionCorrectAnswersStats(submission.courseId, assessmentType, submission.id);
 
-          return {
-            correctAnswers: sum.correctAnswers + submissionStats.correctAnswers,
-            totalCorrectableAnswers: sum.totalCorrectableAnswers + submissionStats.totalCorrectableAnswers,
-          };
-        },
-        { correctAnswers: 0, totalCorrectableAnswers: 0 },
-      );
-
-      // If we have stats based on questions, use them
-      if (stats.totalCorrectableAnswers > 0) {
-        return {
-          testedStudentsCount,
-          correctAnswersCount: stats.correctAnswers,
-          correctAnswersPercent: clampPercent((stats.correctAnswers / stats.totalCorrectableAnswers) * 100),
-        };
-      }
-
-      // Fallback: calculate based on grades if questions aren't available
+      // Always use getSubmissionGrade so manualScore is respected (same logic as student rows)
       const gradeBasedStats = latestSubmissions.reduce(
         (sum, submission) => {
           const grade = getSubmissionGrade(submission.courseId, assessmentType, submission.id);
@@ -2398,14 +2376,14 @@ const Dashboard = () => {
         0,
       );
 
-      const fallbackPercent = testedStudentsCount > 0 
+      const averagePercent = testedStudentsCount > 0
         ? clampPercent(gradeBasedStats / testedStudentsCount)
         : 0;
 
       return {
         testedStudentsCount,
         correctAnswersCount: 0,
-        correctAnswersPercent: fallbackPercent,
+        correctAnswersPercent: averagePercent,
       };
     };
 
