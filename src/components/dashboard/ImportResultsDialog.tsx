@@ -303,13 +303,23 @@ export const ImportResultsDialog = ({
 
       const headers = Object.keys(rawRows[0]);
 
-      /* find name column */
-      const nameCol =
-        headers.find((h) => h.trim() === "الاسم1") ??
-        headers.find((h) => /اسم/i.test(h)) ??
-        headers.find((h) => /^\s*name\s*$/i.test(h)) ??
-        headers.find((h) => /student.?name|full.?name/i.test(h)) ??
-        null;
+      /* find name column — pick the candidate with the most non-empty values */
+      const nameCandidates = [
+        headers.find((h) => h.trim() === "الاسم1"),
+        headers.find((h) => h.trim() === "الاسم2"),
+        headers.find((h) => h.trim() === "الاسم"),
+        headers.find((h) => /اسم/i.test(h) && h.trim() !== "الاسم"),
+        headers.find((h) => /^\s*name\s*$/i.test(h)),
+        headers.find((h) => /student.?name|full.?name/i.test(h)),
+      ].filter((h): h is string => !!h);
+
+      const nameCol = nameCandidates.length === 0
+        ? null
+        : nameCandidates.reduce((best, col) => {
+            const filled = rawRows.filter((r) => String(r[col] ?? "").trim()).length;
+            const bestFilled = rawRows.filter((r) => String(r[best] ?? "").trim()).length;
+            return filled > bestFilled ? col : best;
+          });
 
       /* find total score column */
       const scoreCol =
