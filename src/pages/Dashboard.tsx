@@ -3,7 +3,7 @@ import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSe
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Link, Navigate, useNavigate } from "react-router-dom";
-import { AlertCircle, ArrowRightLeft, BarChart3, Bell, BookOpen, Copy, Database, Download, Eye, EyeOff, FilePen, FileText, FileUp, GraduationCap, Home, Info, LayoutPanelTop, Maximize2, Menu, Minus, Pencil, Plus, Power, ShieldCheck, SquarePen, Trash2, TrendingDown, TrendingUp, Users } from "lucide-react";
+import { AlertCircle, ArrowRightLeft, BarChart3, Bell, BookOpen, Copy, Database, Download, Eye, EyeOff, FilePen, FileText, FileUp, GraduationCap, Home, Info, LayoutPanelTop, Maximize2, Menu, Minus, Pencil, Plus, Power, ShieldCheck, SquarePen, Trash2, TrendingDown, TrendingUp, Users, X } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
