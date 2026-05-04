@@ -1086,7 +1086,9 @@ export const bulkUpsertSubmissionsToDatabase = async (
     .insert(submissionsPayload)
     .select("id, submitted_at, login_code");
 
+  let manualScoreFallbackMode = false;
   if (insertedSubmissionsResponse.error && isMissingFieldError(insertedSubmissionsResponse.error, "manual_score")) {
+    manualScoreFallbackMode = true;
     insertedSubmissionsResponse = await supabase
       .from("course_submissions")
       .insert(submissionsPayload.map(({ manual_score, ...rest }) => rest))
@@ -1108,7 +1110,7 @@ export const bulkUpsertSubmissionsToDatabase = async (
   const answersToInsert = normalizedSubmissions.flatMap((submission) => {
     const inserted = insertedByLogin.get(submission.loginId);
     if (!inserted) return [];
-    return submission.answers.map((answer) => ({
+    const baseAnswers = submission.answers.map((answer) => ({
       submission_id: inserted.id,
       question_id: answer.questionId,
       answer_text: answer.value,
@@ -1116,6 +1118,23 @@ export const bulkUpsertSubmissionsToDatabase = async (
       file_type: answer.fileType ?? null,
       file_data_url: answer.fileDataUrl ?? null,
     }));
+    // When manual_score column is unavailable, persist it as a __score_override__ answer
+    // so getSubmissionGrade can still apply the correct score
+    if (
+      manualScoreFallbackMode &&
+      typeof submission.manualScore === "number" &&
+      Number.isFinite(submission.manualScore)
+    ) {
+      baseAnswers.push({
+        submission_id: inserted.id,
+        question_id: "__score_override__",
+        answer_text: String(submission.manualScore),
+        file_name: null,
+        file_type: null,
+        file_data_url: null,
+      });
+    }
+    return baseAnswers;
   });
 
   if (answersToInsert.length > 0) {

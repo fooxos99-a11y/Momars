@@ -313,6 +313,8 @@ export const ImportResultsDialog = ({
       const scoreCol =
         headers.find((h) => h.trim() === "إجمالي النقاط") ??
         headers.find((h) => /إجمالي|النقاط|الدرجة|المجموع/i.test(h)) ??
+        headers.find((h) => /^\s*score\s*$/i.test(h)) ??
+        headers.find((h) => /\bscore\b|\bpoints\b|\btotal\b/i.test(h)) ??
         null;
 
       if (!nameCol) {
@@ -358,7 +360,10 @@ export const ImportResultsDialog = ({
         .filter((row) => String(row[nameCol] ?? "").trim())
         .map((row) => {
           const excelName = String(row[nameCol] ?? "").trim();
-          const rawScore = scoreCol ? Number(String(row[scoreCol]).replace(/[^0-9.]/g, "")) : NaN;
+          // Handle "10 / 10" format (Google Forms) — extract the first number only
+          const rawScoreStr = scoreCol ? String(row[scoreCol]).trim() : "";
+          const rawScoreMatch = rawScoreStr.match(/(\d+(?:\.\d+)?)/)
+          const rawScore = rawScoreMatch ? Number(rawScoreMatch[1]) : NaN;
           const excelScore = Number.isFinite(rawScore) && rawScore >= 0 ? rawScore : null;
 
           /* match student */
