@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
 import {
   activateCourseInDatabase,
   addCourseToDatabase,
@@ -415,7 +415,7 @@ const normalizeData = (input?: Partial<DashboardData>): DashboardData => {
   };
 };
 
-export const useDashboardStore = () => {
+const useCreateDashboardStore = () => {
   const [data, setData] = useState<DashboardData>(initialData);
   const [isHydrated, setIsHydrated] = useState(!isBrowser);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -1072,6 +1072,23 @@ export const useDashboardStore = () => {
       }
     },
   };
+};
+
+type DashboardStoreValue = ReturnType<typeof useCreateDashboardStore>;
+
+const DashboardStoreContext = createContext<DashboardStoreValue | null>(null);
+
+export const DashboardStoreProvider = ({ children }: { children: React.ReactNode }) => {
+  const store = useCreateDashboardStore();
+  return React.createElement(DashboardStoreContext.Provider, { value: store }, children);
+};
+
+export const useDashboardStore = (): DashboardStoreValue => {
+  const ctx = useContext(DashboardStoreContext);
+  if (ctx) return ctx;
+  // Fallback: create own instance (used in tests without provider)
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  return useCreateDashboardStore();
 };
 
 export const getAssignedStudents = (data: DashboardData, reciterId: string) => {

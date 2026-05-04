@@ -14,7 +14,7 @@ import ReciterPage from "./pages/ReciterPage.tsx";
 import StudentPage from "./pages/StudentPage.tsx";
 import TasksPage from "./pages/TasksPage.tsx";
 import TraineePage from "./pages/TraineePage.tsx";
-import { ACCESS_SESSION_SYNC_EVENT, loadAccessSession } from "./lib/dashboard-store.ts";
+import { ACCESS_SESSION_SYNC_EVENT, DashboardStoreProvider, loadAccessSession, useDashboardStore } from "./lib/dashboard-store.ts";
 import { usePushNotifications } from "./hooks/use-push-notifications.tsx";
 import { Button } from "@/components/ui/button";
 
@@ -79,14 +79,34 @@ const AnimatedRoutes = () => {
   );
 };
 
+const PageLoadingScreen = () => (
+  <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[linear-gradient(180deg,#f8fbfb,#eef5f5)]">
+    <div className="page-loader" />
+  </div>
+);
+
+const AppContent = () => {
+  const { isHydrated } = useDashboardStore();
+
+  if (!isHydrated) return <PageLoadingScreen />;
+
+  return (
+    <>
+      <AnimatedRoutes />
+      <PushNotificationManager />
+    </>
+  );
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <AnimatedRoutes />
-        <PushNotificationManager />
+        <DashboardStoreProvider>
+          <AppContent />
+        </DashboardStoreProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
