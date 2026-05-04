@@ -1,11 +1,14 @@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FileText, ListChecks, Plus, ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
+import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import DocumentEditor from "@/components/editor/DocumentEditor";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -115,11 +118,28 @@ interface AdminTasksTabProps {
   managedBranchId?: BranchId | null;
 }
 
+import React from "react";
+
+const SortableTaskCard = ({ id, children }: { id: string; children: React.ReactNode }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 50 : undefined, opacity: isDragging ? 0.85 : 1 }}
+      className={isDragging ? "cursor-grabbing" : "cursor-grab"}
+      {...attributes}
+      {...listeners}
+    >
+      {children}
+    </div>
+  );
+};
+
 const AdminTasksTab = ({ canEdit = true, managedBranchId = null }: AdminTasksTabProps) => {
   const store = useDashboardStore();
   const { data } = store;
   const navigate = useNavigate();
-  const tasks = useMemo(() => getTasks(data), [data]);
+  const tasks = useMemo(() => [...getTasks(data)].sort((a, b) => a.sortOrder - b.sortOrder), [data]);
   const [taskPickerCourseId, setTaskPickerCourseId] = useState<string | null>(null);
   const [taskPickerStep, setTaskPickerStep] = useState<"pick" | "timer">("pick");
   const [taskDurationMinutes, setTaskDurationMinutes] = useState("30");
@@ -143,6 +163,21 @@ const AdminTasksTab = ({ canEdit = true, managedBranchId = null }: AdminTasksTab
   const [pasteText, setPasteText] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+  );
+
+  const handleTaskDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const ids = tasks.map((t) => t.id);
+    const oldIdx = ids.indexOf(String(active.id));
+    const newIdx = ids.indexOf(String(over.id));
+    if (oldIdx === -1 || newIdx === -1) return;
+    store.reorderCourses(arrayMove(ids, oldIdx, newIdx));
+  }, [tasks, store]);
 
   const selectedTemplate = data.taskTemplates.find((template) => template.id === selectedTemplateId) ?? null;
 
@@ -1026,83 +1061,91 @@ const AdminTasksTab = ({ canEdit = true, managedBranchId = null }: AdminTasksTab
         </CardContent>
       </Card>}
 
-      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-        {tasks.length === 0 && (
-          <Card className="rounded-[1.5rem] border-dashed border-border/70 bg-white/80 md:col-span-2 xl:col-span-3">
-            <CardContent className="p-6 text-right text-sm text-muted-foreground">لا توجد تكاليف بعد.</CardContent>
-          </Card>
-        )}
+      <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleTaskDragEnd}>
+        <SortableContext items={tasks.map((t) => t.id)} strategy={rectSortingStrategy}>
+          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            {tasks.length === 0 && (
+              <Card className="rounded-[1.5rem] border-dashed border-border/70 bg-white/80 md:col-span-2 xl:col-span-3">
+                <CardContent className="p-6 text-right text-sm text-muted-foreground">لا توجد تكاليف بعد.</CardContent>
+              </Card>
+            )}
 
-        {tasks.map((task) => {
-          const isActive = isAssessmentEnabledForCourse(task, "tasks", managedBranchId);
-          const deadline = getAssessmentAvailabilityDeadline(task, "tasks", managedBranchId);
+            {tasks.map((task) => {
+              const isActive = isAssessmentEnabledForCourse(task, "tasks", managedBranchId);
+              const deadline = getAssessmentAvailabilityDeadline(task, "tasks", managedBranchId);
 
-          return (
-          <Card key={task.id} className="rounded-[1.5rem] border-white/80 bg-white/95 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
-            <CardHeader className="text-right">
-              <div className="flex items-center justify-between gap-3">
-                <CardTitle className="text-lg text-right">{task.title}</CardTitle>
-                <div className="flex items-center gap-2">
-                  {canEdit && (
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => void store.deleteCourse(task.id)}>
-                      <Trash2 className="size-4" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3 text-right">
-              <div className="flex flex-wrap justify-start gap-2">
-                {canEdit && task.taskMode === "questions" && (
-                  <Button variant="outline" size="sm" onClick={() => navigate(`/dashboard/course/tasks?courseId=${task.id}`)}>
-                    <ListChecks className="size-4" />
-                    إدارة الأسئلة
-                  </Button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (isActive) {
-                      if (managedBranchId) {
-                        const activeBranch: BranchId = managedBranchId;
-                        const inactiveBranch: BranchId = managedBranchId === "male" ? "female" : "male";
-                        setTaskDeactivateDialog({ taskId: task.id, activeBranch, inactiveBranch });
-                        return;
-                      }
-
-                      const maleActive = isAssessmentEnabledForCourse(task, "tasks", "male");
-                      const femaleActive = isAssessmentEnabledForCourse(task, "tasks", "female");
-                      if (maleActive && femaleActive) {
-                        void handleDeactivateTask(task.id);
-                      } else if (maleActive || femaleActive) {
-                        const activeBranch: BranchId = maleActive ? "male" : "female";
-                        const inactiveBranch: BranchId = maleActive ? "female" : "male";
-                        setTaskDeactivateDialog({ taskId: task.id, activeBranch, inactiveBranch });
+              return (
+              <SortableTaskCard key={task.id} id={task.id}>
+              <Card className="rounded-[1.5rem] border-white/80 bg-white/95 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
+                <CardHeader>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="text-right">
+                      <CardTitle className="min-h-[4rem] text-lg leading-8">{task.title}</CardTitle>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isActive) {
+                        if (managedBranchId) {
+                          const activeBranch: BranchId = managedBranchId;
+                          const inactiveBranch: BranchId = managedBranchId === "male" ? "female" : "male";
+                          setTaskDeactivateDialog({ taskId: task.id, activeBranch, inactiveBranch });
+                          return;
+                        }
+                        const maleActive = isAssessmentEnabledForCourse(task, "tasks", "male");
+                        const femaleActive = isAssessmentEnabledForCourse(task, "tasks", "female");
+                        if (maleActive && femaleActive) {
+                          void handleDeactivateTask(task.id);
+                        } else if (maleActive || femaleActive) {
+                          const activeBranch: BranchId = maleActive ? "male" : "female";
+                          const inactiveBranch: BranchId = maleActive ? "female" : "male";
+                          setTaskDeactivateDialog({ taskId: task.id, activeBranch, inactiveBranch });
+                        } else {
+                          void handleDeactivateTask(task.id);
+                        }
                       } else {
-                        void handleDeactivateTask(task.id);
+                        handleOpenTaskPicker(task.id);
                       }
-                    } else {
-                      handleOpenTaskPicker(task.id);
-                    }
-                  }}
-                  className={cn(
-                    "block rounded-[1rem] border p-3 text-center text-sm font-bold transition-smooth",
-                    isActive
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
-                      : "border-border/70 bg-muted/30 text-muted-foreground hover:border-primary/25 hover:text-primary",
-                  )}
-                >
-                  <div>تفعيل</div>
-                  {isActive && deadline && (
-                    <div className="mt-1 text-[11px] font-medium"><TaskCountdownLabel closesAt={deadline} /></div>
-                  )}
-                </button>
-              </div>
-            </CardContent>
-          </Card>
-          );
-        })}
-      </div>
+                    }}
+                    className={cn(
+                      "w-full rounded-[1rem] border p-3 text-center text-sm font-bold transition-smooth",
+                      isActive
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                        : "border-border/70 bg-muted/30 text-muted-foreground hover:border-primary/25 hover:text-primary",
+                    )}
+                  >
+                    <div>تفعيل</div>
+                    {isActive && deadline && (
+                      <div className="mt-1 text-[11px] font-medium"><TaskCountdownLabel closesAt={deadline} /></div>
+                    )}
+                  </button>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex justify-start gap-2">
+                      {canEdit && (
+                        <>
+                          {task.taskMode === "questions" && (
+                            <Button variant="outline" size="icon" className="h-10 w-10 rounded-xl" onClick={() => navigate(`/dashboard/course/tasks?courseId=${task.id}`)}>
+                              <ListChecks className="size-4" />
+                            </Button>
+                          )}
+                          <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-destructive" onClick={() => void store.deleteCourse(task.id)}>
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              </SortableTaskCard>
+              );
+            })}
+          </div>
+        </SortableContext>
+      </DndContext>
 
       <AlertDialog open={Boolean(taskDeactivateDialog)} onOpenChange={(open) => { if (!open) setTaskDeactivateDialog(null); }}>
         <AlertDialogContent className="rounded-[1.5rem] text-right">

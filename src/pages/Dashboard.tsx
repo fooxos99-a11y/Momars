@@ -746,8 +746,8 @@ const Dashboard = () => {
   }, [courseItems, store]);
 
   const dndSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
   );
 
   const selectedReciter = data.reciters.find((reciter) => reciter.id === selectedReciterId) ?? data.reciters[0] ?? null;
@@ -764,7 +764,7 @@ const Dashboard = () => {
   const selectedCourseSubmissions = selectedCourse
     ? data.submissions.filter((submission) => submission.courseId === selectedCourse.id)
     : [];
-  const resultsCourse = [...courseItems, ...getTasks(data)].find((course) => course.id === resultsCourseId) ?? courseItems[0] ?? null;
+  const resultsCourse = [...courseItems, ...getTasks(data).sort((a, b) => a.sortOrder - b.sortOrder)].find((course) => course.id === resultsCourseId) ?? courseItems[0] ?? null;
   const resultsStudents = resultsCourse
     ? (resultsBranchId === "all" ? data.students : getBranchStudents(data, resultsBranchId))
     : [];
@@ -3763,7 +3763,7 @@ const Dashboard = () => {
                       <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue placeholder="اختر الدورة" /></SelectTrigger>
                       <SelectContent className="text-right">
                         {courseItems.length > 0 && courseItems.map((course) => <SelectItem key={course.id} value={course.id} className="justify-end pr-3 text-right">{course.title}</SelectItem>)}
-                        {getTasks(data).length > 0 && getTasks(data).map((task) => <SelectItem key={task.id} value={task.id} className="justify-end pr-3 text-right">تكليف: {task.title}</SelectItem>)}
+                        {getTasks(data).length > 0 && [...getTasks(data)].sort((a, b) => a.sortOrder - b.sortOrder).map((task) => <SelectItem key={task.id} value={task.id} className="justify-end pr-3 text-right">تكليف: {task.title}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
@@ -4051,7 +4051,7 @@ const Dashboard = () => {
       <ImportResultsDialog
         open={importResultsOpen}
         onOpenChange={setImportResultsOpen}
-        courses={[...courseItems, ...getTasks(data)]}
+        courses={[...courseItems, ...getTasks(data).sort((a, b) => a.sortOrder - b.sortOrder)]}
         students={data.students}
         defaultCourseId={resultsCourse?.id}
         defaultAssessmentType={resultsType !== "attendance" ? resultsType : "pre"}
