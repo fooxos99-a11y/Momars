@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   activateCourseInDatabase,
   addCourseToDatabase,
@@ -193,9 +193,7 @@ const adminAccounts = [
   },
 ];
 
-const STORAGE_KEY = "mmars-dashboard-data";
 const ACCESS_STORAGE_KEY = "mmars-access-session";
-const DASHBOARD_SYNC_EVENT = "mmars-dashboard-data-sync";
 export const ACCESS_SESSION_SYNC_EVENT = "mmars-access-session-sync";
 const isBrowser = typeof window !== "undefined";
 const createId = () => crypto.randomUUID();
@@ -407,7 +405,7 @@ const normalizeData = (input?: Partial<DashboardData>): DashboardData => {
             id: notification.id,
             title: notification.title ?? "",
             message: notification.message ?? "",
-            targetBranchId: notification.targetBranchId === "female" ? "female" : notification.targetBranchId === "male" ? "male" : null,
+            targetBranchId: (notification.targetBranchId === "female" ? "female" : notification.targetBranchId === "male" ? "male" : null) as BranchId | null,
             createdAt: notification.createdAt ?? new Date().toISOString(),
             createdByRole: notification.createdByRole,
             createdByName: notification.createdByName,
@@ -417,102 +415,10 @@ const normalizeData = (input?: Partial<DashboardData>): DashboardData => {
   };
 };
 
-const loadDashboardData = (): DashboardData => {
-  if (!isBrowser) {
-    return initialData;
-  }
-
-  const raw = window.localStorage.getItem(STORAGE_KEY);
-
-  if (!raw) {
-    return initialData;
-  }
-
-  try {
-    return normalizeData(JSON.parse(raw) as Partial<DashboardData>);
-  } catch {
-    return initialData;
-  }
-};
-
-const hasDashboardContent = (input: DashboardData) =>
-  input.students.length > 0 || input.reciters.length > 0 || input.courses.length > 0 || input.taskTemplates.length > 0 || input.submissions.length > 0 || input.attendance.length > 0 || input.notifications.length > 0;
-
-const persistDashboardData = (nextData: DashboardData, sourceId?: string) => {
-  if (!isBrowser) {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextData));
-    window.dispatchEvent(new CustomEvent(DASHBOARD_SYNC_EVENT, { detail: { data: nextData, sourceId } }));
-  } catch {
-    // localStorage may throw QuotaExceededError for large data (e.g. base64 images); ignore and keep in-memory state.
-  }
-};
-
 export const useDashboardStore = () => {
   const [data, setData] = useState<DashboardData>(initialData);
-  const [bootstrapData] = useState<DashboardData>(() => loadDashboardData());
   const [isHydrated, setIsHydrated] = useState(!isBrowser);
-  const sourceIdRef = useRef(createId());
-  const suppressPersistRef = useRef(false);
-  const hasMountedRef = useRef(false);
-
-  useEffect(() => {
-    if (!hasMountedRef.current) {
-      hasMountedRef.current = true;
-      return;
-    }
-
-    if (suppressPersistRef.current) {
-      suppressPersistRef.current = false;
-      return;
-    }
-
-    persistDashboardData(data, sourceIdRef.current);
-  }, [data]);
-
-  useEffect(() => {
-    if (!isBrowser) {
-      return;
-    }
-
-    const applyExternalData = (nextData: DashboardData) => {
-      suppressPersistRef.current = true;
-      setData(normalizeData(nextData));
-    };
-
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key !== STORAGE_KEY || !event.newValue) {
-        return;
-      }
-
-      try {
-        applyExternalData(JSON.parse(event.newValue) as DashboardData);
-      } catch {
-        // Ignore malformed storage payloads.
-      }
-    };
-
-    const handleDashboardSync = (event: Event) => {
-      const customEvent = event as CustomEvent<{ data?: DashboardData; sourceId?: string }>;
-
-      if (customEvent.detail?.sourceId === sourceIdRef.current || !customEvent.detail?.data) {
-        return;
-      }
-
-      applyExternalData(customEvent.detail.data);
-    };
-
-    window.addEventListener("storage", handleStorage);
-    window.addEventListener(DASHBOARD_SYNC_EVENT, handleDashboardSync as EventListener);
-
-    return () => {
-      window.removeEventListener("storage", handleStorage);
-      window.removeEventListener(DASHBOARD_SYNC_EVENT, handleDashboardSync as EventListener);
-    };
-  }, []);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -521,123 +427,15 @@ export const useDashboardStore = () => {
       try {
         const nextData = await loadDashboardDataFromDatabase();
 
-        if (!hasDashboardContent(nextData) && hasDashboardContent(bootstrapData)) {
-          const studentIdMap = new Map<string, string>();
-          const courseIdMap = new Map<string, string>();
-          const questionIdMap = new Map<string, string>();
-
-          for (const student of bootstrapData.students) {
-            const insertedStudentId = await addStudentToDatabase({
-              name: student.name,
-              loginId: student.loginId,
-              branchId: student.branchId,
-              note: student.note,
-            });
-
-            studentIdMap.set(student.id, insertedStudentId);
-
-            if (student.completedParts.length > 0) {
-              await updateStudentInDatabase(insertedStudentId, { completedParts: student.completedParts });
-            }
-          }
-
-          for (const course of bootstrapData.courses) {
-            const insertedCourse = await addCourseToDatabase(course.title, false, {
-              entityType: course.entityType,
-              taskMode: course.taskMode,
-              taskTemplateId: course.taskTemplateId,
-              taskTemplateName: course.taskTemplateName,
-              taskTemplateContent: course.taskTemplateContent,
-            });
-            courseIdMap.set(course.id, insertedCourse.id);
-
-            for (const assessmentType of (course.entityType === "task" ? ["tasks"] : ["pre", "post", "tasks"]) as const) {
-              const questions = course[getAssessmentKey(assessmentType)];
-
-              for (const question of questions) {
-                const insertedQuestionId = await addQuestionToDatabase(insertedCourse.id, assessmentType, {
-                  prompt: question.prompt,
-                  type: question.type,
-                  options: question.options,
-                  allowFile: question.allowFile,
-                  points: question.points,
-                  correctAnswer: question.correctAnswer,
-                });
-
-                questionIdMap.set(question.id, insertedQuestionId);
-              }
-            }
-          }
-
-          for (const template of bootstrapData.taskTemplates) {
-            await addTaskTemplateToDatabase({ name: template.name, content: template.content });
-          }
-
-          const activeCourse = bootstrapData.courses.find((course) => course.entityType !== "task" && course.isActive);
-
-          if (activeCourse) {
-            const mappedCourseId = courseIdMap.get(activeCourse.id);
-
-            if (mappedCourseId) {
-              await activateCourseInDatabase(mappedCourseId, {
-                pre: activeCourse.isPreEnabled ?? true,
-                post: activeCourse.isPostEnabled ?? true,
-                tasks: activeCourse.isTasksEnabled ?? true,
-              });
-            }
-          }
-
-          for (const reciter of bootstrapData.reciters) {
-            const linkedStudents = bootstrapData.students.filter((student) => reciter.studentIds.includes(student.id));
-
-            await saveReciterToDatabase({
-              name: reciter.name,
-              branchId: reciter.branchId,
-              loginCode: reciter.loginCode,
-              linkedStudents: linkedStudents.map((student) => ({
-                name: student.name,
-                loginId: student.loginId,
-                branchId: student.branchId,
-                note: student.note,
-                completedParts: student.completedParts,
-              })),
-            });
-          }
-
-          for (const submission of bootstrapData.submissions) {
-            const mappedCourseId = courseIdMap.get(submission.courseId);
-
-            if (!mappedCourseId) {
-              continue;
-            }
-
-            await submitAssessmentToDatabase(mappedCourseId, submission.assessmentType, {
-              studentName: submission.studentName,
-              loginId: submission.loginId,
-              answers: submission.answers.map((answer) => ({
-                questionId: questionIdMap.get(answer.questionId) ?? answer.questionId,
-                value: answer.value,
-                fileName: answer.fileName,
-                fileType: answer.fileType,
-                fileDataUrl: answer.fileDataUrl,
-              })),
-            });
-          }
-
-          const hydratedAfterBootstrap = await loadDashboardDataFromDatabase();
-
-          if (!cancelled) {
-            setData(hydratedAfterBootstrap);
-          }
-
-          return;
-        }
-
         if (!cancelled) {
           setData(nextData);
+          setLoadError(null);
         }
-      } catch {
-        // Keep local storage as fallback when the database is unavailable.
+      } catch (err) {
+        console.error("[dashboard-store] Failed to load data from database:", err);
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : "تعذر الاتصال بقاعدة البيانات.");
+        }
       } finally {
         if (!cancelled) {
           setIsHydrated(true);
@@ -650,7 +448,7 @@ export const useDashboardStore = () => {
     return () => {
       cancelled = true;
     };
-  }, [bootstrapData]);
+  }, []);
 
   const setStudents = (updater: (students: StudentRecord[]) => StudentRecord[]) => {
     setData((current) => ({ ...current, students: updater(current.students) }));
@@ -683,6 +481,7 @@ export const useDashboardStore = () => {
   return {
     data,
     isHydrated,
+    loadError,
     addStudent: async (student: Omit<StudentRecord, "id" | "completedParts" | "createdAt">) => {
       const tempStudentId = createId();
       setStudents((students) => [...students, { id: tempStudentId, completedParts: [], createdAt: new Date().toISOString(), ...student }]);
@@ -867,7 +666,7 @@ export const useDashboardStore = () => {
               ? {
                   ...course,
                   id: insertedCourse.id,
-                  entityType: insertedCourse.entityType,
+                  entityType: insertedCourse.entityType as RecordEntityType,
                   createdAt: insertedCourse.createdAt,
                   isPreEnabled: insertedCourse.isPreEnabled,
                   isPostEnabled: insertedCourse.isPostEnabled,

@@ -475,7 +475,7 @@ const Dashboard = () => {
   const canManageStandaloneTasks = session.role === "admin" || session.role === "male_manager" || session.role === "female_manager";
 
   const store = useDashboardStore();
-  const { data } = store;
+  const { data, loadError } = store;
   const [dashboardTab, setDashboardTab] = useState<"students" | "reciters" | "reader" | "courses" | "tasks" | "notifications" | "indicators" | "results" | "statistics">("courses");
   const [studentsOpen, setStudentsOpen] = useState(false);
   const [studentEntryMode, setStudentEntryMode] = useState<"single" | "bulk">("single");
@@ -2687,6 +2687,11 @@ const Dashboard = () => {
 
         <main className="min-w-0 flex-1 px-4 py-4 text-right md:px-6 lg:px-8 lg:py-8">
           <div className="w-full">
+            {loadError && (
+              <div className="mb-4 rounded-2xl border border-destructive/30 bg-destructive/5 px-5 py-4 text-sm font-medium text-destructive">
+                ⚠️ تعذر الاتصال بقاعدة البيانات: {loadError}
+              </div>
+            )}
             <div className="mb-6 flex w-full items-center justify-between rounded-[2rem] border border-white/70 bg-white/90 px-5 py-4 shadow-[0_18px_50px_rgba(15,23,42,0.06)] backdrop-blur-sm">
               <div className="hidden text-right lg:block">
                 <p className="text-xs font-medium text-muted-foreground">مرحبًا</p>

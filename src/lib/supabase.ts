@@ -214,8 +214,19 @@ const getErrorText = (error: { message?: string; details?: string; hint?: string
 
 const isMissingFieldError = (error: { message?: string; details?: string; hint?: string; code?: string }, fieldName: string) => {
   const errorText = getErrorText(error);
+  const lowerField = fieldName.toLowerCase();
 
-  return (error.code === "PGRST204" || errorText.includes("could not find the")) && errorText.includes(fieldName.toLowerCase());
+  // PGRST204: PostgREST schema-cache miss; 42703: PostgreSQL undefined_column
+  if (error.code === "PGRST204" || error.code === "42703") {
+    return true;
+  }
+
+  return (
+    errorText.includes("could not find the") ||
+    errorText.includes("does not exist") ||
+    errorText.includes("column") ||
+    errorText.includes("undefined_column")
+  ) && errorText.includes(lowerField);
 };
 
 const isMissingRpcSignatureError = (error: { message?: string; details?: string; hint?: string; code?: string }, functionName: string) => {
@@ -365,23 +376,23 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
   }
 
   if (submissionsResponse.error) {
-    throw submissionsResponse.error;
+    console.error("[supabase] course_submissions query failed:", submissionsResponse.error);
   }
 
   if (answersResponse.error) {
-    throw answersResponse.error;
+    console.error("[supabase] course_submission_answers query failed:", answersResponse.error);
   }
 
   if (attendanceResponse.error && !isMissingRelationError(attendanceResponse.error, "course_attendance")) {
-    throw attendanceResponse.error;
+    console.error("[supabase] course_attendance query failed:", attendanceResponse.error);
   }
 
   if (taskTemplatesResponse.error) {
-    throw taskTemplatesResponse.error;
+    console.error("[supabase] task_templates query failed:", taskTemplatesResponse.error);
   }
 
   if (notificationsResponse.error && !isMissingRelationError(notificationsResponse.error, "notifications")) {
-    throw notificationsResponse.error;
+    console.error("[supabase] notifications query failed:", notificationsResponse.error);
   }
 
   const answersBySubmissionId = new Map<string, SubmissionAnswer[]>();

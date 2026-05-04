@@ -60,7 +60,7 @@ const getYoutubeEmbedUrl = (raw: string): string | null => {
       }
     }
 
-    return videoId ? `https://www.youtube.com/embed/${videoId}` : null;
+    return videoId ? `https://www.youtube.com/embed/${videoId}?playsinline=1&rel=0` : null;
   } catch {
     return null;
   }
@@ -472,7 +472,7 @@ const TasksPage = () => {
                             <iframe
                               src={embedUrl}
                               className="aspect-video w-full"
-                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
                               allowFullScreen
                               title="مقطع التكليف"
                             />

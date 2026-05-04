@@ -106,7 +106,6 @@ const seedData: DashboardData = {
 describe("post attendance", () => {
   beforeEach(() => {
     window.localStorage.clear();
-    window.localStorage.setItem("mmars-dashboard-data", JSON.stringify(seedData));
   });
 
   it("creates attendance when the post-test is submitted", async () => {

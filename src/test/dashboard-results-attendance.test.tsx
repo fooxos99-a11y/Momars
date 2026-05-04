@@ -95,7 +95,6 @@ const seedData: DashboardData = {
 describe("dashboard results attendance", () => {
   beforeEach(() => {
     window.localStorage.clear();
-    window.localStorage.setItem("mmars-dashboard-data", JSON.stringify(seedData));
     window.localStorage.setItem(
       "mmars-access-session",
       JSON.stringify({

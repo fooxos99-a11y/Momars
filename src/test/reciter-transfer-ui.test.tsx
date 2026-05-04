@@ -95,7 +95,6 @@ vi.mock("@/lib/supabase", () => ({
 describe("reciter transfer ui", () => {
   beforeEach(() => {
     window.localStorage.clear();
-    window.localStorage.setItem("mmars-dashboard-data", JSON.stringify(seedData));
     window.localStorage.setItem(
       "mmars-access-session",
       JSON.stringify({
