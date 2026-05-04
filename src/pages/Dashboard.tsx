@@ -3,7 +3,7 @@ import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSe
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Link, Navigate, useNavigate } from "react-router-dom";
-import { AlertCircle, ArrowRightLeft, BarChart3, Bell, BookOpen, Copy, Database, Download, Eye, EyeOff, FilePen, FileText, FileUp, GraduationCap, Home, Info, LayoutPanelTop, Maximize2, Menu, Minus, Pencil, Plus, Power, ShieldCheck, SquarePen, Trash2, TrendingDown, TrendingUp, Users, X } from "lucide-react";
+import { AlertCircle, ArrowRightLeft, BarChart3, Bell, BookOpen, ClipboardList, Copy, Database, Download, Eye, EyeOff, FilePen, FileText, FileUp, GraduationCap, Home, Info, LayoutPanelTop, Maximize2, Menu, Minus, Pencil, Plus, Power, ShieldCheck, SquarePen, Trash2, TrendingDown, TrendingUp, Users, X } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -409,6 +409,7 @@ const dashboardMenu = [
   { id: "indicators", label: "الإحصائيات", icon: LayoutPanelTop, hint: "مؤشرات الأداء" },
   { id: "results", label: "النتائج", icon: BarChart3, hint: "الحضور والتقييم" },
   { id: "permissions", label: "الصلاحيات", icon: ShieldCheck, hint: "صلاحيات المسؤولين" },
+  { id: "satisfaction", label: "استبيان الرضا", icon: ClipboardList, hint: "أسئلة الاستبيان ونتائجه" },
 ] as const;
 
 const dashboardCardClass = "rounded-[1.5rem] border-white/80 bg-white/95 shadow-[0_18px_45px_rgba(15,23,42,0.05)]";
@@ -539,7 +540,6 @@ const Dashboard = () => {
   const [courseError, setCourseError] = useState("");
   const [courseEditOpen, setCourseEditOpen] = useState(false);
   const [coursesManageOpen, setCoursesManageOpen] = useState(false);
-  const [satisfactionOpen, setSatisfactionOpen] = useState(false);
   const [satisfactionTab, setSatisfactionTab] = useState<"questions" | "results">("questions");
   const [satisfactionResultsCourseId, setSatisfactionResultsCourseId] = useState("");
   const [newSurveyPrompt, setNewSurveyPrompt] = useState("");
@@ -2938,11 +2938,7 @@ const Dashboard = () => {
                     الدورات
                   </Button>
                 )}
-                {canCreateCourses && (
-                  <Button variant="outline" className="rounded-full px-5" onClick={() => setSatisfactionOpen(true)}>
-                    استبيان الرضا
-                  </Button>
-                )}
+
                 {dashboardTab === "courses" && (
                   <Button variant="outline" size="icon" className="rounded-full" aria-label="قوالب الإشعارات" onClick={() => {
                     const course = activeCourse;
@@ -4355,6 +4351,117 @@ const Dashboard = () => {
           );
         })()}
 
+        {dashboardTab === "satisfaction" && (() => {
+          const coursesWithResponses = data.courses.filter((c) =>
+            data.satisfactionResponses.some((r) => r.courseId === c.id),
+          );
+          const selectedCourse = data.courses.find((c) => c.id === satisfactionResultsCourseId) ?? coursesWithResponses[0];
+          return (
+            <div className="space-y-5" dir="rtl">
+              <div className={cn(dashboardCardClass, "border p-0 overflow-hidden")}>
+                <div className="flex gap-2 border-b border-border/60 px-5 py-3">
+                  <button type="button" onClick={() => setSatisfactionTab("questions")} className={cn("rounded-full px-4 py-1.5 text-sm font-bold transition-smooth", satisfactionTab === "questions" ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground")}>الأسئلة</button>
+                  <button type="button" onClick={() => setSatisfactionTab("results")} className={cn("rounded-full px-4 py-1.5 text-sm font-bold transition-smooth", satisfactionTab === "results" ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground")}>النتائج</button>
+                </div>
+                {satisfactionTab === "questions" && (
+                  <div className="space-y-4 px-5 py-4">
+                    <div className="space-y-3 rounded-xl border border-border/60 p-4">
+                      <div className="text-sm font-bold text-foreground">إضافة سؤال جديد</div>
+                      <Input value={newSurveyPrompt} onChange={(e) => setNewSurveyPrompt(e.target.value)} placeholder="نص السؤال" className="text-right" />
+                      <div className="flex items-center gap-3">
+                        <select value={newSurveyType} onChange={(e) => setNewSurveyType(e.target.value as "rating" | "text")} className="rounded-xl border border-border/60 bg-white px-3 py-2 text-sm text-right">
+                          <option value="rating">تقييم (0-10)</option>
+                          <option value="text">نص حر</option>
+                        </select>
+                        <label className="flex items-center gap-2 text-sm text-foreground">
+                          <input type="checkbox" checked={newSurveyRequired} onChange={(e) => setNewSurveyRequired(e.target.checked)} className="rounded" />
+                          إلزامي
+                        </label>
+                      </div>
+                      <Button
+                        className="rounded-full px-5"
+                        onClick={async () => {
+                          if (!newSurveyPrompt.trim()) return;
+                          await store.addSatisfactionQuestion({ prompt: newSurveyPrompt.trim(), type: newSurveyType, isRequired: newSurveyRequired });
+                          setNewSurveyPrompt("");
+                        }}
+                      >
+                        <Plus className="size-4" />
+                        إضافة
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      {data.satisfactionQuestions.length === 0 && (
+                        <p className="py-4 text-center text-sm text-muted-foreground">لا توجد أسئلة بعد.</p>
+                      )}
+                      {data.satisfactionQuestions.map((q) => (
+                        <div key={q.id} className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-white px-4 py-3">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 rounded-xl text-destructive" onClick={() => void store.deleteSatisfactionQuestion(q.id)}>
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                          <div className="min-w-0 text-right">
+                            <div className="truncate text-sm font-medium text-foreground">{q.prompt}</div>
+                            <div className="text-xs text-muted-foreground">{q.type === "rating" ? "تقييم 0-10" : "نص حر"}{q.isRequired ? " · إلزامي" : ""}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {satisfactionTab === "results" && (
+                  <div className="space-y-4 px-5 py-4">
+                    {coursesWithResponses.length === 0 ? (
+                      <p className="py-4 text-center text-sm text-muted-foreground">لا توجد استجابات بعد.</p>
+                    ) : (
+                      <>
+                        <select
+                          value={selectedCourse?.id ?? ""}
+                          onChange={(e) => setSatisfactionResultsCourseId(e.target.value)}
+                          className="w-full rounded-xl border border-border/60 bg-white px-3 py-2 text-sm text-right"
+                        >
+                          {coursesWithResponses.map((c) => (
+                            <option key={c.id} value={c.id}>{c.title}</option>
+                          ))}
+                        </select>
+                        {selectedCourse && data.satisfactionQuestions.map((q) => {
+                          const courseResponses = data.satisfactionResponses.filter((r) => r.courseId === selectedCourse.id && r.questionId === q.id);
+                          if (courseResponses.length === 0) return null;
+                          if (q.type === "rating") {
+                            const ratingValues = courseResponses.map((r) => r.ratingValue).filter((v): v is number => v != null);
+                            const avg = ratingValues.length > 0 ? (ratingValues.reduce((a, b) => a + b, 0) / ratingValues.length).toFixed(1) : "-";
+                            return (
+                              <div key={q.id} className="rounded-xl border border-border/60 p-4">
+                                <div className="mb-2 text-sm font-bold text-foreground">{q.prompt}</div>
+                                <div className="flex items-center gap-3">
+                                  <span className="text-2xl font-extrabold text-primary">{avg}</span>
+                                  <span className="text-xs text-muted-foreground">/ 10 · {ratingValues.length} مشاركة</span>
+                                </div>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div key={q.id} className="rounded-xl border border-border/60 p-4">
+                              <div className="mb-2 text-sm font-bold text-foreground">{q.prompt}</div>
+                              <div className="space-y-2">
+                                {courseResponses.map((r) => (
+                                  <div key={r.id} className="rounded-lg bg-muted/20 px-3 py-2 text-sm text-foreground">
+                                    <span className="ml-2 text-xs font-medium text-muted-foreground">{r.studentName}:</span>
+                                    {r.textValue}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         {dashboardTab === "finalexam" && (() => {
           const effectiveBranch = managedBranchId ?? finalExamBranch;
           const branchQuestions = data.finalExamQuestions.filter((q) => q.branchCode === effectiveBranch).sort((a, b) => a.sortOrder - b.sortOrder);
@@ -5641,122 +5748,6 @@ const Dashboard = () => {
               ))}
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={satisfactionOpen} onOpenChange={setSatisfactionOpen}>
-        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto rounded-[2rem] border border-primary/15 bg-white/95 p-0 text-right shadow-[0_28px_80px_rgba(8,65,89,0.16)] [&>button]:hidden">
-          <div className="flex items-center justify-between border-b border-border/60 px-5 py-4">
-            <button type="button" className="text-muted-foreground hover:text-foreground" onClick={() => setSatisfactionOpen(false)}><X className="size-5" /></button>
-            <DialogTitle className="text-lg font-bold">استبيان الرضا</DialogTitle>
-          </div>
-          <div className="flex gap-2 border-b border-border/60 px-5 py-3">
-            <button type="button" onClick={() => setSatisfactionTab("questions")} className={cn("rounded-full px-4 py-1.5 text-sm font-bold transition-smooth", satisfactionTab === "questions" ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground")}>الأسئلة</button>
-            <button type="button" onClick={() => setSatisfactionTab("results")} className={cn("rounded-full px-4 py-1.5 text-sm font-bold transition-smooth", satisfactionTab === "results" ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground")}>النتائج</button>
-          </div>
-          {satisfactionTab === "questions" && (
-            <div className="space-y-4 px-5 py-4">
-              <div className="space-y-3 rounded-xl border border-border/60 p-4">
-                <div className="text-sm font-bold text-foreground">إضافة سؤال جديد</div>
-                <Input value={newSurveyPrompt} onChange={(e) => setNewSurveyPrompt(e.target.value)} placeholder="نص السؤال" className="text-right" />
-                <div className="flex items-center gap-3">
-                  <select value={newSurveyType} onChange={(e) => setNewSurveyType(e.target.value as "rating" | "text")} className="rounded-xl border border-border/60 bg-white px-3 py-2 text-sm text-right">
-                    <option value="rating">تقييم (0-10)</option>
-                    <option value="text">نص حر</option>
-                  </select>
-                  <label className="flex items-center gap-2 text-sm text-foreground">
-                    <input type="checkbox" checked={newSurveyRequired} onChange={(e) => setNewSurveyRequired(e.target.checked)} className="rounded" />
-                    إلزامي
-                  </label>
-                </div>
-                <Button
-                  className="rounded-full px-5"
-                  onClick={async () => {
-                    if (!newSurveyPrompt.trim()) return;
-                    await store.addSatisfactionQuestion({ prompt: newSurveyPrompt.trim(), type: newSurveyType, isRequired: newSurveyRequired });
-                    setNewSurveyPrompt("");
-                  }}
-                >
-                  <Plus className="size-4" />
-                  إضافة
-                </Button>
-              </div>
-              <div className="space-y-2">
-                {data.satisfactionQuestions.length === 0 && (
-                  <p className="py-4 text-center text-sm text-muted-foreground">لا توجد أسئلة بعد.</p>
-                )}
-                {data.satisfactionQuestions.map((q) => (
-                  <div key={q.id} className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-white px-4 py-3">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 rounded-xl text-destructive" onClick={() => void store.deleteSatisfactionQuestion(q.id)}>
-                      <Trash2 className="size-3.5" />
-                    </Button>
-                    <div className="min-w-0 text-right">
-                      <div className="truncate text-sm font-medium text-foreground">{q.prompt}</div>
-                      <div className="text-xs text-muted-foreground">{q.type === "rating" ? "تقييم 0-10" : "نص حر"}{q.isRequired ? " · إلزامي" : ""}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {satisfactionTab === "results" && (() => {
-            const coursesWithResponses = data.courses.filter((c) =>
-              data.satisfactionResponses.some((r) => r.courseId === c.id),
-            );
-            const selectedCourse = data.courses.find((c) => c.id === satisfactionResultsCourseId) ?? coursesWithResponses[0];
-
-            return (
-              <div className="space-y-4 px-5 py-4">
-                {coursesWithResponses.length === 0 ? (
-                  <p className="py-4 text-center text-sm text-muted-foreground">لا توجد استجابات بعد.</p>
-                ) : (
-                  <>
-                    <select
-                      value={selectedCourse?.id ?? ""}
-                      onChange={(e) => setSatisfactionResultsCourseId(e.target.value)}
-                      className="w-full rounded-xl border border-border/60 bg-white px-3 py-2 text-sm text-right"
-                    >
-                      {coursesWithResponses.map((c) => (
-                        <option key={c.id} value={c.id}>{c.title}</option>
-                      ))}
-                    </select>
-                    {selectedCourse && data.satisfactionQuestions.map((q) => {
-                      const courseResponses = data.satisfactionResponses.filter((r) => r.courseId === selectedCourse.id && r.questionId === q.id);
-                      if (courseResponses.length === 0) return null;
-
-                      if (q.type === "rating") {
-                        const ratingValues = courseResponses.map((r) => r.ratingValue).filter((v): v is number => v != null);
-                        const avg = ratingValues.length > 0 ? (ratingValues.reduce((a, b) => a + b, 0) / ratingValues.length).toFixed(1) : "-";
-                        return (
-                          <div key={q.id} className="rounded-xl border border-border/60 p-4">
-                            <div className="mb-2 text-sm font-bold text-foreground">{q.prompt}</div>
-                            <div className="flex items-center gap-3">
-                              <span className="text-2xl font-extrabold text-primary">{avg}</span>
-                              <span className="text-xs text-muted-foreground">/ 10 · {ratingValues.length} مشاركة</span>
-                            </div>
-                          </div>
-                        );
-                      }
-
-                      return (
-                        <div key={q.id} className="rounded-xl border border-border/60 p-4">
-                          <div className="mb-2 text-sm font-bold text-foreground">{q.prompt}</div>
-                          <div className="space-y-2">
-                            {courseResponses.map((r) => (
-                              <div key={r.id} className="rounded-lg bg-muted/20 px-3 py-2 text-sm text-foreground">
-                                <span className="ml-2 text-xs font-medium text-muted-foreground">{r.studentName}:</span>
-                                {r.textValue}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </>
-                )}
-              </div>
-            );
-          })()}
         </DialogContent>
       </Dialog>
 
