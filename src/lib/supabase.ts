@@ -259,21 +259,120 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
   const branches = await getBranchRecords();
   const branchCodeById = new Map(branches.map((branch) => [branch.id as string, branch.code as BranchId]));
 
-  const studentsWithCertifiedResponse = await supabase.from("students").select("id, full_name, login_code, note, is_certified, branch_id, created_at");
-  const studentsResponse = studentsWithCertifiedResponse.error && isMissingFieldError(studentsWithCertifiedResponse.error, "is_certified")
-    ? await supabase.from("students").select("id, full_name, login_code, note, branch_id, created_at")
-    : studentsWithCertifiedResponse;
-  const { data: studentParts, error: studentPartsError } = await supabase.from("student_parts").select("student_id, part_number");
+  // Run all independent queries in parallel to minimize load time
+  const [
+    studentsResponse,
+    studentPartsResult,
+    recitersResponse,
+    usersResponse,
+    reciterStudentsResponse,
+    coursesResponse,
+    questionsResponse,
+    submissionsResponse,
+    answersResponse,
+    attendanceResponse,
+    taskTemplatesResponse,
+    notificationsResponse,
+    satisfactionResult,
+    finalExamData,
+    rolePermissions,
+  ] = await Promise.all([
+    // students with is_certified fallback
+    (async () => {
+      const r = await supabase.from("students").select("id, full_name, login_code, note, is_certified, branch_id, created_at");
+      return (r.error && isMissingFieldError(r.error, "is_certified"))
+        ? supabase.from("students").select("id, full_name, login_code, note, branch_id, created_at")
+        : r;
+    })(),
+    // student_parts
+    supabase.from("student_parts").select("student_id, part_number"),
+    // reciters with branch_id fallback
+    (async () => {
+      const r = await supabase.from("reciters").select("id, full_name, user_id, branch_id");
+      return (r.error && isMissingFieldError(r.error, "branch_id"))
+        ? supabase.from("reciters").select("id, full_name, user_id")
+        : r;
+    })(),
+    // users
+    supabase.from("users").select("id, full_name, role, login_code").eq("role", "reciter"),
+    // reciter_students
+    supabase.from("reciter_students").select("reciter_id, student_id"),
+    // courses with branch settings fallback
+    (async () => {
+      const r = await supabase.from("courses").select("id, title, entity_type, task_mode, task_template_id, task_template_name, task_template_content, youtube_url, is_active, is_pre_enabled, is_post_enabled, is_tasks_enabled, male_pre_enabled, female_pre_enabled, male_post_enabled, female_post_enabled, male_tasks_enabled, female_tasks_enabled, assessment_windows, assessment_notification_templates, sort_order, created_at");
+      return (r.error && (
+        isMissingFieldError(r.error, "male_pre_enabled") ||
+        isMissingFieldError(r.error, "female_pre_enabled") ||
+        isMissingFieldError(r.error, "male_post_enabled") ||
+        isMissingFieldError(r.error, "female_post_enabled") ||
+        isMissingFieldError(r.error, "male_tasks_enabled") ||
+        isMissingFieldError(r.error, "female_tasks_enabled") ||
+        isMissingFieldError(r.error, "assessment_windows") ||
+        isMissingFieldError(r.error, "assessment_notification_templates")
+      ))
+        ? supabase.from("courses").select("id, title, entity_type, task_mode, task_template_id, task_template_name, task_template_content, youtube_url, is_active, is_pre_enabled, is_post_enabled, is_tasks_enabled, sort_order, created_at")
+        : r;
+    })(),
+    // course_questions
+    supabase.from("course_questions").select("id, course_id, assessment_type, question_type, prompt, options, allow_file, points, correct_answer, attachment_name, attachment_type, attachment_data_url, sort_order"),
+    // course_submissions with manual_score fallback
+    (async () => {
+      const r = await supabase.from("course_submissions").select("id, course_id, assessment_type, student_name, login_code, manual_score, submitted_at");
+      return (r.error && isMissingFieldError(r.error, "manual_score"))
+        ? supabase.from("course_submissions").select("id, course_id, assessment_type, student_name, login_code, submitted_at")
+        : r;
+    })(),
+    // course_submission_answers
+    supabase.from("course_submission_answers").select("id, submission_id, question_id, answer_text, file_name, file_type, file_data_url"),
+    // course_attendance
+    supabase.from("course_attendance").select("id, course_id, student_name, login_code, source, created_at"),
+    // task_templates
+    supabase.from("task_templates").select("id, name, content, created_at"),
+    // notifications with target_login_ids fallback
+    (async () => {
+      const r = await supabase.from("notifications").select("id, title, message, target_branch_code, target_login_ids, created_at, created_by_name, created_by_role");
+      return (r.error && isMissingColumnError(r.error, "target_login_ids"))
+        ? supabase.from("notifications").select("id, title, message, target_branch_code, created_at, created_by_name, created_by_role")
+        : r;
+    })(),
+    // satisfaction questions + responses (responses depend on questions error check)
+    (async () => {
+      const qr = await supabase.from("satisfaction_questions").select("id, prompt, type, is_required, sort_order, created_at").order("sort_order");
+      if (isMissingRelationError(qr.error ?? { message: "" }, "satisfaction_questions")) {
+        return { questions: qr, responses: { data: [] as unknown[], error: null } };
+      }
+      const rr = await supabase.from("satisfaction_responses").select("id, course_id, question_id, login_code, student_name, rating_value, text_value, submitted_at");
+      return { questions: qr, responses: rr };
+    })(),
+    // final exam data
+    loadFinalExamDataFromDatabase().catch(() => ({
+      questions: [] as FinalExamQuestion[],
+      submissions: [] as FinalExamSubmission[],
+      settings: { male: false, female: false },
+    })),
+    // role permissions
+    loadRolePermissionsFromDatabase().catch(() => ({} as Record<string, Record<string, boolean>>)),
+  ]);
 
   const { data: students, error: studentsError } = studentsResponse;
+  if (studentsError) throw studentsError;
 
-  if (studentsError) {
-    throw studentsError;
-  }
+  const { data: studentParts, error: studentPartsError } = studentPartsResult;
+  if (studentPartsError) throw studentPartsError;
 
-  if (studentPartsError) {
-    throw studentPartsError;
-  }
+  if (usersResponse.error) throw usersResponse.error;
+  if (recitersResponse.error) throw recitersResponse.error;
+  if (reciterStudentsResponse.error) throw reciterStudentsResponse.error;
+  if (coursesResponse.error) throw coursesResponse.error;
+  if (questionsResponse.error) throw questionsResponse.error;
+  if (submissionsResponse.error) console.error("[supabase] course_submissions query failed:", submissionsResponse.error);
+  if (answersResponse.error) console.error("[supabase] course_submission_answers query failed:", answersResponse.error);
+  if (attendanceResponse.error && !isMissingRelationError(attendanceResponse.error, "course_attendance")) console.error("[supabase] course_attendance query failed:", attendanceResponse.error);
+  if (taskTemplatesResponse.error) console.error("[supabase] task_templates query failed:", taskTemplatesResponse.error);
+  if (notificationsResponse.error && !isMissingRelationError(notificationsResponse.error, "notifications")) console.error("[supabase] notifications query failed:", notificationsResponse.error);
+
+  const satisfactionQuestionsResponse = satisfactionResult.questions;
+  const satisfactionResponsesResponse = satisfactionResult.responses;
 
   const completedPartsByStudentId = new Map<string, number[]>();
 
@@ -294,28 +393,6 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
     completedParts: [...(completedPartsByStudentId.get(student.id as string) ?? [])].sort((left, right) => left - right),
     createdAt: (student.created_at as string) ?? new Date().toISOString(),
   }));
-
-  const recitersWithBranchResponse = await supabase.from("reciters").select("id, full_name, user_id, branch_id");
-  const recitersResponse = recitersWithBranchResponse.error && isMissingFieldError(recitersWithBranchResponse.error, "branch_id")
-    ? await supabase.from("reciters").select("id, full_name, user_id")
-    : recitersWithBranchResponse;
-
-  const [usersResponse, reciterStudentsResponse] = await Promise.all([
-    supabase.from("users").select("id, full_name, role, login_code").eq("role", "reciter"),
-    supabase.from("reciter_students").select("reciter_id, student_id"),
-  ]);
-
-  if (usersResponse.error) {
-    throw usersResponse.error;
-  }
-
-  if (recitersResponse.error) {
-    throw recitersResponse.error;
-  }
-
-  if (reciterStudentsResponse.error) {
-    throw reciterStudentsResponse.error;
-  }
 
   const userById = new Map((usersResponse.data ?? []).map((user) => [user.id as string, user]));
   const studentIdsByReciterId = new Map<string, string[]>();
@@ -340,68 +417,6 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
       studentIds,
     };
   });
-
-  const coursesWithBranchSettingsResponse = await supabase
-    .from("courses")
-    .select("id, title, entity_type, task_mode, task_template_id, task_template_name, task_template_content, youtube_url, is_active, is_pre_enabled, is_post_enabled, is_tasks_enabled, male_pre_enabled, female_pre_enabled, male_post_enabled, female_post_enabled, male_tasks_enabled, female_tasks_enabled, assessment_windows, assessment_notification_templates, sort_order, created_at");
-  const coursesResponse = coursesWithBranchSettingsResponse.error && (
-    isMissingFieldError(coursesWithBranchSettingsResponse.error, "male_pre_enabled") ||
-    isMissingFieldError(coursesWithBranchSettingsResponse.error, "female_pre_enabled") ||
-    isMissingFieldError(coursesWithBranchSettingsResponse.error, "male_post_enabled") ||
-    isMissingFieldError(coursesWithBranchSettingsResponse.error, "female_post_enabled") ||
-    isMissingFieldError(coursesWithBranchSettingsResponse.error, "male_tasks_enabled") ||
-    isMissingFieldError(coursesWithBranchSettingsResponse.error, "female_tasks_enabled") ||
-    isMissingFieldError(coursesWithBranchSettingsResponse.error, "assessment_windows") ||
-    isMissingFieldError(coursesWithBranchSettingsResponse.error, "assessment_notification_templates")
-  )
-    ? await supabase.from("courses").select("id, title, entity_type, task_mode, task_template_id, task_template_name, task_template_content, youtube_url, is_active, is_pre_enabled, is_post_enabled, is_tasks_enabled, sort_order, created_at")
-    : coursesWithBranchSettingsResponse;
-
-  const [questionsResponse, submissionsWithManualScoreResponse, answersResponse, attendanceResponse] = await Promise.all([
-    supabase.from("course_questions").select("id, course_id, assessment_type, question_type, prompt, options, allow_file, points, correct_answer, attachment_name, attachment_type, attachment_data_url, sort_order"),
-    supabase.from("course_submissions").select("id, course_id, assessment_type, student_name, login_code, manual_score, submitted_at"),
-    supabase.from("course_submission_answers").select("id, submission_id, question_id, answer_text, file_name, file_type, file_data_url"),
-    supabase.from("course_attendance").select("id, course_id, student_name, login_code, source, created_at"),
-  ]);
-
-  const submissionsResponse = submissionsWithManualScoreResponse.error && isMissingFieldError(submissionsWithManualScoreResponse.error, "manual_score")
-    ? await supabase.from("course_submissions").select("id, course_id, assessment_type, student_name, login_code, submitted_at")
-    : submissionsWithManualScoreResponse;
-
-  const taskTemplatesResponse = await supabase.from("task_templates").select("id, name, content, created_at");
-  let notificationsResponse = await supabase.from("notifications").select("id, title, message, target_branch_code, target_login_ids, created_at, created_by_name, created_by_role");
-
-  if (notificationsResponse.error && isMissingColumnError(notificationsResponse.error, "target_login_ids")) {
-    notificationsResponse = await supabase.from("notifications").select("id, title, message, target_branch_code, created_at, created_by_name, created_by_role");
-  }
-
-  if (coursesResponse.error) {
-    throw coursesResponse.error;
-  }
-
-  if (questionsResponse.error) {
-    throw questionsResponse.error;
-  }
-
-  if (submissionsResponse.error) {
-    console.error("[supabase] course_submissions query failed:", submissionsResponse.error);
-  }
-
-  if (answersResponse.error) {
-    console.error("[supabase] course_submission_answers query failed:", answersResponse.error);
-  }
-
-  if (attendanceResponse.error && !isMissingRelationError(attendanceResponse.error, "course_attendance")) {
-    console.error("[supabase] course_attendance query failed:", attendanceResponse.error);
-  }
-
-  if (taskTemplatesResponse.error) {
-    console.error("[supabase] task_templates query failed:", taskTemplatesResponse.error);
-  }
-
-  if (notificationsResponse.error && !isMissingRelationError(notificationsResponse.error, "notifications")) {
-    console.error("[supabase] notifications query failed:", notificationsResponse.error);
-  }
 
   const answersBySubmissionId = new Map<string, SubmissionAnswer[]>();
 
@@ -539,17 +554,6 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
         createdByRole: (notification.created_by_role as UserRole | null) ?? undefined,
       }));
 
-  const satisfactionQuestionsResponse = await supabase
-    .from("satisfaction_questions")
-    .select("id, prompt, type, is_required, sort_order, created_at")
-    .order("sort_order");
-
-  const satisfactionResponsesResponse = isMissingRelationError(satisfactionQuestionsResponse.error ?? { message: "" }, "satisfaction_questions")
-    ? { data: [], error: null }
-    : await supabase
-        .from("satisfaction_responses")
-        .select("id, course_id, question_id, login_code, student_name, rating_value, text_value, submitted_at");
-
   const normalizedSatisfactionQuestions: SatisfactionQuestion[] = isMissingRelationError(satisfactionQuestionsResponse.error ?? { message: "" }, "satisfaction_questions")
     ? []
     : (satisfactionQuestionsResponse.data ?? []).map((q) => ({
@@ -562,23 +566,15 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
       }));
 
   const normalizedSatisfactionResponses: SatisfactionResponse[] = (satisfactionResponsesResponse.data ?? []).map((r) => ({
-    id: r.id as string,
-    courseId: r.course_id as string,
-    questionId: r.question_id as string,
-    loginCode: r.login_code as string,
-    studentName: r.student_name as string,
-    ratingValue: (r.rating_value as number | null) ?? null,
-    textValue: (r.text_value as string | null) ?? "",
-    submittedAt: (r.submitted_at as string) ?? new Date().toISOString(),
+    id: (r as Record<string, unknown>).id as string,
+    courseId: (r as Record<string, unknown>).course_id as string,
+    questionId: (r as Record<string, unknown>).question_id as string,
+    loginCode: (r as Record<string, unknown>).login_code as string,
+    studentName: (r as Record<string, unknown>).student_name as string,
+    ratingValue: ((r as Record<string, unknown>).rating_value as number | null) ?? null,
+    textValue: ((r as Record<string, unknown>).text_value as string | null) ?? "",
+    submittedAt: ((r as Record<string, unknown>).submitted_at as string) ?? new Date().toISOString(),
   }));
-
-  const finalExamData = await loadFinalExamDataFromDatabase().catch(() => ({
-    questions: [] as FinalExamQuestion[],
-    submissions: [] as FinalExamSubmission[],
-    settings: { male: false, female: false },
-  }));
-
-  const rolePermissions = await loadRolePermissionsFromDatabase().catch(() => ({} as Record<string, Record<string, boolean>>));
 
   return {
     roles: dashboardRoles,
