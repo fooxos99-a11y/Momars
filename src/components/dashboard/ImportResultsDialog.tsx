@@ -307,6 +307,8 @@ export const ImportResultsDialog = ({
       const nameCol =
         headers.find((h) => h.trim() === "الاسم1") ??
         headers.find((h) => /اسم/i.test(h)) ??
+        headers.find((h) => /^\s*name\s*$/i.test(h)) ??
+        headers.find((h) => /student.?name|full.?name/i.test(h)) ??
         null;
 
       /* find total score column */
@@ -318,8 +320,9 @@ export const ImportResultsDialog = ({
         null;
 
       if (!nameCol) {
+        const columnList = headers.slice(0, 10).join(" | ");
         setError(
-          "لم يتم العثور على عمود اسم الطالب. تأكد من وجود عمود باسم 'الاسم1' في الملف.",
+          `لم يتم العثور على عمود اسم الطالب. الأعمدة الموجودة في الملف: ${columnList}`,
         );
         return;
       }
@@ -483,9 +486,18 @@ export const ImportResultsDialog = ({
           };
         });
 
+      if (rows.length === 0) {
+        const columnList = headers.slice(0, 10).join(" | ");
+        setError(
+          `لم يتم العثور على أي سجلات. تأكد من أن عمود الاسم ('${nameCol}') يحتوي على بيانات. الأعمدة: ${columnList}`,
+        );
+        return;
+      }
+
       setImportRows(rows);
-    } catch {
-      setError("تعذر قراءة الملف. تأكد من أنه ملف Excel صحيح (.xlsx أو .xls).");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`تعذر قراءة الملف: ${msg}`);
     } finally {
       setImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
