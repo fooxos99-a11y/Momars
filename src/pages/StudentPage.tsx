@@ -445,7 +445,8 @@ const StudentPage = () => {
 
               {studentTab === "finalexam" && (() => {
                 const branchCode = student.branchId;
-                const isEnabled = data.finalExamSettings[branchCode];
+                const branchSetting = data.finalExamSettings[branchCode];
+                const isEnabled = branchSetting.isEnabled && (!branchSetting.closesAt || new Date(branchSetting.closesAt).getTime() > Date.now());
                 const existingFinalSub = data.finalExamSubmissions.find((s) => s.loginCode === student.loginId);
                 const finalQuestions = data.finalExamQuestions.filter((q) => q.branchCode === branchCode);
                 const getScore = () => {

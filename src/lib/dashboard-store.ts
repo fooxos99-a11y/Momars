@@ -196,6 +196,7 @@ export interface NotificationRecord {
 
 export interface SatisfactionQuestion {
   id: string;
+  courseId: string;
   prompt: string;
   type: "rating" | "text";
   isRequired: boolean;
@@ -240,6 +241,18 @@ export interface FinalExamSubmission {
   submittedAt: string;
 }
 
+export interface FinalExamBranchSetting {
+  isEnabled: boolean;
+  closesAt: string | null;
+}
+
+export const isFinalExamAvailable = (setting: FinalExamBranchSetting, now = Date.now()) => {
+  if (!setting.isEnabled) return false;
+  if (!setting.closesAt) return true;
+  const closesAt = new Date(setting.closesAt).getTime();
+  return Number.isFinite(closesAt) && closesAt > now;
+};
+
 export interface DashboardData {
   roles: RoleDefinition[];
   branches: Branch[];
@@ -254,7 +267,7 @@ export interface DashboardData {
   satisfactionResponses: SatisfactionResponse[];
   finalExamQuestions: FinalExamQuestion[];
   finalExamSubmissions: FinalExamSubmission[];
-  finalExamSettings: { male: boolean; female: boolean };
+  finalExamSettings: { male: FinalExamBranchSetting; female: FinalExamBranchSetting };
   rolePermissions: Record<string, Record<string, boolean>>;
 }
 
@@ -324,7 +337,10 @@ const initialData: DashboardData = {
   satisfactionResponses: [],
   finalExamQuestions: [],
   finalExamSubmissions: [],
-  finalExamSettings: { male: false, female: false },
+  finalExamSettings: {
+    male: { isEnabled: false, closesAt: null },
+    female: { isEnabled: false, closesAt: null },
+  },
   rolePermissions: { male_manager: {}, female_manager: {} },
 };
 
@@ -504,7 +520,18 @@ const normalizeData = (input?: Partial<DashboardData>): DashboardData => {
     finalExamSubmissions: Array.isArray(input?.finalExamSubmissions)
       ? input.finalExamSubmissions
       : initialData.finalExamSubmissions,
-    finalExamSettings: input?.finalExamSettings ?? initialData.finalExamSettings,
+    finalExamSettings: input?.finalExamSettings
+      ? {
+          male: {
+            isEnabled: Boolean(typeof input.finalExamSettings.male === "boolean" ? input.finalExamSettings.male : input.finalExamSettings.male?.isEnabled),
+            closesAt: typeof input.finalExamSettings.male === "object" && input.finalExamSettings.male ? input.finalExamSettings.male.closesAt ?? null : null,
+          },
+          female: {
+            isEnabled: Boolean(typeof input.finalExamSettings.female === "boolean" ? input.finalExamSettings.female : input.finalExamSettings.female?.isEnabled),
+            closesAt: typeof input.finalExamSettings.female === "object" && input.finalExamSettings.female ? input.finalExamSettings.female.closesAt ?? null : null,
+          },
+        }
+      : initialData.finalExamSettings,
     rolePermissions: input?.rolePermissions ?? initialData.rolePermissions,
   };
 };
@@ -588,7 +615,7 @@ const useCreateDashboardStore = () => {
     setData((current) => ({ ...current, finalExamSubmissions: updater(current.finalExamSubmissions) }));
   };
 
-  const setFinalExamSettings = (updater: (settings: { male: boolean; female: boolean }) => { male: boolean; female: boolean }) => {
+  const setFinalExamSettings = (updater: (settings: { male: FinalExamBranchSetting; female: FinalExamBranchSetting }) => { male: FinalExamBranchSetting; female: FinalExamBranchSetting }) => {
     setData((current) => ({ ...current, finalExamSettings: updater(current.finalExamSettings) }));
   };
 
@@ -1071,6 +1098,9 @@ const useCreateDashboardStore = () => {
       /* Helper: embed __score_override__ in answers so the score survives even if
          manualScore field is lost (e.g. column missing, future refetch, revert). */
       const enrichAnswers = (answers: SubmissionAnswer[], manualScore?: number | null): SubmissionAnswer[] => {
+        if (assessmentType === "tasks") {
+          return answers.filter((a) => a.questionId !== "__score_override__");
+        }
         if (typeof manualScore === "number" && Number.isFinite(manualScore) && manualScore >= 0) {
           return [...answers.filter((a) => a.questionId !== "__score_override__"), { questionId: "__score_override__", value: String(manualScore) }];
         }
@@ -1218,9 +1248,9 @@ const useCreateDashboardStore = () => {
         throw error;
       }
     },
-    addSatisfactionQuestion: async (question: { prompt: string; type: "rating" | "text"; isRequired: boolean }) => {
+    addSatisfactionQuestion: async (question: { courseId: string; prompt: string; type: "rating" | "text"; isRequired: boolean }) => {
       const tempId = createId();
-      const sortOrder = data.satisfactionQuestions.length;
+      const sortOrder = data.satisfactionQuestions.filter((q) => q.courseId === question.courseId).length;
       const now = new Date().toISOString();
       setSatisfactionQuestions((questions) => [...questions, { id: tempId, ...question, sortOrder, createdAt: now }]);
       try {
@@ -1299,12 +1329,18 @@ const useCreateDashboardStore = () => {
         throw error;
       }
     },
-    toggleFinalExamEnabled: async (branchCode: BranchId) => {
+    toggleFinalExamEnabled: async (branchCode: BranchId, closesAt: string | null) => {
       const prevSettings = data.finalExamSettings;
-      const newVal = !prevSettings[branchCode];
-      setFinalExamSettings((s) => ({ ...s, [branchCode]: newVal }));
+      const newVal = closesAt !== null;
+      setFinalExamSettings((s) => ({
+        ...s,
+        [branchCode]: {
+          isEnabled: newVal,
+          closesAt: newVal ? closesAt : null,
+        },
+      }));
       try {
-        await toggleFinalExamEnabledInDatabase(branchCode, newVal);
+        await toggleFinalExamEnabledInDatabase(branchCode, newVal, newVal ? closesAt : null);
       } catch (error) {
         setFinalExamSettings(() => prevSettings);
         throw error;

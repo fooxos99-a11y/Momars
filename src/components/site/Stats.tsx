@@ -1,18 +1,235 @@
-type Stat = {
-  value: string;
+import { useEffect, useId, useMemo, useState } from "react";
+import { getCourses, getTasks, useDashboardStore, type AssessmentType, type CourseQuestion, type CourseRecord } from "@/lib/dashboard-store";
+import { cn } from "@/lib/utils";
+
+const clamp = (v: number) => Math.max(0, Math.min(100, v));
+const fmtPct = (v: number) => `${Math.round(clamp(v))}%`;
+
+const ProgramIndicatorRing = ({
+  label,
+  progressValue,
+  displayValue,
+  suffix = "%",
+}: {
   label: string;
+  progressValue: number;
+  displayValue: number;
+  suffix?: string;
+}) => {
+  const gradientId = useId();
+  const [animatedProgress, setAnimatedProgress] = useState(0);
+  const [animatedDisplay, setAnimatedDisplay] = useState(0);
+  const safeProgress = clamp(progressValue);
+  const safeDisplay = Math.max(0, displayValue);
+  const radius = 54;
+  const circumference = 2 * Math.PI * radius;
+
+  useEffect(() => {
+    let frameId = 0;
+    const startedAt = performance.now();
+    const duration = 1200;
+
+    const tick = (now: number) => {
+      const elapsed = Math.min((now - startedAt) / duration, 1);
+      const eased = 1 - Math.pow(1 - elapsed, 3);
+      setAnimatedProgress(safeProgress * eased);
+      setAnimatedDisplay(safeDisplay * eased);
+
+      if (elapsed < 1) frameId = requestAnimationFrame(tick);
+    };
+
+    setAnimatedProgress(0);
+    setAnimatedDisplay(0);
+    frameId = requestAnimationFrame(tick);
+
+    return () => cancelAnimationFrame(frameId);
+  }, [safeDisplay, safeProgress]);
+
+  const dashOffset = circumference * (1 - animatedProgress / 100);
+  const shownValue = `${Math.round(animatedDisplay)}${suffix}`;
+
+  return (
+    <div className="flex flex-col items-center gap-3 text-center">
+      <div className="relative flex h-40 w-40 items-center justify-center sm:h-44 sm:w-44 lg:h-48 lg:w-48">
+        <div className="absolute inset-3 rounded-full bg-[radial-gradient(circle,_rgba(14,154,192,0.18)_0%,_rgba(14,154,192,0.08)_42%,_transparent_72%)] blur-2xl" />
+        <svg viewBox="0 0 140 140" className="relative h-full w-full -rotate-90 overflow-visible">
+          <defs>
+            <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#0f6f8f" />
+              <stop offset="55%" stopColor="#128db2" />
+              <stop offset="100%" stopColor="#19aacd" />
+            </linearGradient>
+          </defs>
+          <circle cx="70" cy="70" r={radius} fill="none" stroke="rgba(184, 205, 214, 0.45)" strokeWidth="10" />
+          <circle
+            cx="70"
+            cy="70"
+            r={radius}
+            fill="none"
+            stroke={`url(#${gradientId})`}
+            strokeWidth="10"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={dashOffset}
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="flex h-[66%] w-[66%] items-center justify-center rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.96)_0%,_rgba(244,251,253,0.88)_56%,_rgba(233,245,249,0.28)_100%)] shadow-[inset_0_1px_14px_rgba(255,255,255,0.92)] backdrop-blur-sm">
+            <span className="font-black leading-none tracking-[-0.04em] text-[#0d4860] text-[2rem] sm:text-[2.15rem]">
+              {shownValue}
+            </span>
+          </div>
+        </div>
+      </div>
+      <div className={cn("max-w-[11rem] font-extrabold leading-7 text-[#08384a] text-sm sm:text-[0.95rem]")}>{label}</div>
+    </div>
+  );
 };
 
-const stats: Stat[] = [
-  { value: "28", label: "ساعة تدريبية" },
-  { value: "12", label: "دورة تدريبية" },
-  { value: "8", label: "مهام أدائية" },
-  { value: "24", label: "اختبار قبلي وبعدي" },
-  { value: "✦", label: "عرض القرآن" },
-  { value: "✦", label: "الاختبار النهائي" },
-];
+const isCorrect = (question: CourseQuestion, value: string) => {
+  if (question.type === "truefalse") return value.trim().toLowerCase() === question.correctAnswer.trim().toLowerCase();
+  if (question.type === "multiple") return value.trim() === question.correctAnswer.trim();
+  return false;
+};
+
+const getGrade = (course: CourseRecord, type: AssessmentType, submissions: ReturnType<typeof useDashboardStore>["data"]["submissions"]) => {
+  const qKey = type === "pre" ? "preQuestions" : type === "post" ? "postQuestions" : "taskQuestions";
+  const questions = course[qKey];
+  const qTotal = questions.reduce((s, q) => s + q.points, 0);
+
+  return (submissionId: string) => {
+    const sub = submissions.find((s) => s.id === submissionId);
+    if (!sub) return { score: 0, total: qTotal };
+    const byId = new Map(sub.answers.map((a) => [a.questionId, a]));
+    if (typeof sub.manualScore === "number" && Number.isFinite(sub.manualScore) && sub.manualScore >= 0)
+      return { score: sub.manualScore, total: Math.max(qTotal, sub.manualScore) };
+    const ov = byId.get("__score_override__")?.value;
+    if (ov !== undefined) {
+      const n = Number(ov);
+      if (Number.isFinite(n) && n >= 0) return { score: n, total: Math.max(qTotal, n) };
+    }
+    const score = questions.reduce((s, q) => {
+      const a = byId.get(q.id);
+      if (!a || !q.correctAnswer.trim()) return s;
+      return isCorrect(q, a.value) ? s + q.points : s;
+    }, 0);
+    return { score, total: qTotal };
+  };
+};
+
+const getLatestByLoginId = (
+  courseId: string,
+  type: AssessmentType,
+  submissions: ReturnType<typeof useDashboardStore>["data"]["submissions"],
+) => {
+  const map = new Map<string, (typeof submissions)[number]>();
+  [...submissions]
+    .filter((s) => s.courseId === courseId && s.assessmentType === type)
+    .sort((a, b) => new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime())
+    .forEach((s) => map.set(s.loginId, s));
+  return map;
+};
+
+const INDICATORS = [
+  {
+    key: "memorization",
+    label: "مجموع الأجزاء المقروءة",
+  },
+  {
+    key: "pre",
+    label: "الاختبارات القبلية",
+  },
+  {
+    key: "post",
+    label: "الاختبارات البعدية",
+  },
+  {
+    key: "attendance",
+    label: "الحضور",
+  },
+  {
+    key: "tasks",
+    label: "التكاليف",
+  },
+  {
+    key: "completed30",
+    label: "الطلاب الذين أنهوا 30 جزءًا",
+  },
+] as const;
 
 const Stats = () => {
+  const { data } = useDashboardStore();
+
+  const metrics = useMemo(() => {
+    const students = data.students;
+    const totalStudents = students.length;
+    if (totalStudents === 0) return null;
+
+    const loginIds = new Set(students.map((s) => s.loginId));
+    const courses = getCourses(data).sort((a, b) => a.sortOrder - b.sortOrder);
+    const tasks = getTasks(data);
+    const courseIds = courses.map((c) => c.id);
+    const allTaskIds = [...courseIds, ...tasks.map((t) => t.id)];
+
+    // Memorization
+    const completedPartsCount = students.reduce((s, st) => s + st.completedParts.length, 0);
+    const totalPossibleParts = totalStudents * 30;
+    const memorization = totalPossibleParts > 0 ? (completedPartsCount / totalPossibleParts) * 100 : 0;
+    const completed30 = students.filter((s) => s.completedParts.length >= 30).length;
+
+    // Assessment averages
+    const calcAssessmentAvg = (type: AssessmentType, ids: string[]) => {
+      let totalPct = 0;
+      let count = 0;
+      ids.forEach((courseId) => {
+        const course = data.courses.find((c) => c.id === courseId);
+        if (!course) return;
+        const gradeFn = getGrade(course, type, data.submissions);
+        const latest = getLatestByLoginId(courseId, type, data.submissions);
+        [...latest.values()].forEach((sub) => {
+          if (!loginIds.has(sub.loginId)) return;
+          const g = gradeFn(sub.id);
+          if (g.total > 0) { totalPct += (g.score / g.total) * 100; count++; }
+        });
+      });
+      return count > 0 ? clamp(totalPct / count) : 0;
+    };
+
+    const pre = calcAssessmentAvg("pre", courseIds);
+    const post = calcAssessmentAvg("post", courseIds);
+
+    // Tasks completion
+    const tasksSubmitted = new Set<string>();
+    allTaskIds.forEach((id) => {
+      getLatestByLoginId(id, "tasks", data.submissions).forEach((sub) => {
+        if (loginIds.has(sub.loginId)) tasksSubmitted.add(sub.loginId);
+      });
+    });
+    const tasksAvg = (tasksSubmitted.size / totalStudents) * 100;
+
+    // Attendance
+    const attendedLoginIds = new Set(
+      data.attendance.filter((r) => courseIds.includes(r.courseId) && loginIds.has(r.loginId)).map((r) => r.loginId),
+    );
+    const attendance = (attendedLoginIds.size / totalStudents) * 100;
+
+    return { memorization, pre, post, attendance, tasks: tasksAvg, completed30, totalStudents };
+  }, [data]);
+
+  const values: Record<string, { value: number; display: string }> = metrics
+    ? {
+        memorization: { value: metrics.memorization, display: fmtPct(metrics.memorization) },
+        pre: { value: metrics.pre, display: fmtPct(metrics.pre) },
+        post: { value: metrics.post, display: fmtPct(metrics.post) },
+        attendance: { value: metrics.attendance, display: fmtPct(metrics.attendance) },
+        tasks: { value: metrics.tasks, display: fmtPct(metrics.tasks) },
+        completed30: {
+          value: metrics.totalStudents > 0 ? (metrics.completed30 / metrics.totalStudents) * 100 : 0,
+          display: String(metrics.completed30),
+        },
+      }
+    : Object.fromEntries(INDICATORS.map((i) => [i.key, { value: 0, display: "0%" }]));
+
   return (
     <section className="relative overflow-hidden gradient-page py-24">
       <div className="absolute -top-40 -right-32 w-[28rem] h-[28rem] rounded-full bg-primary/5 blur-3xl" aria-hidden />
@@ -25,21 +242,24 @@ const Stats = () => {
             <span>نظرة سريعة</span>
           </div>
           <h2 className="text-3xl md:text-5xl font-extrabold text-foreground">
-            لمحة عن <span className="text-gradient-gold">البرنامج</span>
+            مؤشرات <span className="text-gradient-gold">البرنامج</span>
           </h2>
           <div className="mx-auto mt-5 h-1 w-20 rounded-full bg-accent" />
         </div>
 
-        <div className="grid grid-cols-3 md:grid-cols-6 gap-6 md:gap-8 justify-items-center">
-          {stats.map((s) => (
-            <article key={s.label} className="flex flex-col items-center gap-3 text-center">
-              <div className="relative grid h-28 w-28 place-items-center rounded-full border-4 border-primary/20 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(227,245,249,0.94))] shadow-[0_6px_24px_rgba(13,111,143,0.15)] transition-smooth hover:-translate-y-1 hover:shadow-[0_10px_32px_rgba(13,111,143,0.22)] hover:border-primary/40 md:h-32 md:w-32">
-                <div className="absolute inset-0 rounded-full bg-gradient-to-br from-primary/5 to-transparent" aria-hidden />
-                <span className="relative text-3xl font-extrabold leading-none tabular-nums text-primary md:text-4xl">{s.value}</span>
-              </div>
-              <span className="text-sm font-bold leading-snug text-foreground/80 md:text-[0.95rem]">{s.label}</span>
-            </article>
-          ))}
+        <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 xl:grid-cols-6 xl:gap-x-6 xl:gap-y-10">
+          {INDICATORS.map((ind) => {
+            const { value, display } = values[ind.key];
+            return (
+              <ProgramIndicatorRing
+                key={ind.key}
+                label={ind.label}
+                progressValue={value}
+                displayValue={ind.key === "completed30" ? Number(display) || 0 : value}
+                suffix={ind.key === "completed30" ? "" : "%"}
+              />
+            );
+          })}
         </div>
       </div>
     </section>
@@ -47,3 +267,4 @@ const Stats = () => {
 };
 
 export default Stats;
+

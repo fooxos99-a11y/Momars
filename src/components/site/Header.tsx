@@ -58,10 +58,39 @@ const Header = () => {
   const activeTask = getActiveTask(data, sessionBranchId);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 20);
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    const getScrollOffset = () => window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+    const updateScrolled = () => setScrolled(getScrollOffset() > 20);
+
+    updateScrolled();
+    window.addEventListener("scroll", updateScrolled, { passive: true });
+    window.addEventListener("resize", updateScrolled);
+
+    let observer: IntersectionObserver | null = null;
+    const heroSection = document.getElementById("home");
+
+    if (heroSection && "IntersectionObserver" in window) {
+      observer = new IntersectionObserver(
+        ([entry]) => {
+          const pastTop = getScrollOffset() > 20;
+          const heroShifted = entry.boundingClientRect.top <= -24;
+          const heroLeavingViewport = !entry.isIntersecting && entry.boundingClientRect.top < 0;
+          setScrolled(pastTop || heroShifted || heroLeavingViewport);
+        },
+        {
+          root: null,
+          threshold: [0, 1],
+          rootMargin: "0px",
+        },
+      );
+
+      observer.observe(heroSection);
+    }
+
+    return () => {
+      window.removeEventListener("scroll", updateScrolled);
+      window.removeEventListener("resize", updateScrolled);
+      observer?.disconnect();
+    };
   }, []);
 
   // Periodic re-render to re-evaluate assessment deadlines every minute
@@ -159,7 +188,11 @@ const Header = () => {
 
   return (
     <header
-      className={`fixed top-0 inset-x-0 z-50 transition-smooth bg-background/90 backdrop-blur-xl border-b border-border/60 shadow-soft`}
+      className={`fixed top-0 inset-x-0 z-50 transition-smooth ${
+        scrolled
+          ? "bg-background/85 backdrop-blur-xl border-b border-border shadow-soft"
+          : "bg-transparent"
+      }`}
     >
       <div className="container flex h-20 items-center gap-4 xl:gap-6">
         {/* Logo */}
@@ -167,14 +200,9 @@ const Header = () => {
           <img
             src="/اللوقو-شفاف.png"
             alt="شعار برنامج رخصة ممارس"
-            className="site-logo site-logo-scrolled mt-1.5 h-9 w-9 object-contain md:h-10 md:w-10"
+            className={`site-logo h-8 w-auto md:h-9 ${scrolled ? "site-logo-scrolled" : "site-logo-top"}`}
           />
-          <img
-            src="/شعار-الجمعية.png"
-            alt="شعار الجمعية"
-            className="mt-1.5 h-9 w-9 object-contain md:h-10 md:w-10"
-          />
-          <div className="text-right leading-tight text-foreground">
+          <div className={`text-right leading-tight ${scrolled ? "text-foreground" : "text-white"}`}>
             <div className="text-[0.82rem] font-extrabold md:text-[1.02rem]">برنامج رخصة ممارس</div>
           </div>
         </a>
@@ -185,7 +213,9 @@ const Header = () => {
             <a
               key={l.href}
               href={l.href}
-              className="rounded-full px-4 py-2.5 text-sm font-bold transition-smooth xl:px-5 xl:text-base text-foreground hover:bg-primary/10 hover:text-primary"
+              className={`rounded-full px-4 py-2.5 text-sm font-bold transition-smooth xl:px-5 xl:text-base ${
+                scrolled ? "text-foreground hover:bg-primary/10 hover:text-primary" : "text-white/95 hover:bg-white/10 hover:text-white"
+              }`}
             >
               {l.label}
             </a>
@@ -199,7 +229,7 @@ const Header = () => {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className=""
+                  className={scrolled ? "" : "text-white hover:bg-white/10 hover:text-white"}
                   aria-label="الحساب"
                 >
                   <User className="size-5" />
@@ -238,7 +268,7 @@ const Header = () => {
             <Button
               variant="ghost"
               size="icon"
-              className=""
+              className={scrolled ? "" : "text-white hover:bg-white/10 hover:text-white"}
               aria-label="الحساب"
               onClick={() => setLoginOpen(true)}
             >
@@ -248,7 +278,7 @@ const Header = () => {
           <Button
             variant="ghost"
             size="icon"
-            className="lg:hidden"
+            className={`lg:hidden ${scrolled ? "" : "text-white hover:bg-white/10 hover:text-white"}`}
             onClick={() => setOpen((s) => !s)}
             aria-label="القائمة"
           >

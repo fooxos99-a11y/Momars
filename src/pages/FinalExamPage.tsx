@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   type BranchId,
   getStudentByLoginId,
+  isFinalExamAvailable,
   loadAccessSession,
   saveAccessSession,
   useDashboardStore,
@@ -33,6 +34,7 @@ const FinalExamPage = () => {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [files, setFiles] = useState<Record<string, { name: string; type: string; dataUrl: string }>>({});
   const [error, setError] = useState("");
+  const [now, setNow] = useState(() => Date.now());
   const [resetKey, setResetKey] = useState(0);
   const [loginDialogOpen, setLoginDialogOpen] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<{ name?: string; type?: string; dataUrl: string } | null>(null);
@@ -50,7 +52,8 @@ const FinalExamPage = () => {
     [data.finalExamQuestions, branchCode],
   );
 
-  const isEnabled = student ? data.finalExamSettings[branchCode] : false;
+  const branchSetting = data.finalExamSettings[branchCode];
+  const isEnabled = student ? isFinalExamAvailable(branchSetting, now) : false;
 
   const existingSubmission = useMemo(() => {
     if (!student) return null;
@@ -98,6 +101,11 @@ const FinalExamPage = () => {
   useEffect(() => {
     if (!student) setLoginDialogOpen(true);
   }, [student]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const handleLogin = () => {
     const trimmed = loginId.trim();
@@ -231,7 +239,7 @@ const FinalExamPage = () => {
                 {!isEnabled && student && (
                   <div className="rounded-[1.75rem] border border-amber-200 bg-amber-50 p-5 text-right">
                     <div className="text-base font-extrabold text-amber-800">غير متاح الآن</div>
-                    <div className="mt-2 text-sm text-amber-700">لم يتم تفعيل الاختبار النهائي لفرعك من قبل المشرف.</div>
+                    <div className="mt-2 text-sm text-amber-700">لم يتم تفعيل الاختبار النهائي لفرعك من قبل المشرف أو انتهت مدة الفتح.</div>
                   </div>
                 )}
                 {error && !loginDialogOpen && <p className="rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm font-medium text-destructive">{error}</p>}

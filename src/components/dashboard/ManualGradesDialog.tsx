@@ -126,7 +126,7 @@ export const ManualGradesDialog = ({
           {/* Selectors */}
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-2">
-              <label className="text-sm font-bold text-foreground">الدورة / التكليف</label>
+              <label className="text-sm font-bold text-foreground">الدورة / المهام</label>
               <Select
                 value={courseId}
                 onValueChange={(v) => {
@@ -195,7 +195,7 @@ export const ManualGradesDialog = ({
                   <TableRow className="hover:bg-transparent">
                     <TableHead className="text-right font-bold text-foreground">الاسم</TableHead>
                     <TableHead className="text-right font-bold text-foreground">رقم الدخول</TableHead>
-                    <TableHead className="w-28 text-right font-bold text-foreground">الدرجة</TableHead>
+                    <TableHead className="w-28 text-right font-bold text-foreground">{isTaskCourse ? "منفذ" : "الدرجة"}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -204,17 +204,48 @@ export const ManualGradesDialog = ({
                       <TableCell className="text-right font-semibold text-foreground">{student.name}</TableCell>
                       <TableCell className="text-right text-muted-foreground">{student.loginId}</TableCell>
                       <TableCell>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.5"
-                          value={scores[student.loginId] ?? ""}
-                          onChange={(e) =>
-                            setScores((prev) => ({ ...prev, [student.loginId]: e.target.value }))
-                          }
-                          className={cn("h-8 w-24 text-center text-sm", "rounded-lg")}
-                          placeholder="0"
-                        />
+                        {isTaskCourse ? (
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={scores[student.loginId] === "1"}
+                            aria-label={`تحديد تنفيذ ${student.name}`}
+                            onClick={() =>
+                              setScores((prev) => ({
+                                ...prev,
+                                [student.loginId]: prev[student.loginId] === "1" ? "0" : "1",
+                              }))
+                            }
+                            className={cn(
+                              "relative flex h-6 w-6 items-center justify-center rounded-full border transition-all duration-300 ease-out",
+                              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2",
+                              scores[student.loginId] === "1"
+                                ? "border-[#138bb0] bg-[linear-gradient(135deg,#0f6f8f_0%,#1498bd_55%,#35b7d7_100%)] shadow-[0_10px_24px_rgba(20,152,189,0.28)]"
+                                : "border-[#d6e7ee] bg-[linear-gradient(180deg,#ffffff_0%,#f1f9fc_100%)] shadow-[inset_0_1px_10px_rgba(255,255,255,0.85)] hover:border-[#b7d8e4] hover:bg-[linear-gradient(180deg,#fcfeff_0%,#edf7fb_100%)]",
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                "pointer-events-none h-2.5 w-2.5 rounded-full transition-all duration-300 ease-out",
+                                scores[student.loginId] === "1"
+                                  ? "bg-white/30 shadow-[0_0_0_4px_rgba(255,255,255,0.14)]"
+                                  : "bg-[#e3f1f6]",
+                              )}
+                            />
+                          </button>
+                        ) : (
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            value={scores[student.loginId] ?? ""}
+                            onChange={(e) =>
+                              setScores((prev) => ({ ...prev, [student.loginId]: e.target.value }))
+                            }
+                            className={cn("h-8 w-24 text-center text-sm", "rounded-lg")}
+                            placeholder="0"
+                          />
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}

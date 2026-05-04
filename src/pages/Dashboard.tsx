@@ -1,9 +1,9 @@
-﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Link, Navigate, useNavigate } from "react-router-dom";
-import { AlertCircle, ArrowRightLeft, BarChart3, Bell, BookOpen, ClipboardList, Copy, Database, Download, Eye, EyeOff, FilePen, FileText, FileUp, GraduationCap, Home, Info, LayoutPanelTop, Maximize2, Menu, Minus, Pencil, Plus, Power, ShieldCheck, SquarePen, Trash2, TrendingDown, TrendingUp, Users, X } from "lucide-react";
+import { AlertCircle, ArrowRightLeft, BarChart3, Bell, BookOpen, Check, ClipboardList, Copy, Database, Download, Eye, EyeOff, FilePen, FileText, FileUp, GraduationCap, Home, Info, LayoutPanelTop, Maximize2, Menu, Minus, Pencil, Plus, Power, ShieldCheck, SquarePen, Trash2, TrendingDown, TrendingUp, Users, X } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -400,16 +400,16 @@ const parseBulkStudentsFromWorksheet = (rows: unknown[][], defaultBranchId: Bran
 
 const dashboardMenu = [
   { id: "home", label: "الرئيسية", icon: Home, hint: "نظرة عامة شاملة" },
-  { id: "courses", label: "الإختبارات", icon: Database, hint: "المحتوى والروابط" },
-  { id: "finalexam", label: "الاختبار النهائي", icon: GraduationCap, hint: "اختبار نهائي لكل فرع" },
-  { id: "tasks", label: "المهام الأدائية", icon: Copy, hint: "تكاليف مستقلة" },
   { id: "attendance", label: "التحضير", icon: Users, hint: "تحضير الطلاب" },
-  { id: "notifications", label: "الإشعارات", icon: Bell, hint: "إرسال التنبيهات" },
+  { id: "courses", label: "الاختبارات", icon: Database, hint: "المحتوى والروابط" },
+  { id: "tasks", label: "المهام الأدائية", icon: Copy, hint: "تكاليف مستقلة" },
+  { id: "finalexam", label: "الاختبار النهائي", icon: GraduationCap, hint: "اختبار نهائي لكل فرع" },
   { id: "reciters", label: "الإقراء", icon: BookOpen, hint: "إدارة الحسابات" },
   { id: "students", label: "المتدربين", icon: Users, hint: "إدارة الطلاب" },
-  { id: "indicators", label: "الإحصائيات", icon: LayoutPanelTop, hint: "مؤشرات الأداء" },
   { id: "results", label: "النتائج", icon: BarChart3, hint: "الحضور والتقييم" },
   { id: "permissions", label: "الصلاحيات", icon: ShieldCheck, hint: "صلاحيات المسؤولين" },
+  { id: "notifications", label: "الإشعارات", icon: Bell, hint: "إرسال التنبيهات" },
+  { id: "indicators", label: "الإحصائيات", icon: LayoutPanelTop, hint: "مؤشرات الأداء" },
   { id: "satisfaction", label: "استبيان الرضا", icon: ClipboardList, hint: "أسئلة الاستبيان ونتائجه" },
 ] as const;
 
@@ -420,6 +420,94 @@ const dashboardEmptyStateClass = "rounded-[1.25rem] border border-dashed border-
 
 const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
 const formatPercent = (value: number) => `${Math.round(clampPercent(value))}%`;
+
+const ProgramIndicatorRing = ({
+  label,
+  progressValue,
+  displayValue,
+  suffix = "%",
+  size = "default",
+  formatDisplay,
+}: {
+  label: string;
+  progressValue: number;
+  displayValue: number;
+  suffix?: string;
+  size?: "default" | "small";
+  formatDisplay?: (value: number) => string;
+}) => {
+  const gradientId = useId();
+  const [animatedProgress, setAnimatedProgress] = useState(0);
+  const [animatedDisplay, setAnimatedDisplay] = useState(0);
+  const safeProgress = clampPercent(progressValue);
+  const safeDisplay = Math.max(0, displayValue);
+  const radius = 54;
+  const circumference = 2 * Math.PI * radius;
+
+  useEffect(() => {
+    let frameId = 0;
+    const startedAt = performance.now();
+    const duration = 1200;
+
+    const tick = (now: number) => {
+      const elapsed = Math.min((now - startedAt) / duration, 1);
+      const eased = 1 - Math.pow(1 - elapsed, 3);
+      setAnimatedProgress(safeProgress * eased);
+      setAnimatedDisplay(safeDisplay * eased);
+
+      if (elapsed < 1) {
+        frameId = requestAnimationFrame(tick);
+      }
+    };
+
+    setAnimatedProgress(0);
+    setAnimatedDisplay(0);
+    frameId = requestAnimationFrame(tick);
+
+    return () => cancelAnimationFrame(frameId);
+  }, [safeDisplay, safeProgress]);
+
+  const dashOffset = circumference * (1 - animatedProgress / 100);
+  const shownValue = formatDisplay ? formatDisplay(animatedDisplay) : `${Math.round(animatedDisplay)}${suffix}`;
+  const isSmall = size === "small";
+
+  return (
+    <div className="flex flex-col items-center gap-3 text-center">
+      <div className={cn("relative flex items-center justify-center", isSmall ? "h-28 w-28 sm:h-32 sm:w-32" : "h-40 w-40 sm:h-44 sm:w-44 lg:h-48 lg:w-48")}>
+        <div className="absolute inset-3 rounded-full bg-[radial-gradient(circle,_rgba(14,154,192,0.18)_0%,_rgba(14,154,192,0.08)_42%,_transparent_72%)] blur-2xl" />
+        <svg viewBox="0 0 140 140" className="relative h-full w-full -rotate-90 overflow-visible">
+          <defs>
+            <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#0f6f8f" />
+              <stop offset="55%" stopColor="#128db2" />
+              <stop offset="100%" stopColor="#19aacd" />
+            </linearGradient>
+          </defs>
+          <circle cx="70" cy="70" r={radius} fill="none" stroke="rgba(184, 205, 214, 0.45)" strokeWidth="10" />
+          <circle
+            cx="70"
+            cy="70"
+            r={radius}
+            fill="none"
+            stroke={`url(#${gradientId})`}
+            strokeWidth="10"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={dashOffset}
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="flex h-[66%] w-[66%] items-center justify-center rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.96)_0%,_rgba(244,251,253,0.88)_56%,_rgba(233,245,249,0.28)_100%)] shadow-[inset_0_1px_14px_rgba(255,255,255,0.92)] backdrop-blur-sm">
+            <span className={cn("font-black leading-none tracking-[-0.04em] text-[#0d4860]", isSmall ? "text-[1.45rem] sm:text-[1.6rem]" : "text-[2rem] sm:text-[2.15rem]")}>
+              {shownValue}
+            </span>
+          </div>
+        </div>
+      </div>
+      <div className={cn("font-extrabold leading-7 text-[#08384a]", isSmall ? "max-w-[8rem] text-xs sm:text-sm" : "max-w-[11rem] text-sm sm:text-[0.95rem]")}>{label}</div>
+    </div>
+  );
+};
 
 const getSupabaseErrorMessage = (error: unknown, fallback: string) => {
   if (!error || typeof error !== "object") {
@@ -541,8 +629,10 @@ const Dashboard = () => {
   const [courseError, setCourseError] = useState("");
   const [courseEditOpen, setCourseEditOpen] = useState(false);
   const [coursesManageOpen, setCoursesManageOpen] = useState(false);
-  const [satisfactionTab, setSatisfactionTab] = useState<"questions" | "results">("questions");
+  const [satisfactionCourseId, setSatisfactionCourseId] = useState("");
+  const [satisfactionAddDialogOpen, setSatisfactionAddDialogOpen] = useState(false);
   const [satisfactionResultsCourseId, setSatisfactionResultsCourseId] = useState("");
+  const [satisfactionPreviewText, setSatisfactionPreviewText] = useState<string | null>(null);
   const [newSurveyPrompt, setNewSurveyPrompt] = useState("");
   const [newSurveyType, setNewSurveyType] = useState<"rating" | "text">("rating");
   const [newSurveyRequired, setNewSurveyRequired] = useState(true);
@@ -573,6 +663,7 @@ const Dashboard = () => {
   const [resultsType, setResultsType] = useState<"attendance" | AssessmentType>("attendance");
   const [resultsAttendanceFilter, setResultsAttendanceFilter] = useState<"all" | "present" | "absent" | "frequent-absent">("all");
   const [homeBranchFilter, setHomeBranchFilter] = useState<IndicatorsBranchFilter>("all");
+  const [homeCourseFilter, setHomeCourseFilter] = useState("all");
   const [indicatorsBranchId, setIndicatorsBranchId] = useState<IndicatorsBranchFilter>("all");
   const [indicatorsCourseId, setIndicatorsCourseId] = useState("all");
   const [courseIndicatorsBranch, setCourseIndicatorsBranch] = useState<BranchId>("male");
@@ -2327,6 +2418,7 @@ const Dashboard = () => {
         submissionId: string | null;
         score: number;
         total: number;
+        hasViewableAnswers: boolean;
       }>;
     }
 
@@ -2348,6 +2440,9 @@ const Dashboard = () => {
         submissionId: submission?.id ?? null,
         score: grade.score,
         total: grade.total,
+        hasViewableAnswers: submission
+          ? submission.answers.some((answer) => answer.questionId !== "__score_override__")
+          : false,
       };
     });
   }, [data.submissions, resultsCourse, resultsStudents, resultsType]);
@@ -2816,7 +2911,10 @@ const Dashboard = () => {
       };
     });
 
-    return { totalStudents, pre, post, bothCount, rise, tasksCount: tasksTestedSet.size, attendanceCount: attendedSet.size, courseBreakdown };
+    const memorizationCount = students.reduce((sum, s) => sum + s.completedParts.length, 0);
+    const completed30Count = students.filter((s) => s.completedParts.length >= 30).length;
+
+    return { totalStudents, pre, post, bothCount, rise, tasksCount: tasksTestedSet.size, attendanceCount: attendedSet.size, courseBreakdown, memorizationCount, completed30Count };
   }, [homeBranchFilter, data.students, data.submissions, data.attendance, data.courses, courseItems]);
 
   const adminName = session.name;
@@ -2919,11 +3017,23 @@ const Dashboard = () => {
                     {renderDashboardNavigation(true)}
                   </SheetContent>
                 </Sheet>
-                {dashboardTab === "courses" && (
-                  <Button variant="outline" className="rounded-full px-5" onClick={() => setCourseLinksOpen(true)}>
-                    الروابط
-                  </Button>
+                {dashboardTab === "home" && (
+                  <div className="min-w-[140px]">
+                    <Select value={homeBranchFilter} onValueChange={(value) => setHomeBranchFilter(value as IndicatorsBranchFilter)}>
+                      <SelectTrigger className="h-11 rounded-full border-border/60 bg-white px-4 text-right [&>span]:text-right">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="text-right">
+                        <SelectItem value="all" className="justify-end pr-3 text-right">الكل</SelectItem>
+                        <SelectItem value="male" className="justify-end pr-3 text-right">المعلمون</SelectItem>
+                        <SelectItem value="female" className="justify-end pr-3 text-right">المعلمات</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 )}
+                <Button variant="outline" className="rounded-full px-5" onClick={() => setCourseLinksOpen(true)}>
+                  الروابط
+                </Button>
                 {canManageDashboardAccounts && (
                   <Button variant="outline" className="rounded-full px-5" onClick={handleOpenAdmins} aria-label="الإشراف">
                     الإشراف
@@ -2955,325 +3065,128 @@ const Dashboard = () => {
         {dashboardTab === "home" && (
           <div className="space-y-5" dir="rtl">
 
-            {/* ─── Hero / program overview ─────────────────────────────────── */}
-            <div
-              className="relative overflow-hidden rounded-[1.75rem] p-7 text-white"
-              style={{ background: "linear-gradient(135deg, hsl(193 78% 20%), hsl(191 72% 34%))" }}
-            >
-              {/* dot pattern */}
-              <div
-                className="pointer-events-none absolute inset-0 opacity-[0.06]"
-                style={{
-                  backgroundImage: "radial-gradient(circle at 1px 1px, white 1px, transparent 0)",
-                  backgroundSize: "22px 22px",
-                }}
-              />
-              {/* glow blobs */}
-              <div className="pointer-events-none absolute -top-20 -left-20 h-72 w-72 rounded-full bg-white/10 blur-3xl" />
-              <div className="pointer-events-none absolute -bottom-20 -right-10 h-56 w-56 rounded-full bg-white/5 blur-3xl" />
-
-              <div className="relative z-10 flex flex-col gap-5 sm:flex-row sm:items-center">
-                {/* logos */}
-                <div className="flex shrink-0 items-center gap-3">
-                  <img src="/اللوقو-شفاف.png" alt="شعار البرنامج" className="h-[4.5rem] w-auto object-contain drop-shadow-lg" />
-                  <div className="h-10 w-px bg-white/25" />
-                  <img src="/شعار-الجمعية.png" alt="شعار الجمعية" className="h-[4.5rem] w-auto rounded-xl object-contain" />
-                </div>
-
-                {/* text */}
-                <div className="flex-1">
-                  <h2 className="text-xl font-extrabold leading-snug sm:text-2xl">برنامج رخصة ممارس</h2>
-                  <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-white/75">
-                    برنامج تأهيلي يُعنى بإعداد معلمي ومعلمات القرآن الكريم عبر أربع مجالات رئيسة:
-                    الشرعي، التعليمي، التربوي، والمهاري — بهدف تأهيلهم لقيادة الحلقة القرآنية بكفاءة وفاعلية.
-                  </p>
-                  <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-[0.82rem] text-white/90">
-                    <span className="flex items-center gap-1.5">
-                      <Users className="size-3.5 opacity-70" />
-                      <strong>{homeMetrics.totalStudents}</strong> متدرب مسجل
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <Database className="size-3.5 opacity-70" />
-                      <strong>{courseItems.length}</strong> دورة تدريبية
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <FileText className="size-3.5 opacity-70" />
-                      <strong>{homeMetrics.pre.count}</strong> أجروا القبلي
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <GraduationCap className="size-3.5 opacity-70" />
-                      <strong>{homeMetrics.post.count}</strong> أجروا البعدي
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
             {/* ─── Filters + section title ─────────────────────────────────── */}
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <h3 className="text-[0.95rem] font-bold text-foreground">المؤشرات الإجمالية</h3>
-              <div className="flex items-center gap-2">
-                {([["all", "الكل"], ["male", "المعلمون"], ["female", "المعلمات"]] as const).map(([val, label]) => (
-                  <button
-                    key={val}
-                    onClick={() => setHomeBranchFilter(val)}
-                    className={`rounded-full px-4 py-1.5 text-sm font-medium transition-all ${
-                      homeBranchFilter === val
-                        ? "bg-primary text-white shadow-sm"
-                        : "border border-border/60 bg-white text-muted-foreground hover:border-primary/40 hover:text-primary"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
             </div>
 
-            {/* ─── KPI cards ───────────────────────────────────────────────── */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-
-              {/* Total enrolled */}
-              <div className={`${dashboardCardClass} rounded-[1.5rem] border border-border/60 p-6`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">إجمالي المتدربين</div>
-                    <div className="mt-2 text-4xl font-extrabold tabular-nums text-foreground">{homeMetrics.totalStudents}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">متدرب مسجل في البرنامج</div>
-                  </div>
-                  <div className="shrink-0 rounded-2xl p-3.5" style={{ background: "linear-gradient(135deg, #107699, #0e9ac0)" }}>
-                    <Users className="size-6 text-white" />
-                  </div>
-                </div>
-                <div className="mt-5 space-y-1">
-                  <div className="h-1.5 overflow-hidden rounded-full bg-muted/40">
-                    <div className="h-full rounded-full bg-primary transition-all" style={{ width: "100%" }} />
-                  </div>
-                  <div className="flex justify-between text-[0.7rem] text-muted-foreground">
-                    <span>المرجع الكلي</span>
-                    <span className="font-medium text-primary">100%</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Pre-exam */}
-              <div className={`${dashboardCardClass} rounded-[1.5rem] border border-border/60 p-6`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">الاختبار القبلي</div>
-                    <div className="mt-2 text-4xl font-extrabold tabular-nums text-foreground">{homeMetrics.pre.count}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">متدرب أجرى الاختبار القبلي</div>
-                  </div>
-                  <div className="shrink-0 rounded-2xl p-3.5" style={{ background: "linear-gradient(135deg, #1e40af, #2563eb)" }}>
-                    <FileText className="size-6 text-white" />
-                  </div>
-                </div>
-                <div className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-                  متوسط الدرجات: {formatPercent(homeMetrics.pre.avg)}
-                </div>
-                <div className="mt-3 space-y-1">
-                  <div className="h-1.5 overflow-hidden rounded-full bg-muted/40">
-                    <div
-                      className="h-full rounded-full bg-blue-500 transition-all"
-                      style={{ width: `${homeMetrics.totalStudents > 0 ? (homeMetrics.pre.count / homeMetrics.totalStudents) * 100 : 0}%` }}
+            {/* ─── Circular KPI indicators ─────────────────────────────────── */}
+            {(() => {
+              const T = homeMetrics.totalStudents;
+              const homeIndicators = [
+                {
+                  key: "memorization",
+                  label: "مجموع الأجزاء المقروءة",
+                  value: T > 0 ? clampPercent((homeMetrics.memorizationCount / (T * 30)) * 100) : 0,
+                  displayValue: T > 0 ? clampPercent((homeMetrics.memorizationCount / (T * 30)) * 100) : 0,
+                  suffix: "%",
+                },
+                {
+                  key: "pre",
+                  label: "الاختبارات القبلية",
+                  value: homeMetrics.pre.avg,
+                  displayValue: homeMetrics.pre.avg,
+                  suffix: "%",
+                },
+                {
+                  key: "post",
+                  label: "الاختبارات البعدية",
+                  value: homeMetrics.post.avg,
+                  displayValue: homeMetrics.post.avg,
+                  suffix: "%",
+                },
+                {
+                  key: "attendance",
+                  label: "الحضور",
+                  value: T > 0 ? clampPercent((homeMetrics.attendanceCount / T) * 100) : 0,
+                  displayValue: T > 0 ? clampPercent((homeMetrics.attendanceCount / T) * 100) : 0,
+                  suffix: "%",
+                },
+                {
+                  key: "tasks",
+                  label: "التكاليف",
+                  value: T > 0 ? clampPercent((homeMetrics.tasksCount / T) * 100) : 0,
+                  displayValue: T > 0 ? clampPercent((homeMetrics.tasksCount / T) * 100) : 0,
+                  suffix: "%",
+                },
+                {
+                  key: "completed30",
+                  label: "الطلاب الذين أنهوا 30 جزءًا",
+                  value: T > 0 ? clampPercent((homeMetrics.completed30Count / T) * 100) : 0,
+                  displayValue: homeMetrics.completed30Count,
+                  suffix: "",
+                },
+              ];
+              return (
+                <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 xl:grid-cols-6 xl:gap-x-6 xl:gap-y-10">
+                  {homeIndicators.map((ind) => (
+                    <ProgramIndicatorRing
+                      key={ind.key}
+                      label={ind.label}
+                      progressValue={ind.value}
+                      displayValue={ind.displayValue}
+                      suffix={ind.suffix}
                     />
-                  </div>
-                  <div className="flex justify-between text-[0.7rem] text-muted-foreground">
-                    <span>من إجمالي المتدربين</span>
-                    <span className="font-medium text-blue-600">
-                      {homeMetrics.totalStudents > 0 ? Math.round((homeMetrics.pre.count / homeMetrics.totalStudents) * 100) : 0}%
-                    </span>
-                  </div>
+                  ))}
                 </div>
-              </div>
-
-              {/* Post-exam */}
-              <div className={`${dashboardCardClass} rounded-[1.5rem] border border-border/60 p-6`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">الاختبار البعدي</div>
-                    <div className="mt-2 text-4xl font-extrabold tabular-nums text-foreground">{homeMetrics.post.count}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">متدرب أجرى الاختبار البعدي</div>
-                  </div>
-                  <div className="shrink-0 rounded-2xl p-3.5" style={{ background: "linear-gradient(135deg, #5b21b6, #7c3aed)" }}>
-                    <GraduationCap className="size-6 text-white" />
-                  </div>
-                </div>
-                <div className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">
-                  متوسط الدرجات: {formatPercent(homeMetrics.post.avg)}
-                </div>
-                <div className="mt-3 space-y-1">
-                  <div className="h-1.5 overflow-hidden rounded-full bg-muted/40">
-                    <div
-                      className="h-full rounded-full bg-violet-500 transition-all"
-                      style={{ width: `${homeMetrics.totalStudents > 0 ? (homeMetrics.post.count / homeMetrics.totalStudents) * 100 : 0}%` }}
-                    />
-                  </div>
-                  <div className="flex justify-between text-[0.7rem] text-muted-foreground">
-                    <span>من إجمالي المتدربين</span>
-                    <span className="font-medium text-violet-600">
-                      {homeMetrics.totalStudents > 0 ? Math.round((homeMetrics.post.count / homeMetrics.totalStudents) * 100) : 0}%
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Rise/development */}
-              <div className={`${dashboardCardClass} rounded-[1.5rem] border border-border/60 p-6`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">نسبة التطور</div>
-                    <div
-                      className={`mt-2 flex items-end gap-2 text-4xl font-extrabold tabular-nums ${
-                        homeMetrics.rise > 0 ? "text-emerald-600" : homeMetrics.rise < 0 ? "text-red-500" : "text-muted-foreground"
-                      }`}
-                    >
-                      {homeMetrics.rise > 0 ? <TrendingUp className="mb-1 size-7" /> : homeMetrics.rise < 0 ? <TrendingDown className="mb-1 size-7" /> : <Minus className="mb-1 size-7" />}
-                      {Math.abs(Math.round(homeMetrics.rise))}%
-                    </div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      {homeMetrics.rise > 0 ? "ارتفاع" : homeMetrics.rise < 0 ? "انخفاض" : "مستقر"} — بين القبلي والبعدي
-                    </div>
-                  </div>
-                  <div
-                    className="shrink-0 rounded-2xl p-3.5"
-                    style={{
-                      background:
-                        homeMetrics.rise > 0
-                          ? "linear-gradient(135deg, #166534, #16a34a)"
-                          : homeMetrics.rise < 0
-                            ? "linear-gradient(135deg, #991b1b, #dc2626)"
-                            : "linear-gradient(135deg, #374151, #6b7280)",
-                    }}
-                  >
-                    {homeMetrics.rise > 0 ? (
-                      <TrendingUp className="size-6 text-white" />
-                    ) : homeMetrics.rise < 0 ? (
-                      <TrendingDown className="size-6 text-white" />
-                    ) : (
-                      <Minus className="size-6 text-white" />
-                    )}
-                  </div>
-                </div>
-                {/* pre → post comparison */}
-                <div className="mt-4 rounded-xl bg-muted/25 px-4 py-3">
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>متوسط القبلي</span>
-                    <span>متوسط البعدي</span>
-                  </div>
-                  <div className="mt-1.5 flex items-center justify-between text-sm font-bold">
-                    <span className="text-blue-600">{formatPercent(homeMetrics.pre.avg)}</span>
-                    <div className="mx-3 flex-1 border-t border-dashed border-border/70" />
-                    <span className="text-violet-600">{formatPercent(homeMetrics.post.avg)}</span>
-                  </div>
-                  <div className="mt-1 text-center text-[0.68rem] text-muted-foreground">
-                    محسوب على {homeMetrics.bothCount} متدرب أجرى الاختبارين
-                  </div>
-                </div>
-              </div>
-
-              {/* Attendance */}
-              <div className={`${dashboardCardClass} rounded-[1.5rem] border border-border/60 p-6`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">الحضور</div>
-                    <div className="mt-2 text-4xl font-extrabold tabular-nums text-foreground">{homeMetrics.attendanceCount}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">متدرب حضر دورة واحدة على الأقل</div>
-                  </div>
-                  <div className="shrink-0 rounded-2xl p-3.5" style={{ background: "linear-gradient(135deg, #92400e, #d97706)" }}>
-                    <Users className="size-6 text-white" />
-                  </div>
-                </div>
-                <div className="mt-5 space-y-1">
-                  <div className="h-1.5 overflow-hidden rounded-full bg-muted/40">
-                    <div
-                      className="h-full rounded-full bg-amber-500 transition-all"
-                      style={{ width: `${homeMetrics.totalStudents > 0 ? (homeMetrics.attendanceCount / homeMetrics.totalStudents) * 100 : 0}%` }}
-                    />
-                  </div>
-                  <div className="flex justify-between text-[0.7rem] text-muted-foreground">
-                    <span>من إجمالي المتدربين</span>
-                    <span className="font-medium text-amber-600">
-                      {homeMetrics.totalStudents > 0 ? Math.round((homeMetrics.attendanceCount / homeMetrics.totalStudents) * 100) : 0}%
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Tasks */}
-              <div className={`${dashboardCardClass} rounded-[1.5rem] border border-border/60 p-6`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">المهام الأدائية</div>
-                    <div className="mt-2 text-4xl font-extrabold tabular-nums text-foreground">{homeMetrics.tasksCount}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">متدرب أرسل مهمة أدائية</div>
-                  </div>
-                  <div className="shrink-0 rounded-2xl p-3.5" style={{ background: "linear-gradient(135deg, #065f46, #059669)" }}>
-                    <Copy className="size-6 text-white" />
-                  </div>
-                </div>
-                <div className="mt-5 space-y-1">
-                  <div className="h-1.5 overflow-hidden rounded-full bg-muted/40">
-                    <div
-                      className="h-full rounded-full bg-emerald-500 transition-all"
-                      style={{ width: `${homeMetrics.totalStudents > 0 ? (homeMetrics.tasksCount / homeMetrics.totalStudents) * 100 : 0}%` }}
-                    />
-                  </div>
-                  <div className="flex justify-between text-[0.7rem] text-muted-foreground">
-                    <span>من إجمالي المتدربين</span>
-                    <span className="font-medium text-emerald-600">
-                      {homeMetrics.totalStudents > 0 ? Math.round((homeMetrics.tasksCount / homeMetrics.totalStudents) * 100) : 0}%
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-            </div>
+              );
+            })()}
 
             {/* ─── Per-course breakdown ─────────────────────────────────────── */}
             {homeMetrics.courseBreakdown.length > 0 && (
-              <div className="space-y-3">
-                <h3 className="text-[0.95rem] font-bold text-foreground">تفصيل حسب الدورة</h3>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {homeMetrics.courseBreakdown.map((course) => {
+              <div className="space-y-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <h3 className="text-[0.95rem] font-bold text-foreground">تفصيل حسب الدورة</h3>
+                  <div className="w-full sm:w-[280px]">
+                    <Select value={homeCourseFilter} onValueChange={setHomeCourseFilter}>
+                      <SelectTrigger className="h-11 rounded-full border-border/60 bg-white px-4 text-right [&>span]:text-right">
+                        <SelectValue placeholder="اختر الدورة" />
+                      </SelectTrigger>
+                      <SelectContent className="text-right">
+                        <SelectItem value="all" className="justify-end pr-3 text-right">جميع الدورات</SelectItem>
+                        {homeMetrics.courseBreakdown.map((course) => (
+                          <SelectItem key={course.id} value={course.id} className="justify-end pr-3 text-right">
+                            {course.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  {(homeCourseFilter === "all"
+                    ? homeMetrics.courseBreakdown
+                    : homeMetrics.courseBreakdown.filter((course) => course.id === homeCourseFilter)
+                  ).map((course) => {
                     const courseRise = course.postAvg - course.preAvg;
+                    const riseMagnitude = Math.abs(courseRise);
+
                     return (
-                      <div key={course.id} className={`${dashboardCardClass} rounded-[1.5rem] border border-border/60 p-5`}>
-                        {/* course title */}
-                        <div className="mb-4 flex items-start gap-2">
-                          <div className="mt-0.5 shrink-0 rounded-lg p-1.5" style={{ background: "linear-gradient(135deg, #107699, #0e9ac0)" }}>
-                            <Database className="size-3.5 text-white" />
-                          </div>
-                          <span className="text-sm font-bold leading-snug text-foreground">{course.title}</span>
-                        </div>
-
-                        {/* stats grid */}
-                        <div className="grid grid-cols-3 divide-x divide-x-reverse divide-border/50">
-                          {/* Pre */}
-                          <div className="pe-3 text-center">
-                            <div className="text-[0.68rem] text-muted-foreground">القبلي</div>
-                            <div className="mt-0.5 text-lg font-extrabold text-foreground">{course.preCount}</div>
-                            <div className="text-[0.68rem] font-semibold text-blue-600">{formatPercent(course.preAvg)}</div>
-                          </div>
-                          {/* Post */}
-                          <div className="px-3 text-center">
-                            <div className="text-[0.68rem] text-muted-foreground">البعدي</div>
-                            <div className="mt-0.5 text-lg font-extrabold text-foreground">{course.postCount}</div>
-                            <div className="text-[0.68rem] font-semibold text-violet-600">{formatPercent(course.postAvg)}</div>
-                          </div>
-                          {/* Attendance */}
-                          <div className="ps-3 text-center">
-                            <div className="text-[0.68rem] text-muted-foreground">الحضور</div>
-                            <div className="mt-0.5 text-lg font-extrabold text-foreground">{course.attendanceCount}</div>
-                            <div className="text-[0.68rem] text-muted-foreground">متدرب</div>
-                          </div>
-                        </div>
-
-                        {/* rise indicator */}
-                        <div className={`mt-4 flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold ${
-                          courseRise > 0 ? "bg-emerald-50 text-emerald-700" : courseRise < 0 ? "bg-red-50 text-red-600" : "bg-muted/40 text-muted-foreground"
-                        }`}>
-                          {courseRise > 0 ? <TrendingUp className="size-3.5" /> : courseRise < 0 ? <TrendingDown className="size-3.5" /> : <Minus className="size-3.5" />}
-                          نسبة التطور: {courseRise > 0 ? "+" : ""}{Math.round(courseRise)}%
+                      <div key={course.id} className="rounded-[1.75rem] border border-white/70 bg-white/75 px-5 py-6 shadow-[0_18px_45px_rgba(15,23,42,0.05)] backdrop-blur-sm">
+                        <div className="mb-5 text-right text-base font-extrabold text-[#08384a]">{course.title}</div>
+                        <div className="grid grid-cols-1 gap-6 sm:grid-cols-3 sm:gap-4 lg:gap-6">
+                          <ProgramIndicatorRing
+                            label="القبلي"
+                            progressValue={course.preAvg}
+                            displayValue={course.preAvg}
+                            suffix="%"
+                            size="small"
+                          />
+                          <ProgramIndicatorRing
+                            label="البعدي"
+                            progressValue={course.postAvg}
+                            displayValue={course.postAvg}
+                            suffix="%"
+                            size="small"
+                          />
+                          <ProgramIndicatorRing
+                            label="نسبة التطور"
+                            progressValue={riseMagnitude}
+                            displayValue={riseMagnitude}
+                            suffix="%"
+                            size="small"
+                            formatDisplay={(value) => `${courseRise > 0 ? "+" : courseRise < 0 ? "-" : ""}${Math.round(value)}%`}
+                          />
                         </div>
                       </div>
                     );
@@ -3990,7 +3903,7 @@ const Dashboard = () => {
                       </div>
                     )}
                     <div className="space-y-2">
-                      <label className="text-sm font-bold text-foreground">الدورة / التكليف</label>
+                      <label className="text-sm font-bold text-foreground">الدورة / المهام</label>
                       <div className="flex items-center gap-2">
                         <Select
                           value={attendanceCourseId || (selectedCourseForAttendance?.id ?? "")}
@@ -4141,45 +4054,16 @@ const Dashboard = () => {
                     <div className="space-y-4">
 
                       {showSummaryIndicators && (
-                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 xl:grid-cols-6 xl:gap-x-6 xl:gap-y-10">
                           {summaryIndicators.map((indicator) => {
-                            const percent = clampPercent(indicator.value);
-
                             return (
-                              <div
+                              <ProgramIndicatorRing
                                 key={indicator.key}
-                                className="rounded-[1.9rem] border border-border/60 bg-white p-5 text-center shadow-[0_18px_45px_rgba(15,23,42,0.08)]"
-                              >
-                                <div
-                                  className="relative mx-auto mb-5 flex h-44 w-44 items-center justify-center rounded-full p-[16px] transition-all duration-700"
-                                  style={{
-                                    background: percent === 0
-                                      ? `conic-gradient(from 215deg, #e5e7eb 0%, #e5e7eb 100%)`
-                                      : `conic-gradient(from 215deg, ${indicator.colorStart} 0%, ${indicator.colorEnd} ${percent}%, #e5e7eb ${percent}% 100%)`,
-                                    boxShadow: percent === 0 ? "none" : `0 24px 50px -22px ${indicator.shadow}`,
-                                  }}
-                                >
-                                  <div
-                                    className="pointer-events-none absolute inset-[13px] rounded-full blur-md"
-                                    style={{ background: percent === 0 ? "transparent" : `radial-gradient(circle, ${indicator.glow} 0%, transparent 72%)` }}
-                                  />
-                                  <div
-                                    className="relative flex h-full w-full items-center justify-center rounded-full border border-white/10 text-center transition-all duration-700"
-                                    style={{
-                                        background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
-                                        boxShadow: "inset 0 2px 12px rgba(255,255,255,0.9), 0 10px 24px rgba(8,65,89,0.08)",
-                                    }}
-                                  >
-                                      <div
-                                        className="text-[2rem] font-black leading-none tracking-[-0.03em] transition-colors duration-700"
-                                        style={{ color: percent === 0 ? "#9ca3af" : indicator.colorEnd }}
-                                      >
-                                        {indicator.display}
-                                      </div>
-                                  </div>
-                                </div>
-                                <div className="mx-auto max-w-[10rem] text-sm font-extrabold leading-7 text-foreground">{indicator.label}</div>
-                              </div>
+                                label={indicator.label}
+                                progressValue={indicator.value}
+                                displayValue={typeof indicator.display === "string" && !indicator.display.includes("%") ? Number(indicator.display) || 0 : indicator.value}
+                                suffix={typeof indicator.display === "string" && !indicator.display.includes("%") ? "" : "%"}
+                              />
                             );
                           })}
                         </div>
@@ -4348,115 +4232,208 @@ const Dashboard = () => {
         })()}
 
         {dashboardTab === "satisfaction" && (() => {
-          const coursesWithResponses = data.courses.filter((c) =>
-            data.satisfactionResponses.some((r) => r.courseId === c.id),
-          );
-          const selectedCourse = data.courses.find((c) => c.id === satisfactionResultsCourseId) ?? coursesWithResponses[0];
+          const selectedCourse = courseItems.find((c) => c.id === satisfactionCourseId) ?? courseItems[0] ?? null;
+          const courseQuestions = selectedCourse
+            ? data.satisfactionQuestions
+                .filter((q) => q.courseId === selectedCourse.id)
+                .sort((a, b) => a.sortOrder - b.sortOrder)
+            : [];
+          const courseResponses = selectedCourse
+            ? data.satisfactionResponses.filter((r) => r.courseId === selectedCourse.id)
+            : [];
+          const ratingIndicators = courseQuestions
+            .filter((q) => q.type === "rating")
+            .map((q) => {
+              const values = courseResponses
+                .filter((r) => r.questionId === q.id && r.ratingValue != null)
+                .map((r) => r.ratingValue as number);
+              const average = values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+              return { question: q, average, count: values.length };
+            });
+          const formatRatingAverage = (value: number) => {
+            const rounded = Math.round(value * 10) / 10;
+            return Number.isInteger(rounded) ? `${Math.round(rounded)}/10` : `${rounded.toFixed(1)}/10`;
+          };
           return (
-            <div className="space-y-5" dir="rtl">
-              <div className={cn(dashboardCardClass, "border p-0 overflow-hidden")}>
-                <div className="flex gap-2 border-b border-border/60 px-5 py-3">
-                  <button type="button" onClick={() => setSatisfactionTab("questions")} className={cn("rounded-full px-4 py-1.5 text-sm font-bold transition-smooth", satisfactionTab === "questions" ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground")}>الأسئلة</button>
-                  <button type="button" onClick={() => setSatisfactionTab("results")} className={cn("rounded-full px-4 py-1.5 text-sm font-bold transition-smooth", satisfactionTab === "results" ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground")}>النتائج</button>
-                </div>
-                {satisfactionTab === "questions" && (
-                  <div className="space-y-4 px-5 py-4">
-                    <div className="space-y-3 rounded-xl border border-border/60 p-4">
-                      <div className="text-sm font-bold text-foreground">إضافة سؤال جديد</div>
-                      <Input value={newSurveyPrompt} onChange={(e) => setNewSurveyPrompt(e.target.value)} placeholder="نص السؤال" className="text-right" />
-                      <div className="flex items-center gap-3">
-                        <select value={newSurveyType} onChange={(e) => setNewSurveyType(e.target.value as "rating" | "text")} className="rounded-xl border border-border/60 bg-white px-3 py-2 text-sm text-right">
-                          <option value="rating">تقييم (0-10)</option>
-                          <option value="text">نص حر</option>
-                        </select>
-                        <label className="flex items-center gap-2 text-sm text-foreground">
-                          <input type="checkbox" checked={newSurveyRequired} onChange={(e) => setNewSurveyRequired(e.target.checked)} className="rounded" />
-                          إلزامي
-                        </label>
-                      </div>
-                      <Button
-                        className="rounded-full px-5"
-                        onClick={async () => {
-                          if (!newSurveyPrompt.trim()) return;
-                          await store.addSatisfactionQuestion({ prompt: newSurveyPrompt.trim(), type: newSurveyType, isRequired: newSurveyRequired });
-                          setNewSurveyPrompt("");
-                        }}
-                      >
-                        <Plus className="size-4" />
-                        إضافة
-                      </Button>
+            <div className="space-y-6" dir="rtl">
+
+              {/* ─── Manage questions ────────────────────────────────────────── */}
+              <div className="space-y-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <h3 className="text-[0.95rem] font-bold text-foreground">أسئلة الاستبيان</h3>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <div className="w-full sm:w-72">
+                      <Select value={selectedCourse?.id ?? ""} onValueChange={setSatisfactionCourseId}>
+                        <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
+                          <SelectValue placeholder="اختر الدورة" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {courseItems.map((course) => (
+                            <SelectItem key={course.id} value={course.id} className="justify-end pr-3 text-right">
+                              {course.title}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
-                    <div className="space-y-2">
-                      {data.satisfactionQuestions.length === 0 && (
-                        <p className="py-4 text-center text-sm text-muted-foreground">لا توجد أسئلة بعد.</p>
-                      )}
-                      {data.satisfactionQuestions.map((q) => (
-                        <div key={q.id} className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-white px-4 py-3">
-                          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 rounded-xl text-destructive" onClick={() => void store.deleteSatisfactionQuestion(q.id)}>
-                            <Trash2 className="size-3.5" />
-                          </Button>
-                          <div className="min-w-0 text-right">
-                            <div className="truncate text-sm font-medium text-foreground">{q.prompt}</div>
-                            <div className="text-xs text-muted-foreground">{q.type === "rating" ? "تقييم 0-10" : "نص حر"}{q.isRequired ? " · إلزامي" : ""}</div>
+                    <Button className="rounded-full px-6" disabled={!selectedCourse} onClick={() => setSatisfactionAddDialogOpen(true)}>
+                      <Plus className="size-4" />
+                      إضافة
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Questions list */}
+                {!selectedCourse ? (
+                  <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-white/70 p-6 text-center text-sm text-muted-foreground">
+                    لا توجد دورات بعد.
+                  </div>
+                ) : courseQuestions.length === 0 ? (
+                  <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-white/70 p-6 text-center text-sm text-muted-foreground">
+                    لا توجد أسئلة بعد.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {courseQuestions.map((q, idx) => (
+                      <div key={q.id} className={`${dashboardCardClass} flex items-center justify-between gap-3 rounded-[1.5rem] border border-border/60 px-5 py-4`}>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 rounded-xl text-destructive hover:bg-destructive/10" onClick={() => void store.deleteSatisfactionQuestion(q.id)}>
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                        <div className="min-w-0 flex-1 text-right">
+                          <div className="flex items-center gap-2 justify-end">
+                            <span className="truncate text-sm font-semibold text-foreground">{q.prompt}</span>
+                            <span className="shrink-0 text-xs font-bold text-muted-foreground">#{idx + 1}</span>
+                          </div>
+                          <div className="mt-0.5 flex items-center justify-end gap-2 text-xs text-muted-foreground">
+                            <span>{q.type === "rating" ? "تقييم 0-10" : "نص حر"}</span>
+                            {q.isRequired && <span className="rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary">إلزامي</span>}
                           </div>
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    ))}
                   </div>
                 )}
-                {satisfactionTab === "results" && (
-                  <div className="space-y-4 px-5 py-4">
-                    {coursesWithResponses.length === 0 ? (
-                      <p className="py-4 text-center text-sm text-muted-foreground">لا توجد استجابات بعد.</p>
-                    ) : (
-                      <>
-                        <select
-                          value={selectedCourse?.id ?? ""}
-                          onChange={(e) => setSatisfactionResultsCourseId(e.target.value)}
-                          className="w-full rounded-xl border border-border/60 bg-white px-3 py-2 text-sm text-right"
-                        >
-                          {coursesWithResponses.map((c) => (
-                            <option key={c.id} value={c.id}>{c.title}</option>
-                          ))}
-                        </select>
-                        {selectedCourse && data.satisfactionQuestions.map((q) => {
-                          const courseResponses = data.satisfactionResponses.filter((r) => r.courseId === selectedCourse.id && r.questionId === q.id);
-                          if (courseResponses.length === 0) return null;
-                          if (q.type === "rating") {
-                            const ratingValues = courseResponses.map((r) => r.ratingValue).filter((v): v is number => v != null);
-                            const avg = ratingValues.length > 0 ? (ratingValues.reduce((a, b) => a + b, 0) / ratingValues.length).toFixed(1) : "-";
-                            return (
-                              <div key={q.id} className="rounded-xl border border-border/60 p-4">
-                                <div className="mb-2 text-sm font-bold text-foreground">{q.prompt}</div>
-                                <div className="flex items-center gap-3">
-                                  <span className="text-2xl font-extrabold text-primary">{avg}</span>
-                                  <span className="text-xs text-muted-foreground">/ 10 · {ratingValues.length} مشاركة</span>
-                                </div>
-                              </div>
-                            );
-                          }
-                          return (
-                            <div key={q.id} className="rounded-xl border border-border/60 p-4">
-                              <div className="mb-2 text-sm font-bold text-foreground">{q.prompt}</div>
-                              <div className="space-y-2">
-                                {courseResponses.map((r) => (
-                                  <div key={r.id} className="rounded-lg bg-muted/20 px-3 py-2 text-sm text-foreground">
-                                    <span className="ml-2 text-xs font-medium text-muted-foreground">{r.studentName}:</span>
-                                    {r.textValue}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </>
-                    )}
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-[0.95rem] font-bold text-foreground">مؤشرات الاستبيان</h3>
+                {!selectedCourse ? (
+                  <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-white/70 p-6 text-center text-sm text-muted-foreground">
+                    اختر دورة لعرض المؤشرات.
+                  </div>
+                ) : ratingIndicators.length === 0 ? (
+                  <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-white/70 p-6 text-center text-sm text-muted-foreground">
+                    لا توجد أسئلة تقييم في هذه الدورة بعد.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+                    {ratingIndicators.map(({ question, average, count }) => (
+                      <div key={question.id} className="rounded-[1.75rem] border border-white/70 bg-white/80 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.05)] backdrop-blur-sm">
+                        <div className="mb-4 text-right">
+                          <div className="text-sm font-extrabold leading-7 text-[#08384a] line-clamp-2">{question.prompt}</div>
+                          <div className="text-xs text-muted-foreground">{count} إجابة</div>
+                        </div>
+                        <div className="flex justify-center">
+                          <ProgramIndicatorRing
+                            label="متوسط التقييم"
+                            progressValue={average == null ? 0 : (average / 10) * 100}
+                            displayValue={average ?? 0}
+                            size="small"
+                            formatDisplay={(value) => formatRatingAverage(value)}
+                          />
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
             </div>
           );
         })()}
+
+        <Dialog open={satisfactionAddDialogOpen} onOpenChange={(open) => {
+          setSatisfactionAddDialogOpen(open);
+          if (!open) {
+            setNewSurveyPrompt("");
+            setNewSurveyType("rating");
+            setNewSurveyRequired(true);
+          }
+        }}>
+          <DialogContent className="max-w-xl rounded-[1.75rem] text-right" dir="rtl">
+            <DialogHeader>
+              <DialogTitle className="text-right text-xl">إضافة سؤال جديد</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="text-sm text-muted-foreground">
+                {satisfactionCourseId ? `الدورة: ${courseItems.find((course) => course.id === satisfactionCourseId)?.title ?? ""}` : "اختر دورة أولاً."}
+              </div>
+              <Input
+                value={newSurveyPrompt}
+                onChange={(e) => setNewSurveyPrompt(e.target.value)}
+                placeholder="نص السؤال"
+                className="text-right"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newSurveyPrompt.trim() && satisfactionCourseId) {
+                    void store.addSatisfactionQuestion({ courseId: satisfactionCourseId, prompt: newSurveyPrompt.trim(), type: newSurveyType, isRequired: newSurveyRequired });
+                    setSatisfactionAddDialogOpen(false);
+                    setNewSurveyPrompt("");
+                    setNewSurveyType("rating");
+                    setNewSurveyRequired(true);
+                  }
+                }}
+              />
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                <div className="sm:w-56">
+                  <Select value={newSurveyType} onValueChange={(v) => setNewSurveyType(v as "rating" | "text")}>
+                    <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="rating" className="justify-end pr-3 text-right">تقييم (0-10)</SelectItem>
+                      <SelectItem value="text" className="justify-end pr-3 text-right">نص حر</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <label className="flex cursor-pointer items-center gap-2.5 text-sm font-medium text-foreground select-none">
+                  <Checkbox
+                    checked={newSurveyRequired}
+                    onCheckedChange={(v) => setNewSurveyRequired(Boolean(v))}
+                    id="survey-required-dialog"
+                  />
+                  <span>إلزامي</span>
+                </label>
+              </div>
+              <div className="flex justify-end gap-3">
+                <Button variant="outline" onClick={() => setSatisfactionAddDialogOpen(false)}>إلغاء</Button>
+                <Button
+                  disabled={!newSurveyPrompt.trim() || !satisfactionCourseId}
+                  onClick={async () => {
+                    if (!newSurveyPrompt.trim() || !satisfactionCourseId) return;
+                    await store.addSatisfactionQuestion({ courseId: satisfactionCourseId, prompt: newSurveyPrompt.trim(), type: newSurveyType, isRequired: newSurveyRequired });
+                    setSatisfactionAddDialogOpen(false);
+                    setNewSurveyPrompt("");
+                    setNewSurveyType("rating");
+                    setNewSurveyRequired(true);
+                  }}
+                >
+                  إضافة
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Preview text dialog */}
+        <Dialog open={satisfactionPreviewText != null} onOpenChange={(open) => { if (!open) setSatisfactionPreviewText(null); }}>
+          <DialogContent className="max-w-lg rounded-[1.75rem] text-right" dir="rtl">
+            <DialogHeader>
+              <DialogTitle className="text-right text-lg">{satisfactionPreviewText?.split("\n\n")[0]}</DialogTitle>
+            </DialogHeader>
+            <div className="whitespace-pre-wrap rounded-[1.25rem] border border-border/60 bg-muted/20 p-4 text-sm text-foreground leading-relaxed">
+              {satisfactionPreviewText?.split("\n\n").slice(1).join("\n\n")}
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {dashboardTab === "finalexam" && <AdminFinalExamTab canEdit={canCreateCourses} managedBranchId={managedBranchId} />}
 
@@ -4915,7 +4892,7 @@ const Dashboard = () => {
               <CardContent className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-bold text-foreground">الدورة / التكليف</label>
+                    <label className="text-sm font-bold text-foreground">الدورة / المهام</label>
                     <Select value={resultsCourse?.id ?? ""} onValueChange={(v) => {
                       const isTask = getTasks(data).some((t) => t.id === v);
                       setResultsCourseId(v);
@@ -5023,26 +5000,45 @@ const Dashboard = () => {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {latestResultRows.length === 0 && <div className="rounded-3xl border border-dashed border-primary/20 p-4 text-sm text-muted-foreground">{resultsBranchId === "all" ? "لا يوجد طلاب في جميع الفروع." : "لا يوجد طلاب في هذا الفرع."}</div>}
-                  {latestResultRows.map((row) => (
+                  {latestResultRows.map((row) => {
+                    const isTaskResult = resultsCourse.entityType === "task";
+                    const isCompletedTask = isTaskResult && row.score > 0;
+
+                    return (
                     <div key={row.studentId} className="flex flex-col gap-3 rounded-3xl border border-primary/10 bg-white p-4 md:flex-row md:items-center md:justify-between">
-                      <button type="button" className="text-right" disabled={!row.submissionId} onClick={() => row.submissionId && setDetailsSubmissionId(row.submissionId)}>
+                      <button type="button" className="text-right" disabled={!row.hasViewableAnswers} onClick={() => row.hasViewableAnswers && row.submissionId && setDetailsSubmissionId(row.submissionId)}>
                         <div className="font-bold text-foreground">{row.studentName}</div>
                         <div className="text-xs text-muted-foreground">{row.loginId}</div>
                       </button>
                       <div className="flex items-center gap-3">
-                        <Badge variant="outline" className="border-primary/20 text-primary">
-                          {row.score} / {row.total}
-                        </Badge>
-                        {row.submissionId ? (
+                        {isTaskResult ? (
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "gap-1.5 rounded-full px-3 py-1",
+                              isCompletedTask
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                : "border-border/60 bg-muted/30 text-muted-foreground",
+                            )}
+                          >
+                            {isCompletedTask ? <Check className="size-3.5" /> : <Minus className="size-3.5" />}
+                            {isCompletedTask ? "منفذ" : "غير منفذ"}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="border-primary/20 text-primary">
+                            {row.score} / {row.total}
+                          </Badge>
+                        )}
+                        {row.hasViewableAnswers && row.submissionId ? (
                           <Button variant="outline" size="icon" className="h-9 w-9 rounded-xl" onClick={() => setDetailsSubmissionId(row.submissionId)} aria-label={`عرض إجابات ${row.studentName}`}>
                             <Eye className="size-4" />
                           </Button>
                         ) : (
-                          <span className="text-xs text-muted-foreground">لم يرسل</span>
+                          <span className="text-xs text-muted-foreground">{isTaskResult ? "لا توجد إجابة" : "لم يرسل"}</span>
                         )}
                       </div>
                     </div>
-                  ))}
+                  )})}
                 </CardContent>
               </Card>
             )}
@@ -5108,6 +5104,155 @@ const Dashboard = () => {
                     })}
                   </CardContent>
                 </Card>
+              );
+            })()}
+
+            {/* ─── استبيان الرضا ────────────────────────────────────────────── */}
+            {(() => {
+              const coursesWithResp = data.courses.filter((c) =>
+                data.satisfactionResponses.some((r) => r.courseId === c.id),
+              );
+              if (data.satisfactionQuestions.length === 0 && coursesWithResp.length === 0) return null;
+              const selCourse = data.courses.find((c) => c.id === satisfactionResultsCourseId) ?? coursesWithResp[0];
+              const fmtAvg = (v: number | null) => v == null ? "—" : (v === Math.floor(v) ? String(Math.round(v)) : v.toFixed(1).replace(".", ","));
+              const circleColors = [
+                { colorStart: "#0f766e", colorEnd: "#0d9488", glow: "rgba(15,118,110,0.12)", shadow: "rgba(3,31,29,0.45)" },
+                { colorStart: "#1e40af", colorEnd: "#2563eb", glow: "rgba(37,99,235,0.12)", shadow: "rgba(23,37,84,0.45)" },
+                { colorStart: "#6d28d9", colorEnd: "#7c3aed", glow: "rgba(109,40,217,0.12)", shadow: "rgba(59,7,100,0.45)" },
+                { colorStart: "#166534", colorEnd: "#16a34a", glow: "rgba(21,128,61,0.12)", shadow: "rgba(5,46,22,0.45)" },
+                { colorStart: "#9a3412", colorEnd: "#c2410c", glow: "rgba(194,65,12,0.12)", shadow: "rgba(67,20,7,0.45)" },
+                { colorStart: "#0369a1", colorEnd: "#0284c7", glow: "rgba(3,105,161,0.12)", shadow: "rgba(8,47,73,0.45)" },
+              ];
+              return (
+                <div className="space-y-4" dir="rtl">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-[0.95rem] font-bold text-foreground">استبيان الرضا</h3>
+                    {coursesWithResp.length > 1 && (
+                      <div className="w-56">
+                        <Select value={selCourse?.id ?? ""} onValueChange={setSatisfactionResultsCourseId}>
+                          <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {coursesWithResp.map((c) => <SelectItem key={c.id} value={c.id} className="justify-end pr-3 text-right">{c.title}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                  {!selCourse || coursesWithResp.length === 0 ? (
+                    <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-white/70 p-6 text-center text-sm text-muted-foreground">لا توجد استجابات بعد.</div>
+                  ) : (() => {
+                    const allResp = data.satisfactionResponses.filter((r) => r.courseId === selCourse.id);
+                    const respondentIds = [...new Set(allResp.map((r) => r.loginCode))];
+                    const courseQuestions = data.satisfactionQuestions.filter((q) => q.courseId === selCourse.id);
+                    const ratingQs = courseQuestions.filter((q) => q.type === "rating");
+                    const allRatingVals = allResp.filter((r) => {
+                      const q = courseQuestions.find((q) => q.id === r.questionId);
+                      return q?.type === "rating" && r.ratingValue != null;
+                    }).map((r) => r.ratingValue as number);
+                    const overallAvg = allRatingVals.length > 0 ? allRatingVals.reduce((a, b) => a + b, 0) / allRatingVals.length : null;
+                    const qIndicators = ratingQs.map((q) => {
+                      const vals = allResp.filter((r) => r.questionId === q.id && r.ratingValue != null).map((r) => r.ratingValue as number);
+                      const avg = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+                      return { q, avg };
+                    });
+                    return (
+                      <>
+                        {(qIndicators.length > 0 || overallAvg != null) && (
+                          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
+                            {overallAvg != null && (() => {
+                              const pct = clampPercent((overallAvg / 10) * 100);
+                              const col = circleColors[0];
+                              return (
+                                <div className="rounded-[1.9rem] border border-border/60 bg-white p-5 text-center shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
+                                  <div className="relative mx-auto mb-4 flex h-44 w-44 items-center justify-center rounded-full p-[16px] transition-all duration-700"
+                                    style={{ background: pct === 0 ? "conic-gradient(from 215deg, #e5e7eb 0%, #e5e7eb 100%)" : `conic-gradient(from 215deg, ${col.colorStart} 0%, ${col.colorEnd} ${pct}%, #e5e7eb ${pct}% 100%)`, boxShadow: pct === 0 ? "none" : `0 24px 50px -22px ${col.shadow}` }}>
+                                    <div className="pointer-events-none absolute inset-[13px] rounded-full blur-md" style={{ background: pct === 0 ? "transparent" : `radial-gradient(circle, ${col.glow} 0%, transparent 72%)` }} />
+                                    <div className="relative flex h-full w-full items-center justify-center rounded-full border border-white/10 text-center" style={{ background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)", boxShadow: "inset 0 2px 12px rgba(255,255,255,0.9), 0 10px 24px rgba(8,65,89,0.08)" }}>
+                                      <div className="text-[2rem] font-black leading-none tracking-[-0.03em]" style={{ color: pct === 0 ? "#9ca3af" : col.colorEnd }}>{fmtAvg(overallAvg)}</div>
+                                    </div>
+                                  </div>
+                                  <div className="mx-auto max-w-[10rem] text-sm font-extrabold leading-7 text-foreground">الإجمالي من 10</div>
+                                </div>
+                              );
+                            })()}
+                            {qIndicators.map(({ q, avg }, i) => {
+                              const pct = avg != null ? clampPercent((avg / 10) * 100) : 0;
+                              const col = circleColors[(i + 1) % circleColors.length];
+                              return (
+                                <div key={q.id} className="rounded-[1.9rem] border border-border/60 bg-white p-5 text-center shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
+                                  <div className="relative mx-auto mb-4 flex h-44 w-44 items-center justify-center rounded-full p-[16px] transition-all duration-700"
+                                    style={{ background: pct === 0 ? "conic-gradient(from 215deg, #e5e7eb 0%, #e5e7eb 100%)" : `conic-gradient(from 215deg, ${col.colorStart} 0%, ${col.colorEnd} ${pct}%, #e5e7eb ${pct}% 100%)`, boxShadow: pct === 0 ? "none" : `0 24px 50px -22px ${col.shadow}` }}>
+                                    <div className="pointer-events-none absolute inset-[13px] rounded-full blur-md" style={{ background: pct === 0 ? "transparent" : `radial-gradient(circle, ${col.glow} 0%, transparent 72%)` }} />
+                                    <div className="relative flex h-full w-full items-center justify-center rounded-full border border-white/10 text-center" style={{ background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)", boxShadow: "inset 0 2px 12px rgba(255,255,255,0.9), 0 10px 24px rgba(8,65,89,0.08)" }}>
+                                      <div className="text-[2rem] font-black leading-none tracking-[-0.03em]" style={{ color: pct === 0 ? "#9ca3af" : col.colorEnd }}>{fmtAvg(avg)}</div>
+                                    </div>
+                                  </div>
+                                  <div className="mx-auto max-w-[10rem] text-sm font-extrabold leading-7 text-foreground line-clamp-2">{q.prompt}</div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                        <Card className="border-primary/10 bg-white/90 overflow-hidden">
+                          <CardHeader className="pb-3">
+                            <CardTitle className="text-base">استجابات الطلاب</CardTitle>
+                          </CardHeader>
+                          <CardContent className="p-0">
+                            {respondentIds.length === 0 ? (
+                              <div className="p-6 text-center text-sm text-muted-foreground">لا توجد استجابات.</div>
+                            ) : (
+                              <div className="divide-y divide-border/40">
+                                {respondentIds.map((loginCode) => {
+                                  const studentResp = allResp.filter((r) => r.loginCode === loginCode);
+                                  const studentName = studentResp[0]?.studentName ?? loginCode;
+                                  const ratingResps = studentResp.filter((r) => {
+                                    const q = courseQuestions.find((q) => q.id === r.questionId);
+                                    return q?.type === "rating" && r.ratingValue != null;
+                                  });
+                                  const textResps = studentResp.filter((r) => {
+                                    const q = courseQuestions.find((q) => q.id === r.questionId);
+                                    return q?.type === "text" && r.textValue;
+                                  });
+                                  return (
+                                    <div key={loginCode} className="flex items-center justify-between gap-4 px-6 py-4">
+                                      <div className="flex items-center gap-2 flex-wrap justify-end">
+                                        {textResps.map((r) => {
+                                          const q = courseQuestions.find((q) => q.id === r.questionId);
+                                          return (
+                                            <button key={r.id} type="button" title={q?.prompt}
+                                              onClick={() => setSatisfactionPreviewText(`${q?.prompt ?? ""}\n\n${r.textValue ?? ""}`)}
+                                              className="flex items-center gap-1 rounded-full border border-border/60 bg-muted/30 px-3 py-1 text-xs text-muted-foreground hover:border-primary/40 hover:text-primary transition-colors">
+                                              <Eye className="size-3" />
+                                              <span className="max-w-[8rem] truncate">{q?.prompt}</span>
+                                            </button>
+                                          );
+                                        })}
+                                        {ratingResps.map((r) => {
+                                          const q = courseQuestions.find((q) => q.id === r.questionId);
+                                          return (
+                                            <span key={r.id} title={q?.prompt}
+                                              className="flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-bold text-primary">
+                                              <span className="max-w-[6rem] truncate font-normal text-muted-foreground">{q?.prompt}</span>
+                                              <span>{r.ratingValue}</span>
+                                            </span>
+                                          );
+                                        })}
+                                      </div>
+                                      <div className="shrink-0 text-right">
+                                        <div className="text-sm font-bold text-foreground">{studentName}</div>
+                                        <div className="text-xs text-muted-foreground">{loginCode}</div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      </>
+                    );
+                  })()}
+                </div>
               );
             })()}
           </div>
@@ -5321,7 +5466,7 @@ const Dashboard = () => {
             rows.map((r) => ({
               studentName: r.studentName,
               loginId: r.loginId,
-              answers: [{ questionId: "__score_override__", value: String(r.score) }],
+              answers: aType === "tasks" ? [] : [{ questionId: "__score_override__", value: String(r.score) }],
               manualScore: r.score,
             })),
           );
@@ -5656,15 +5801,17 @@ const Dashboard = () => {
           <div className="space-y-4 p-6">
             {detailsSubmission && (() => {
               const questions = getAssessmentQuestionsForCourse(detailsSubmission.courseId, detailsSubmission.assessmentType);
-              const answers = new Map(detailsSubmission.answers.map((answer) => [answer.questionId, answer]));
+              const realAnswers = detailsSubmission.answers.filter((answer) => answer.questionId !== "__score_override__");
+              const answers = new Map(realAnswers.map((answer) => [answer.questionId, answer]));
               const submissionCourse = data.courses.find((course) => course.id === detailsSubmission.courseId) ?? null;
               const isDocumentTaskSubmission = detailsSubmission.assessmentType === "tasks" && submissionCourse?.taskMode === "document";
+              const documentTaskAnswer = realAnswers[0];
 
               return (
                 <>
-                  {isDocumentTaskSubmission && detailsSubmission.answers[0] ? (
+                  {isDocumentTaskSubmission && documentTaskAnswer ? (
                     <div className="rounded-3xl border border-primary/10 bg-white p-5">
-                      <DocumentEditor value={detailsSubmission.answers[0].value || "<p>لا يوجد محتوى</p>"} editable={false} />
+                      <DocumentEditor value={documentTaskAnswer.value || "<p>لا يوجد محتوى</p>"} editable={false} />
                     </div>
                   ) : (
                     questions.map((question, index) => {
@@ -5895,6 +6042,13 @@ const Dashboard = () => {
                 <div className="break-all text-sm text-muted-foreground">{getTaskLink()}</div>
               </div>
               <Button variant="outline" size="sm" onClick={() => void navigator.clipboard.writeText(getTaskLink())}><Copy className="size-4" />نسخ الرابط</Button>
+            </div>
+            <div className={cn(dashboardMutedPanelClass, "space-y-2 p-3.5")}>
+              <div className="space-y-1">
+                <div className="text-sm font-bold text-foreground">رابط الاختبار النهائي</div>
+                <div className="break-all text-sm text-muted-foreground">{typeof window !== "undefined" ? `${window.location.origin}/final-exam` : "/final-exam"}</div>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => void navigator.clipboard.writeText(typeof window !== "undefined" ? `${window.location.origin}/final-exam` : "/final-exam")}><Copy className="size-4" />نسخ الرابط</Button>
             </div>
           </div>
           <div className="flex justify-end border-t border-border/60 px-5 py-4">

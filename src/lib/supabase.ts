@@ -337,12 +337,16 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
     })(),
     // satisfaction questions + responses (responses depend on questions error check)
     (async () => {
-      const qr = await supabase.from("satisfaction_questions").select("id, prompt, type, is_required, sort_order, created_at").order("sort_order");
+      const qr = await supabase.from("satisfaction_questions").select("id, course_id, prompt, type, is_required, sort_order, created_at").order("sort_order");
+      if (qr.error && isMissingFieldError(qr.error, "course_id")) {
+        const legacyQr = await supabase.from("satisfaction_questions").select("id, prompt, type, is_required, sort_order, created_at").order("sort_order");
+        return { questions: legacyQr, responses: { data: [] as unknown[], error: null }, legacyNoCourseId: true };
+      }
       if (isMissingRelationError(qr.error ?? { message: "" }, "satisfaction_questions")) {
-        return { questions: qr, responses: { data: [] as unknown[], error: null } };
+        return { questions: qr, responses: { data: [] as unknown[], error: null }, legacyNoCourseId: false };
       }
       const rr = await supabase.from("satisfaction_responses").select("id, course_id, question_id, login_code, student_name, rating_value, text_value, submitted_at");
-      return { questions: qr, responses: rr };
+      return { questions: qr, responses: rr, legacyNoCourseId: false };
     })(),
     // final exam data
     loadFinalExamDataFromDatabase().catch(() => ({
@@ -510,10 +514,10 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
 
     const rawAnswers = answersBySubmissionId.get(submission.id as string) ?? [];
 
-    // If manual_score is stored in DB, ensure __score_override__ is in memory answers
-    // so getSubmissionGrade always finds it even if manualScore field is somehow lost.
+    // Keep task executions free of synthetic answers so the UI does not treat them
+    // like uploaded responses or show fake document content.
     let answers = rawAnswers;
-    if (typeof manualScore === "number" && Number.isFinite(manualScore) && manualScore >= 0) {
+    if (submission.assessment_type !== "tasks" && typeof manualScore === "number" && Number.isFinite(manualScore) && manualScore >= 0) {
       const withoutOverride = rawAnswers.filter((a) => a.questionId !== "__score_override__");
       answers = [...withoutOverride, { questionId: "__score_override__", value: String(manualScore) }];
     }
@@ -558,6 +562,7 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
     ? []
     : (satisfactionQuestionsResponse.data ?? []).map((q) => ({
         id: q.id as string,
+        courseId: ((q as Record<string, unknown>).course_id as string | null) ?? "",
         prompt: q.prompt as string,
         type: (q.type as string) === "text" ? "text" : "rating",
         isRequired: Boolean(q.is_required),
@@ -1777,10 +1782,10 @@ export const deleteNotificationFromDatabase = async (notificationId: string) => 
   }
 };
 
-export const addSatisfactionQuestionToDatabase = async (input: { prompt: string; type: "rating" | "text"; isRequired: boolean; sortOrder: number }) => {
+export const addSatisfactionQuestionToDatabase = async (input: { courseId: string; prompt: string; type: "rating" | "text"; isRequired: boolean; sortOrder: number }) => {
   const { data, error } = await supabase
     .from("satisfaction_questions")
-    .insert({ prompt: input.prompt.trim(), type: input.type, is_required: input.isRequired, sort_order: input.sortOrder })
+    .insert({ course_id: input.courseId, prompt: input.prompt.trim(), type: input.type, is_required: input.isRequired, sort_order: input.sortOrder })
     .select("id, created_at")
     .single();
 
@@ -1831,20 +1836,26 @@ export const submitSatisfactionResponsesToDatabase = async (responses: Array<{ c
 export const loadFinalExamDataFromDatabase = async (): Promise<{
   questions: FinalExamQuestion[];
   submissions: FinalExamSubmission[];
-  settings: { male: boolean; female: boolean };
+  settings: { male: { isEnabled: boolean; closesAt: string | null }; female: { isEnabled: boolean; closesAt: string | null } };
 }> => {
   const [settingsRes, questionsRes, submissionsRes, answersRes] = await Promise.all([
-    supabase.from("final_exam_settings").select("branch_code, is_enabled"),
+    supabase.from("final_exam_settings").select("branch_code, is_enabled, closes_at"),
     supabase.from("final_exam_questions").select("id, branch_code, question_type, prompt, options, allow_file, points, correct_answer, attachment_name, attachment_type, attachment_data_url, sort_order, created_at").order("sort_order"),
     supabase.from("final_exam_submissions").select("id, branch_code, student_name, login_code, manual_score, submitted_at"),
     supabase.from("final_exam_submission_answers").select("id, submission_id, question_id, answer_text, file_name, file_type, file_data_url"),
   ]);
 
-  const settings: { male: boolean; female: boolean } = { male: false, female: false };
+  const settings = {
+    male: { isEnabled: false, closesAt: null as string | null },
+    female: { isEnabled: false, closesAt: null as string | null },
+  };
   for (const row of settingsRes.data ?? []) {
     const code = row.branch_code as string;
     if (code === "male" || code === "female") {
-      settings[code] = Boolean(row.is_enabled);
+      settings[code] = {
+        isEnabled: Boolean(row.is_enabled),
+        closesAt: (row.closes_at as string | null) ?? null,
+      };
     }
   }
 
@@ -1916,10 +1927,10 @@ export const deleteFinalExamQuestionFromDatabase = async (id: string) => {
   if (error) throw error;
 };
 
-export const toggleFinalExamEnabledInDatabase = async (branchCode: BranchId, isEnabled: boolean) => {
+export const toggleFinalExamEnabledInDatabase = async (branchCode: BranchId, isEnabled: boolean, closesAt: string | null) => {
   const { error } = await supabase
     .from("final_exam_settings")
-    .upsert({ branch_code: branchCode, is_enabled: isEnabled }, { onConflict: "branch_code" });
+    .upsert({ branch_code: branchCode, is_enabled: isEnabled, closes_at: closesAt }, { onConflict: "branch_code" });
   if (error) throw error;
 };
 

@@ -113,12 +113,15 @@ alter table public.students add column if not exists is_certified boolean not nu
 
 create table if not exists public.satisfaction_questions (
   id uuid primary key default gen_random_uuid(),
+  course_id uuid references public.courses(id) on delete cascade,
   prompt text not null,
   type text not null default 'rating' check (type in ('rating', 'text')),
   is_required boolean not null default true,
   sort_order integer not null default 0,
   created_at timestamptz not null default now()
 );
+
+alter table public.satisfaction_questions add column if not exists course_id uuid references public.courses(id) on delete cascade;
 
 alter table if exists public.satisfaction_questions disable row level security;
 
@@ -139,9 +142,11 @@ alter table if exists public.satisfaction_responses disable row level security;
 -- Final exam (standalone, per-branch)
 create table if not exists public.final_exam_settings (
   branch_code text not null primary key check (branch_code in ('male', 'female')),
-  is_enabled boolean not null default false
+  is_enabled boolean not null default false,
+  closes_at timestamptz
 );
 alter table if exists public.final_exam_settings disable row level security;
+alter table public.final_exam_settings add column if not exists closes_at timestamptz;
 insert into public.final_exam_settings (branch_code, is_enabled)
 values ('male', false), ('female', false)
 on conflict (branch_code) do nothing;

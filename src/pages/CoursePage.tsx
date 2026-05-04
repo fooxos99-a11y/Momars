@@ -83,17 +83,21 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
   }, [activeCourse, assessmentType, data.submissions, student]);
 
   const canInteractWithAssessment = Boolean(student) && isAssessmentEnabled && !existingSubmission;
+  const satisfactionQuestions = useMemo(
+    () => (activeCourse ? data.satisfactionQuestions.filter((q) => q.courseId === activeCourse.id).sort((a, b) => a.sortOrder - b.sortOrder) : []),
+    [activeCourse, data.satisfactionQuestions],
+  );
 
   const alreadySubmittedSatisfaction = useMemo(() => {
     if (!activeCourse || !student) return false;
-    return data.satisfactionQuestions.length > 0 && data.satisfactionQuestions.every((q) =>
+    return satisfactionQuestions.length > 0 && satisfactionQuestions.every((q) =>
       data.satisfactionResponses.some((r) => r.courseId === activeCourse.id && r.questionId === q.id && r.loginCode === student.loginId),
     );
-  }, [activeCourse, student, data.satisfactionQuestions, data.satisfactionResponses]);
+  }, [activeCourse, student, satisfactionQuestions, data.satisfactionResponses]);
 
   const handleSatisfactionSubmit = async () => {
     if (!activeCourse || !student) return;
-    const questions = data.satisfactionQuestions;
+    const questions = satisfactionQuestions;
     for (const q of questions) {
       if (q.isRequired) {
         if (q.type === "rating" && satisfactionAnswers[q.id]?.ratingValue == null) {
@@ -540,7 +544,7 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
             </CardContent>
             </Card>
 
-            {assessmentType === "post" && student && existingSubmission && data.satisfactionQuestions.length > 0 && !alreadySubmittedSatisfaction && (
+            {assessmentType === "post" && student && existingSubmission && satisfactionQuestions.length > 0 && !alreadySubmittedSatisfaction && (
               <Card className="relative mt-6 overflow-hidden rounded-[2rem] border border-white/80 bg-white shadow-[0_24px_70px_rgba(8,65,89,0.16)] backdrop-blur-xl">
                 <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-primary/10 via-primary/5 to-transparent" aria-hidden />
                 <CardContent className="relative space-y-5 px-4 pb-5 pt-5 sm:px-6 sm:pb-6 sm:pt-6">
@@ -548,7 +552,7 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
                     <div className="text-xl font-extrabold text-foreground">استبيان الرضا</div>
                     <div className="text-sm text-muted-foreground">آراؤك تساعدنا في تحسين البرنامج. الاستبيان لا يؤثر على درجاتك.</div>
                   </div>
-                  {data.satisfactionQuestions.map((question, index) => (
+                  {satisfactionQuestions.map((question, index) => (
                     <div key={question.id} className="rounded-[1.75rem] border border-primary/10 bg-[#f6fbfd] p-4 shadow-[0_10px_30px_rgba(8,65,89,0.06)] sm:p-5">
                       <div className="mb-3 text-base font-extrabold leading-8 text-foreground">{index + 1}. {question.prompt}{question.isRequired && <span className="mr-1 text-destructive">*</span>}</div>
                       {question.type === "rating" ? (
@@ -589,7 +593,7 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
               </Card>
             )}
 
-            {assessmentType === "post" && student && existingSubmission && data.satisfactionQuestions.length > 0 && alreadySubmittedSatisfaction && (
+            {assessmentType === "post" && student && existingSubmission && satisfactionQuestions.length > 0 && alreadySubmittedSatisfaction && (
               <div className="mt-6 rounded-[1.75rem] border border-emerald-200 bg-emerald-50/95 px-5 py-4 text-right text-sm font-bold text-emerald-700">
                 شكرًا! تم استلام استبيان الرضا.
               </div>
