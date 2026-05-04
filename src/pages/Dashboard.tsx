@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { AlertCircle, ArrowRightLeft, BarChart3, Bell, BookOpen, Copy, Database, Download, Eye, EyeOff, FilePen, FileText, FileUp, Info, LayoutPanelTop, Maximize2, Menu, Pencil, Plus, Power, Trash2, Users } from "lucide-react";
 import * as XLSX from "xlsx";
@@ -460,6 +463,21 @@ const CountdownLabel = ({ closesAt }: { closesAt: string }) => {
   return <span>يغلق بعد: {parts.join(" ")}</span>;
 };
 
+const SortableCourseCard = ({ id, children }: { id: string; children: React.ReactNode }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 50 : undefined, opacity: isDragging ? 0.85 : 1 }}
+      className={isDragging ? "cursor-grabbing" : "cursor-grab"}
+      {...attributes}
+      {...listeners}
+    >
+      {children}
+    </div>
+  );
+};
+
 const Dashboard = () => {
   const session = loadAccessSession();
   const navigate = useNavigate();
@@ -523,7 +541,12 @@ const Dashboard = () => {
   const [isImportingQuestions, setIsImportingQuestions] = useState({ pre: false, post: false, tasks: false });
   const [splitText, setSplitText] = useState({ pre: "", post: "", tasks: "" });
   const questionPdfImportInputRef = useRef<HTMLInputElement | null>(null);
-  const courseOrderRef = useRef<string[]>([]);
+  const courseOrderRef = useRef<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem("courseOrder") ?? "[]") as string[]; } catch { return []; }
+  } as unknown as string[]);
+  const [courseOrder, setCourseOrder] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem("courseOrder") ?? "[]") as string[]; } catch { return []; }
+  });
   const [resultsCourseId, setResultsCourseId] = useState("");
   const [resultsBranchId, setResultsBranchId] = useState<IndicatorsBranchFilter>("male");
   const [resultsType, setResultsType] = useState<"attendance" | AssessmentType>("attendance");
@@ -713,11 +736,34 @@ const Dashboard = () => {
   );
   const courseItems = useMemo(() => {
     const courses = getCourses(data);
-    const newIds = courses.map((c) => c.id).filter((id) => !courseOrderRef.current.includes(id));
-    courseOrderRef.current = [...courseOrderRef.current, ...newIds];
-    const order = courseOrderRef.current;
+    const newIds = courses.map((c) => c.id).filter((id) => !courseOrder.includes(id));
+    if (newIds.length > 0) {
+      const updated = [...courseOrder, ...newIds];
+      setCourseOrder(updated);
+      localStorage.setItem("courseOrder", JSON.stringify(updated));
+    }
+    const order = courseOrder.length > 0 ? courseOrder : courses.map((c) => c.id);
     return [...courses].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
-  }, [data]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);  // intentionally exclude courseOrder to avoid infinite loop
+
+  const handleCourseOrderDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setCourseOrder((prev) => {
+      const oldIdx = prev.indexOf(String(active.id));
+      const newIdx = prev.indexOf(String(over.id));
+      if (oldIdx === -1 || newIdx === -1) return prev;
+      const next = arrayMove(prev, oldIdx, newIdx);
+      localStorage.setItem("courseOrder", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+  );
 
   const selectedReciter = data.reciters.find((reciter) => reciter.id === selectedReciterId) ?? data.reciters[0] ?? null;
   const reciterStudents = selectedReciter ? getAssignedStudents(data, selectedReciter.id) : [];
@@ -3386,10 +3432,13 @@ const Dashboard = () => {
             </Card>
 
             <div className="space-y-4">
-              <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-                {courseItems.length === 0 && <Card className={cn(dashboardEmptyStateClass, "md:col-span-2 lg:col-span-3")}><CardContent className="p-6 text-sm text-muted-foreground">لا توجد دورات بعد.</CardContent></Card>}
-                {courseItems.map((course) => (
-                  <Card key={course.id} className={cn(dashboardCardClass, selectedCourse?.id === course.id && "ring-2 ring-primary/20")}>
+              <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleCourseOrderDragEnd}>
+                <SortableContext items={courseItems.map((c) => c.id)} strategy={rectSortingStrategy}>
+                  <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+                    {courseItems.length === 0 && <Card className={cn(dashboardEmptyStateClass, "md:col-span-2 lg:col-span-3")}><CardContent className="p-6 text-sm text-muted-foreground">لا توجد دورات بعد.</CardContent></Card>}
+                    {courseItems.map((course) => (
+                      <SortableCourseCard key={course.id} id={course.id}>
+                    <Card className={cn(dashboardCardClass, selectedCourse?.id === course.id && "ring-2 ring-primary/20")}>
                     <CardHeader>
                       <div className="flex items-start justify-between gap-3">
                         <div className="text-right">
@@ -3503,8 +3552,11 @@ const Dashboard = () => {
                       </div>
                     </CardContent>
                   </Card>
+                  </SortableCourseCard>
                 ))}
-              </div>
+                  </div>
+                </SortableContext>
+              </DndContext>
             </div>
 
             {selectedCourse && selectedCourseAssessment && (
