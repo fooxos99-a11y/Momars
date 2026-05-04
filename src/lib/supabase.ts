@@ -957,14 +957,16 @@ export const submitAssessmentToDatabase = async (
 
   if (submission.answers.length > 0) {
     const { error: answersError } = await supabase.from("course_submission_answers").insert(
-      submission.answers.map((answer) => ({
-        submission_id: insertedSubmission.id,
-        question_id: answer.questionId,
-        answer_text: answer.value,
-        file_name: answer.fileName ?? null,
-        file_type: answer.fileType ?? null,
-        file_data_url: answer.fileDataUrl ?? null,
-      })),
+      submission.answers
+        .filter((answer) => answer.questionId !== "__score_override__")
+        .map((answer) => ({
+          submission_id: insertedSubmission.id,
+          question_id: answer.questionId,
+          answer_text: answer.value,
+          file_name: answer.fileName ?? null,
+          file_type: answer.fileType ?? null,
+          file_data_url: answer.fileDataUrl ?? null,
+        })),
     );
 
     if (answersError) {
@@ -1108,35 +1110,17 @@ export const bulkUpsertSubmissionsToDatabase = async (
   const answersToInsert = normalizedSubmissions.flatMap((submission) => {
     const inserted = insertedByLogin.get(submission.loginId);
     if (!inserted) return [];
-    const baseAnswers = submission.answers.map((answer) => ({
-      submission_id: inserted.id,
-      question_id: answer.questionId,
-      answer_text: answer.value,
-      file_name: answer.fileName ?? null,
-      file_type: answer.fileType ?? null,
-      file_data_url: answer.fileDataUrl ?? null,
-    }));
-    // Always persist manual score as __score_override__ answer for maximum durability.
-    // This ensures the score survives even if manual_score column is unavailable or
-    // the field is lost during a future DB schema change.
-    if (
-      typeof submission.manualScore === "number" &&
-      Number.isFinite(submission.manualScore) &&
-      submission.manualScore >= 0
-    ) {
-      // Remove any existing override to avoid duplicates, then add fresh
-      const overrideIdx = baseAnswers.findIndex((a) => a.question_id === "__score_override__");
-      if (overrideIdx >= 0) baseAnswers.splice(overrideIdx, 1);
-      baseAnswers.push({
+    // Filter out __score_override__ — it's in-memory only; DB uses manual_score column
+    return submission.answers
+      .filter((answer) => answer.questionId !== "__score_override__")
+      .map((answer) => ({
         submission_id: inserted.id,
-        question_id: "__score_override__",
-        answer_text: String(submission.manualScore),
-        file_name: null,
-        file_type: null,
-        file_data_url: null,
-      });
-    }
-    return baseAnswers;
+        question_id: answer.questionId,
+        answer_text: answer.value,
+        file_name: answer.fileName ?? null,
+        file_type: answer.fileType ?? null,
+        file_data_url: answer.fileDataUrl ?? null,
+      }));
   });
 
   if (answersToInsert.length > 0) {
