@@ -3220,7 +3220,7 @@ const Dashboard = () => {
             {homeMetrics.courseBreakdown.length > 0 && (
               <div className="space-y-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <h3 className="text-[0.95rem] font-bold text-foreground">تفصيل حسب الدورة</h3>
+                  <h3 className="text-[0.95rem] font-bold text-foreground">مؤشرات الدورات</h3>
                   <div className="w-full sm:w-[280px]">
                     <Select value={homeCourseFilter} onValueChange={setHomeCourseFilter}>
                       <SelectTrigger className="h-11 flex-row-reverse rounded-full border-border/60 bg-white px-4 text-right [&>span]:text-right">
@@ -3248,9 +3248,9 @@ const Dashboard = () => {
                     const isRiseNegative = courseRise < 0;
 
                     return (
-                      <div key={course.id} className="rounded-[1.75rem] border border-white/70 bg-white/75 px-5 py-6 shadow-[0_18px_45px_rgba(15,23,42,0.05)] backdrop-blur-sm">
-                        <div className="mb-5 text-right text-base font-extrabold text-[#08384a]">{course.title}</div>
-                        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 sm:gap-6 lg:gap-10">
+                      <div key={course.id} className="space-y-5">
+                        <div className="text-right text-base font-extrabold text-[#08384a]">{course.title}</div>
+                        <div className="grid grid-cols-2 gap-6 lg:gap-10">
                           <ProgramIndicatorRing
                             label="القبلي"
                             progressValue={course.preAvg}
@@ -3258,7 +3258,7 @@ const Dashboard = () => {
                             suffix="%"
                           />
                           <div className="flex flex-col items-center gap-3 text-center">
-                            <div className="flex items-center justify-center gap-3 sm:gap-4">
+                            <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-center sm:justify-center sm:gap-4">
                               <ProgramIndicatorRing
                                 label="البعدي"
                                 progressValue={course.postAvg}
