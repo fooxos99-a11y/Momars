@@ -2925,9 +2925,15 @@ const Dashboard = () => {
       });
     });
 
-    const attendedSet = new Set(
-      data.attendance.filter((r) => courseIds.includes(r.courseId) && branchLoginIds.has(r.loginId)).map((r) => r.loginId),
+    const attendedCourseStudentPairs = new Set(
+      data.attendance
+        .filter((r) => courseIds.includes(r.courseId) && branchLoginIds.has(r.loginId))
+        .map((r) => `${r.courseId}:${r.loginId}`),
     );
+    const totalAttendanceSlots = totalStudents * courseIds.length;
+    const attendanceRate = totalAttendanceSlots > 0
+      ? clampPercent((attendedCourseStudentPairs.size / totalAttendanceSlots) * 100)
+      : 0;
 
     const courseBreakdown = courseItems.map((course) => {
       const preSubs = [...getLatestSubmissionByLoginId(course.id, "pre").values()].filter((s) => branchLoginIds.has(s.loginId));
@@ -2954,7 +2960,7 @@ const Dashboard = () => {
     const memorizationCount = students.reduce((sum, s) => sum + s.completedParts.length, 0);
     const completed30Count = students.filter((s) => s.isCertified).length;
 
-    return { totalStudents, pre, post, bothCount, rise, tasksCount: tasksTestedSet.size, attendanceCount: attendedSet.size, courseBreakdown, memorizationCount, completed30Count };
+    return { totalStudents, pre, post, bothCount, rise, tasksCount: tasksTestedSet.size, attendanceCount: attendedCourseStudentPairs.size, attendanceRate, courseBreakdown, memorizationCount, completed30Count };
   }, [homeBranchFilter, data.students, data.submissions, data.attendance, data.courses, courseItems]);
 
   const adminName = session.name;
@@ -3182,8 +3188,8 @@ const Dashboard = () => {
                 {
                   key: "attendance",
                   label: "الحضور",
-                  value: T > 0 ? clampPercent((homeMetrics.attendanceCount / T) * 100) : 0,
-                  displayValue: T > 0 ? clampPercent((homeMetrics.attendanceCount / T) * 100) : 0,
+                  value: homeMetrics.attendanceRate,
+                  displayValue: homeMetrics.attendanceRate,
                   suffix: "%",
                 },
                 {
