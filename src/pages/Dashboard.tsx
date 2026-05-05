@@ -5103,14 +5103,6 @@ const Dashboard = () => {
                   ? [selCourse]
                   : [];
               const fmtAvg = (v: number | null) => v == null ? "—" : (v === Math.floor(v) ? String(Math.round(v)) : v.toFixed(1).replace(".", ","));
-              const circleColors = [
-                { colorStart: "#0f766e", colorEnd: "#0d9488", glow: "rgba(15,118,110,0.12)", shadow: "rgba(3,31,29,0.45)" },
-                { colorStart: "#1e40af", colorEnd: "#2563eb", glow: "rgba(37,99,235,0.12)", shadow: "rgba(23,37,84,0.45)" },
-                { colorStart: "#6d28d9", colorEnd: "#7c3aed", glow: "rgba(109,40,217,0.12)", shadow: "rgba(59,7,100,0.45)" },
-                { colorStart: "#166534", colorEnd: "#16a34a", glow: "rgba(21,128,61,0.12)", shadow: "rgba(5,46,22,0.45)" },
-                { colorStart: "#9a3412", colorEnd: "#c2410c", glow: "rgba(194,65,12,0.12)", shadow: "rgba(67,20,7,0.45)" },
-                { colorStart: "#0369a1", colorEnd: "#0284c7", glow: "rgba(3,105,161,0.12)", shadow: "rgba(8,47,73,0.45)" },
-              ];
 
               const renderIndicatorCards = (courseId: string) => {
                 const allResp = satisfactionResponses.filter((r) => r.courseId === courseId);
@@ -5136,37 +5128,29 @@ const Dashboard = () => {
                 }
 
                 return (
-                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
-                    {overallAvg != null && (() => {
-                      const pct = clampPercent((overallAvg / 10) * 100);
-                      const col = circleColors[0];
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-8 lg:grid-cols-3 lg:gap-x-6 lg:gap-y-10 xl:grid-cols-6">
+                    {overallAvg != null && (
+                      <ProgramIndicatorRing
+                        key={`${courseId}-overall`}
+                        label="الإجمالي من 10"
+                        helperText={`${allRatingVals.length} إجابة`}
+                        progressValue={overallAvg * 10}
+                        displayValue={overallAvg}
+                        suffix=""
+                        formatDisplay={fmtAvg}
+                      />
+                    )}
+                    {qIndicators.map(({ q, avg, }, i) => {
                       return (
-                        <div className="rounded-[1.9rem] border border-border/60 bg-white p-5 text-center shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
-                          <div className="relative mx-auto mb-4 flex h-44 w-44 items-center justify-center rounded-full p-[16px] transition-all duration-700"
-                            style={{ background: pct === 0 ? "conic-gradient(from 215deg, #e5e7eb 0%, #e5e7eb 100%)" : `conic-gradient(from 215deg, ${col.colorStart} 0%, ${col.colorEnd} ${pct}%, #e5e7eb ${pct}% 100%)`, boxShadow: pct === 0 ? "none" : `0 24px 50px -22px ${col.shadow}` }}>
-                            <div className="pointer-events-none absolute inset-[13px] rounded-full blur-md" style={{ background: pct === 0 ? "transparent" : `radial-gradient(circle, ${col.glow} 0%, transparent 72%)` }} />
-                            <div className="relative flex h-full w-full items-center justify-center rounded-full border border-white/10 text-center" style={{ background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)", boxShadow: "inset 0 2px 12px rgba(255,255,255,0.9), 0 10px 24px rgba(8,65,89,0.08)" }}>
-                              <div className="text-[2rem] font-black leading-none tracking-[-0.03em]" style={{ color: pct === 0 ? "#9ca3af" : col.colorEnd }}>{fmtAvg(overallAvg)}</div>
-                            </div>
-                          </div>
-                          <div className="mx-auto max-w-[10rem] text-sm font-extrabold leading-7 text-foreground">الإجمالي من 10</div>
-                        </div>
-                      );
-                    })()}
-                    {qIndicators.map(({ q, avg }, i) => {
-                      const pct = avg != null ? clampPercent((avg / 10) * 100) : 0;
-                      const col = circleColors[(i + 1) % circleColors.length];
-                      return (
-                        <div key={q.id} className="rounded-[1.9rem] border border-border/60 bg-white p-5 text-center shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
-                          <div className="relative mx-auto mb-4 flex h-44 w-44 items-center justify-center rounded-full p-[16px] transition-all duration-700"
-                            style={{ background: pct === 0 ? "conic-gradient(from 215deg, #e5e7eb 0%, #e5e7eb 100%)" : `conic-gradient(from 215deg, ${col.colorStart} 0%, ${col.colorEnd} ${pct}%, #e5e7eb ${pct}% 100%)`, boxShadow: pct === 0 ? "none" : `0 24px 50px -22px ${col.shadow}` }}>
-                            <div className="pointer-events-none absolute inset-[13px] rounded-full blur-md" style={{ background: pct === 0 ? "transparent" : `radial-gradient(circle, ${col.glow} 0%, transparent 72%)` }} />
-                            <div className="relative flex h-full w-full items-center justify-center rounded-full border border-white/10 text-center" style={{ background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)", boxShadow: "inset 0 2px 12px rgba(255,255,255,0.9), 0 10px 24px rgba(8,65,89,0.08)" }}>
-                              <div className="text-[2rem] font-black leading-none tracking-[-0.03em]" style={{ color: pct === 0 ? "#9ca3af" : col.colorEnd }}>{fmtAvg(avg)}</div>
-                            </div>
-                          </div>
-                          <div className="mx-auto max-w-[10rem] text-sm font-extrabold leading-7 text-foreground line-clamp-2">{q.prompt}</div>
-                        </div>
+                        <ProgramIndicatorRing
+                          key={q.id}
+                          label={q.prompt}
+                          helperText={`${allResp.filter((r) => r.questionId === q.id && r.ratingValue != null).length} إجابة`}
+                          progressValue={avg == null ? 0 : avg * 10}
+                          displayValue={avg ?? 0}
+                          suffix=""
+                          formatDisplay={fmtAvg}
+                        />
                       );
                     })}
                   </div>
@@ -5213,9 +5197,9 @@ const Dashboard = () => {
                       : [];
                     return (
                       <>
-                        <div ref={satisfactionIndicatorsExportRef} className="space-y-6 rounded-[1.5rem] bg-white/40 p-1">
+                        <div ref={satisfactionIndicatorsExportRef} className="space-y-8">
                           {coursesToRender.map((course) => (
-                            <div key={course.id} className="space-y-4 rounded-[1.6rem] border border-border/60 bg-white/85 p-5 [break-inside:avoid-page]">
+                            <div key={course.id} className="space-y-4 [break-inside:avoid-page]">
                               <div className="text-right text-base font-extrabold text-foreground">{course.title}</div>
                               {renderIndicatorCards(course.id)}
                             </div>
