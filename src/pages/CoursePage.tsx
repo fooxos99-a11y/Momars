@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowRight, Plus } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -82,7 +81,6 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
       .sort((left, right) => new Date(right.submittedAt).getTime() - new Date(left.submittedAt).getTime())[0] ?? null;
   }, [activeCourse, assessmentType, data.submissions, student]);
 
-  const canInteractWithAssessment = Boolean(student) && isAssessmentEnabled && !existingSubmission;
   const satisfactionQuestions = useMemo(
     () => (activeCourse ? data.satisfactionQuestions.filter((q) => q.courseId === activeCourse.id).sort((a, b) => a.sortOrder - b.sortOrder) : []),
     [activeCourse, data.satisfactionQuestions],
@@ -95,25 +93,36 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
     );
   }, [activeCourse, student, satisfactionQuestions, data.satisfactionResponses]);
 
-  const handleSatisfactionSubmit = async () => {
-    if (!activeCourse || !student) return;
-    const questions = satisfactionQuestions;
-    for (const q of questions) {
+  const hasPendingPostSatisfaction = assessmentType === "post" && satisfactionQuestions.length > 0 && !alreadySubmittedSatisfaction;
+  const canInteractWithAssessment = Boolean(student) && isAssessmentEnabled && !existingSubmission;
+  const canSubmitPostFlow = Boolean(student) && isAssessmentEnabled && (!existingSubmission || hasPendingPostSatisfaction);
+
+  const validateSatisfactionAnswers = () => {
+    for (const q of satisfactionQuestions) {
       if (q.isRequired) {
         if (q.type === "rating" && satisfactionAnswers[q.id]?.ratingValue == null) {
           setSatisfactionError("أجب على جميع الأسئلة الإلزامية.");
-          return;
+          return false;
         }
         if (q.type === "text" && !satisfactionAnswers[q.id]?.textValue?.trim()) {
           setSatisfactionError("أجب على جميع الأسئلة الإلزامية.");
-          return;
+          return false;
         }
       }
     }
+
     setSatisfactionError("");
+    return true;
+  };
+
+  const submitSatisfactionResponses = async () => {
+    if (!activeCourse || !student || satisfactionQuestions.length === 0 || alreadySubmittedSatisfaction) {
+      return;
+    }
+
     try {
       await store.submitSatisfactionResponses(
-        questions.map((q) => ({
+        satisfactionQuestions.map((q) => ({
           courseId: activeCourse.id,
           questionId: q.id,
           loginCode: student.loginId,
@@ -156,7 +165,7 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
         redirectPath: `/student?login=${encodeURIComponent(foundStudent.loginId)}`,
         branchId: foundStudent.branchId,
       });
-    } else if (!resolvedLogin) {
+    } else {
       setLoginDialogOpen(true);
     }
   }, [assessmentType, data, isHydrated, searchParams]);
@@ -214,30 +223,42 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
       return;
     }
 
-    if (existingSubmission) {
+    if (existingSubmission && !hasPendingPostSatisfaction) {
       setError("تم إرسال النتيجة مسبقًا، ولا يمكن إعادة الاختبار مرة أخرى.");
       return;
     }
 
-    for (const question of questions) {
-      if (!answers[question.id]?.trim()) {
-        setError("أجب عن جميع الأسئلة أولًا.");
-        return;
+    if (!existingSubmission) {
+      for (const question of questions) {
+        if (!answers[question.id]?.trim()) {
+          setError("أجب عن جميع الأسئلة أولًا.");
+          return;
+        }
       }
     }
 
+    if (assessmentType === "post" && satisfactionQuestions.length > 0 && !alreadySubmittedSatisfaction && !validateSatisfactionAnswers()) {
+      return;
+    }
+
     try {
-      await store.submitAssessment(activeCourse.id, assessmentType, {
-        studentName: student.name,
-        loginId: student.loginId,
-        answers: questions.map((question) => ({
-          questionId: question.id,
-          value: answers[question.id] ?? "",
-          fileName: files[question.id]?.name,
-          fileType: files[question.id]?.type,
-          fileDataUrl: files[question.id]?.dataUrl,
-        })),
-      });
+      if (!existingSubmission) {
+        await store.submitAssessment(activeCourse.id, assessmentType, {
+          studentName: student.name,
+          loginId: student.loginId,
+          answers: questions.map((question) => ({
+            questionId: question.id,
+            value: answers[question.id] ?? "",
+            fileName: files[question.id]?.name,
+            fileType: files[question.id]?.type,
+            fileDataUrl: files[question.id]?.dataUrl,
+          })),
+        });
+      }
+
+      if (assessmentType === "post") {
+        await submitSatisfactionResponses();
+      }
 
       setError("");
       setMessage("");
@@ -466,7 +487,7 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
               )}
               {error && <p className="rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm font-medium text-destructive">{error}</p>}
               {isAssessmentEnabled && questions.length === 0 && <div className="rounded-3xl border border-dashed border-primary/20 p-5 text-sm text-muted-foreground">لا توجد أسئلة مضافة لهذا القسم بعد.</div>}
-              {student && existingSubmission && (
+              {student && existingSubmission && !hasPendingPostSatisfaction && (
                 <div className="rounded-[1.75rem] border border-sky-200 bg-sky-50/95 p-5 text-right shadow-[0_10px_24px_rgba(14,116,144,0.08)]">
                   <div className="text-base font-extrabold text-sky-800">تم الإرسال</div>
                   <div className="mt-4 flex justify-end">
@@ -478,6 +499,12 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
                       إغلاق
                     </Button>
                   </div>
+                </div>
+              )}
+              {student && existingSubmission && hasPendingPostSatisfaction && (
+                <div className="rounded-[1.75rem] border border-sky-200 bg-sky-50/95 p-5 text-right shadow-[0_10px_24px_rgba(14,116,144,0.08)]">
+                  <div className="text-base font-extrabold text-sky-800">تم إرسال الاختبار</div>
+                  <div className="mt-2 text-sm font-medium text-sky-700">أكمل الاستبيان ثم اضغط إرسال.</div>
                 </div>
               )}
               {canInteractWithAssessment && questions.length > 0 && <div className="text-base font-bold text-foreground sm:text-lg">أجب على الأسئلة التالية:</div>}
@@ -537,25 +564,9 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
                 </div>
               ))}
 
-              {canInteractWithAssessment && (
-                <div className="flex flex-wrap gap-3 pt-2">
-                  <Button className="w-full rounded-full px-8 py-6 text-base font-extrabold shadow-gold sm:mr-auto sm:w-auto" onClick={() => void handleSubmit()} disabled={!student || !isAssessmentEnabled || questions.length === 0}>إرسال</Button>
-                </div>
-              )}
-            </CardContent>
-            </Card>
-
-            {assessmentType === "post" && student && satisfactionQuestions.length > 0 && !alreadySubmittedSatisfaction && (
-              <Card className="relative mt-6 overflow-hidden rounded-[2rem] border border-white/80 bg-white shadow-[0_24px_70px_rgba(8,65,89,0.16)] backdrop-blur-xl">
-                <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-primary/10 via-primary/5 to-transparent" aria-hidden />
-                <CardContent className="relative space-y-5 px-4 pb-5 pt-5 sm:px-6 sm:pb-6 sm:pt-6">
-                  <div className="space-y-3 text-right">
-                    <div className="flex flex-wrap items-center justify-end gap-2">
-                      <Badge className="border border-primary/15 bg-primary/10 text-primary hover:bg-primary/10">قسم مستقل</Badge>
-                      <div className="text-xl font-extrabold text-foreground">استبيان الرضا بعد الاختبار</div>
-                    </div>
-                    <div className="text-sm text-muted-foreground">هذا الاستبيان مستقل عن الاختبار البعدي، ولا يدخل في الدرجة أو تقييم الاختبار.</div>
-                  </div>
+              {assessmentType === "post" && student && satisfactionQuestions.length > 0 && !alreadySubmittedSatisfaction && (
+                <>
+                  <div className="h-px bg-[linear-gradient(90deg,transparent,rgba(16,118,153,0.42),transparent)]" aria-hidden />
                   {satisfactionQuestions.map((question, index) => (
                     <div key={question.id} className="rounded-[1.75rem] border border-primary/10 bg-[#f6fbfd] p-4 shadow-[0_10px_30px_rgba(8,65,89,0.06)] sm:p-5">
                       <div className="mb-3 text-base font-extrabold leading-8 text-foreground">{index + 1}. {question.prompt}{question.isRequired && <span className="mr-1 text-destructive">*</span>}</div>
@@ -587,15 +598,18 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
                       )}
                     </div>
                   ))}
-                  {satisfactionError && <p className="rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm font-medium text-destructive">{satisfactionError}</p>}
-                  <div className="flex pt-2">
-                    <Button className="w-full rounded-full px-8 py-6 text-base font-extrabold shadow-gold sm:mr-auto sm:w-auto" onClick={() => void handleSatisfactionSubmit()}>
-                      إرسال الاستبيان
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+                </>
+              )}
+
+              {satisfactionError && <p className="rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm font-medium text-destructive">{satisfactionError}</p>}
+
+              {canSubmitPostFlow && (questions.length > 0 || hasPendingPostSatisfaction) && (
+                <div className="flex flex-wrap gap-3 pt-2">
+                  <Button className="w-full rounded-full px-8 py-6 text-base font-extrabold shadow-gold sm:mr-auto sm:w-auto" onClick={() => void handleSubmit()} disabled={!student || !isAssessmentEnabled || (questions.length === 0 && !hasPendingPostSatisfaction)}>إرسال</Button>
+                </div>
+              )}
+            </CardContent>
+            </Card>
 
             {assessmentType === "post" && student && satisfactionQuestions.length > 0 && alreadySubmittedSatisfaction && (
               <div className="mt-6 rounded-[1.75rem] border border-emerald-200 bg-emerald-50/95 px-5 py-4 text-right text-sm font-bold text-emerald-700">
