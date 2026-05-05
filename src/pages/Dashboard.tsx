@@ -664,6 +664,8 @@ const Dashboard = () => {
   const [coursesManageOpen, setCoursesManageOpen] = useState(false);
   const [satisfactionCourseId, setSatisfactionCourseId] = useState("");
   const [satisfactionAddDialogOpen, setSatisfactionAddDialogOpen] = useState(false);
+  const [satisfactionDeleteDialogOpen, setSatisfactionDeleteDialogOpen] = useState(false);
+  const [satisfactionDeleteQuestionId, setSatisfactionDeleteQuestionId] = useState("");
   const [satisfactionResultsCourseId, setSatisfactionResultsCourseId] = useState("");
   const [satisfactionPreviewText, setSatisfactionPreviewText] = useState<string | null>(null);
   const [newSurveyPrompt, setNewSurveyPrompt] = useState("");
@@ -983,11 +985,15 @@ const Dashboard = () => {
         .filter((question) => question.courseId === selectedSatisfactionCourse.id)
         .sort((left, right) => left.sortOrder - right.sortOrder)
     : [];
-  const handleDeleteSelectedSatisfactionQuestions = useCallback(async () => {
-    for (const question of selectedSatisfactionQuestions) {
-      await store.deleteSatisfactionQuestion(question.id);
+  const handleDeleteSelectedSatisfactionQuestion = useCallback(async () => {
+    if (!satisfactionDeleteQuestionId) {
+      return;
     }
-  }, [selectedSatisfactionQuestions, store]);
+
+    await store.deleteSatisfactionQuestion(satisfactionDeleteQuestionId);
+    setSatisfactionDeleteDialogOpen(false);
+    setSatisfactionDeleteQuestionId("");
+  }, [satisfactionDeleteQuestionId, store]);
   const activeCourse = getActiveCourse(data);
   const indicatorStudents = indicatorsBranchId === "all" ? data.students : getBranchStudents(data, indicatorsBranchId);
   const selectedIndicatorsCourse = indicatorsCourseId === "all"
@@ -3061,7 +3067,10 @@ const Dashboard = () => {
                   <Button
                     variant="outline"
                     className="rounded-full border-destructive/25 px-4 text-destructive hover:bg-destructive/10 hover:text-destructive sm:px-5"
-                    onClick={() => void handleDeleteSelectedSatisfactionQuestions()}
+                    onClick={() => {
+                      setSatisfactionDeleteQuestionId(selectedSatisfactionQuestions[0]?.id ?? "");
+                      setSatisfactionDeleteDialogOpen(true);
+                    }}
                   >
                     <Trash2 className="size-4" />
                     حذف
@@ -4425,6 +4434,45 @@ const Dashboard = () => {
             </div>
             </DialogContent>
           </Dialog>
+
+        <Dialog open={satisfactionDeleteDialogOpen} onOpenChange={(open) => {
+          setSatisfactionDeleteDialogOpen(open);
+          if (!open) {
+            setSatisfactionDeleteQuestionId("");
+          }
+        }}>
+          <DialogContent className="max-w-xl rounded-[1.75rem] text-right [&>button]:hidden" dir="rtl">
+            <DialogHeader>
+              <DialogTitle className="text-right text-xl">حذف سؤال من الاستبيان</DialogTitle>
+              <DialogDescription className="text-right text-sm text-muted-foreground">
+                اختر سؤالًا واحدًا من أسئلة الدورة الحالية ثم احذفه.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <div className="text-sm font-bold text-foreground">السؤال</div>
+                <Select value={satisfactionDeleteQuestionId} onValueChange={setSatisfactionDeleteQuestionId}>
+                  <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
+                    <SelectValue placeholder="اختر السؤال" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {selectedSatisfactionQuestions.map((question) => (
+                      <SelectItem key={question.id} value={question.id} className="justify-end pr-3 text-right">
+                        {question.prompt}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex justify-end gap-3">
+                <Button variant="outline" onClick={() => setSatisfactionDeleteDialogOpen(false)}>إلغاء</Button>
+                <Button variant="destructive" disabled={!satisfactionDeleteQuestionId} onClick={() => void handleDeleteSelectedSatisfactionQuestion()}>
+                  حذف السؤال
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Preview text dialog */}
         <Dialog open={satisfactionPreviewText != null} onOpenChange={(open) => { if (!open) setSatisfactionPreviewText(null); }}>
