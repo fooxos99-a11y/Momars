@@ -3028,7 +3028,7 @@ const Dashboard = () => {
                 <p className="text-xs font-medium text-muted-foreground">مرحبًا</p>
                 <p className="text-sm font-bold text-foreground">{adminName}</p>
               </div>
-              <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:gap-3 lg:w-auto lg:flex-nowrap">
+              <div className="flex w-full flex-wrap items-center justify-start gap-2 sm:gap-3 lg:w-auto lg:flex-nowrap lg:justify-end">
                 <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
                   <SheetTrigger asChild>
                     <Button variant="outline" size="icon" className="rounded-full lg:hidden" aria-label="فتح قائمة لوحة التحكم">
@@ -4065,7 +4065,7 @@ const Dashboard = () => {
                         </div>
                       )}
 
-                      <div className="flex justify-start">
+                      <div className="flex justify-end">
                         <Button onClick={() => void handleSave()} disabled={attendanceSaving}>
                           {attendanceSaving ? "جاري الحفظ..." : isTask ? "حفظ المهام" : "حفظ التحضير"}
                         </Button>
