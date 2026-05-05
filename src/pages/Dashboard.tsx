@@ -421,6 +421,7 @@ const dashboardMutedPanelClass = "rounded-[1.25rem] border border-border/60 bg-m
 const dashboardPlainPanelClass = "rounded-[1.25rem] border border-border/60 bg-white";
 const dashboardEmptyStateClass = "rounded-[1.25rem] border border-dashed border-border/70 bg-white/70";
 const FINAL_EXAM_RESULTS_ID = "__final_exam_results__";
+const SATISFACTION_ALL_RESULTS_ID = "__all_satisfaction_results__";
 
 const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
 const formatPercent = (value: number) => `${Math.round(clampPercent(value))}%`;
@@ -668,6 +669,7 @@ const Dashboard = () => {
   const [satisfactionDeleteQuestionId, setSatisfactionDeleteQuestionId] = useState("");
   const [satisfactionResultsCourseId, setSatisfactionResultsCourseId] = useState("");
   const [satisfactionPreviewText, setSatisfactionPreviewText] = useState<string | null>(null);
+  const satisfactionIndicatorsExportRef = useRef<HTMLDivElement | null>(null);
   const [newSurveyPrompt, setNewSurveyPrompt] = useState("");
   const [newSurveyType, setNewSurveyType] = useState<"rating" | "text">("rating");
   const [newSurveyRequired, setNewSurveyRequired] = useState(true);
@@ -1177,6 +1179,27 @@ const Dashboard = () => {
     const html2pdf = (window as any).html2pdf;
     if (html2pdf) {
       html2pdf().set(opt).from(element).save();
+    }
+  };
+
+  const handleExportSatisfactionIndicatorsPdf = async (fileLabel: string) => {
+    const element = satisfactionIndicatorsExportRef.current;
+    if (!element) return;
+
+    const fileName = `مؤشرات_الاستبيان_${fileLabel}`.replace(/[\\/:*?"<>|]+/g, "_").replace(/\s+/g, "_");
+    const opt = {
+      margin: 8,
+      filename: `${fileName}.pdf`,
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { orientation: "p", unit: "mm", format: "a4" },
+      pagebreak: { mode: ["css", "legacy"] },
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const html2pdf = (window as any).html2pdf;
+    if (html2pdf) {
+      await html2pdf().set(opt).from(element).save();
     }
   };
 
@@ -5062,11 +5085,23 @@ const Dashboard = () => {
             {(() => {
               const satisfactionResponses = data.satisfactionResponses ?? [];
               const satisfactionQuestions = data.satisfactionQuestions ?? [];
-              const coursesWithResp = data.courses.filter((c) =>
-                satisfactionResponses.some((r) => r.courseId === c.id),
-              );
-              if (satisfactionQuestions.length === 0 && coursesWithResp.length === 0) return null;
-              const selCourse = data.courses.find((c) => c.id === satisfactionResultsCourseId) ?? coursesWithResp[0];
+              const satisfactionResultCourses = [...data.courses]
+                .filter((course) =>
+                  satisfactionQuestions.some((q) => q.courseId === course.id) ||
+                  satisfactionResponses.some((r) => r.courseId === course.id),
+                )
+                .sort((left, right) => left.sortOrder - right.sortOrder);
+              if (satisfactionQuestions.length === 0 && satisfactionResultCourses.length === 0) return null;
+
+              const isAllSatisfactionCoursesSelected = satisfactionResultsCourseId === SATISFACTION_ALL_RESULTS_ID;
+              const selCourse = isAllSatisfactionCoursesSelected
+                ? null
+                : satisfactionResultCourses.find((c) => c.id === satisfactionResultsCourseId) ?? satisfactionResultCourses[0] ?? null;
+              const coursesToRender = isAllSatisfactionCoursesSelected
+                ? satisfactionResultCourses
+                : selCourse
+                  ? [selCourse]
+                  : [];
               const fmtAvg = (v: number | null) => v == null ? "—" : (v === Math.floor(v) ? String(Math.round(v)) : v.toFixed(1).replace(".", ","));
               const circleColors = [
                 { colorStart: "#0f766e", colorEnd: "#0d9488", glow: "rgba(15,118,110,0.12)", shadow: "rgba(3,31,29,0.45)" },
@@ -5076,76 +5111,117 @@ const Dashboard = () => {
                 { colorStart: "#9a3412", colorEnd: "#c2410c", glow: "rgba(194,65,12,0.12)", shadow: "rgba(67,20,7,0.45)" },
                 { colorStart: "#0369a1", colorEnd: "#0284c7", glow: "rgba(3,105,161,0.12)", shadow: "rgba(8,47,73,0.45)" },
               ];
+
+              const renderIndicatorCards = (courseId: string) => {
+                const allResp = satisfactionResponses.filter((r) => r.courseId === courseId);
+                const courseQuestions = satisfactionQuestions.filter((q) => q.courseId === courseId);
+                const ratingQs = courseQuestions.filter((q) => q.type === "rating");
+                const allRatingVals = allResp.filter((r) => {
+                  const q = courseQuestions.find((q) => q.id === r.questionId);
+                  return q?.type === "rating" && r.ratingValue != null;
+                }).map((r) => r.ratingValue as number);
+                const overallAvg = allRatingVals.length > 0 ? allRatingVals.reduce((a, b) => a + b, 0) / allRatingVals.length : null;
+                const qIndicators = ratingQs.map((q) => {
+                  const vals = allResp.filter((r) => r.questionId === q.id && r.ratingValue != null).map((r) => r.ratingValue as number);
+                  const avg = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+                  return { q, avg };
+                });
+
+                if (qIndicators.length === 0 && overallAvg == null) {
+                  return (
+                    <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-white/70 p-6 text-center text-sm text-muted-foreground">
+                      لا توجد مؤشرات تقييم متاحة لهذه الدورة بعد.
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
+                    {overallAvg != null && (() => {
+                      const pct = clampPercent((overallAvg / 10) * 100);
+                      const col = circleColors[0];
+                      return (
+                        <div className="rounded-[1.9rem] border border-border/60 bg-white p-5 text-center shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
+                          <div className="relative mx-auto mb-4 flex h-44 w-44 items-center justify-center rounded-full p-[16px] transition-all duration-700"
+                            style={{ background: pct === 0 ? "conic-gradient(from 215deg, #e5e7eb 0%, #e5e7eb 100%)" : `conic-gradient(from 215deg, ${col.colorStart} 0%, ${col.colorEnd} ${pct}%, #e5e7eb ${pct}% 100%)`, boxShadow: pct === 0 ? "none" : `0 24px 50px -22px ${col.shadow}` }}>
+                            <div className="pointer-events-none absolute inset-[13px] rounded-full blur-md" style={{ background: pct === 0 ? "transparent" : `radial-gradient(circle, ${col.glow} 0%, transparent 72%)` }} />
+                            <div className="relative flex h-full w-full items-center justify-center rounded-full border border-white/10 text-center" style={{ background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)", boxShadow: "inset 0 2px 12px rgba(255,255,255,0.9), 0 10px 24px rgba(8,65,89,0.08)" }}>
+                              <div className="text-[2rem] font-black leading-none tracking-[-0.03em]" style={{ color: pct === 0 ? "#9ca3af" : col.colorEnd }}>{fmtAvg(overallAvg)}</div>
+                            </div>
+                          </div>
+                          <div className="mx-auto max-w-[10rem] text-sm font-extrabold leading-7 text-foreground">الإجمالي من 10</div>
+                        </div>
+                      );
+                    })()}
+                    {qIndicators.map(({ q, avg }, i) => {
+                      const pct = avg != null ? clampPercent((avg / 10) * 100) : 0;
+                      const col = circleColors[(i + 1) % circleColors.length];
+                      return (
+                        <div key={q.id} className="rounded-[1.9rem] border border-border/60 bg-white p-5 text-center shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
+                          <div className="relative mx-auto mb-4 flex h-44 w-44 items-center justify-center rounded-full p-[16px] transition-all duration-700"
+                            style={{ background: pct === 0 ? "conic-gradient(from 215deg, #e5e7eb 0%, #e5e7eb 100%)" : `conic-gradient(from 215deg, ${col.colorStart} 0%, ${col.colorEnd} ${pct}%, #e5e7eb ${pct}% 100%)`, boxShadow: pct === 0 ? "none" : `0 24px 50px -22px ${col.shadow}` }}>
+                            <div className="pointer-events-none absolute inset-[13px] rounded-full blur-md" style={{ background: pct === 0 ? "transparent" : `radial-gradient(circle, ${col.glow} 0%, transparent 72%)` }} />
+                            <div className="relative flex h-full w-full items-center justify-center rounded-full border border-white/10 text-center" style={{ background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)", boxShadow: "inset 0 2px 12px rgba(255,255,255,0.9), 0 10px 24px rgba(8,65,89,0.08)" }}>
+                              <div className="text-[2rem] font-black leading-none tracking-[-0.03em]" style={{ color: pct === 0 ? "#9ca3af" : col.colorEnd }}>{fmtAvg(avg)}</div>
+                            </div>
+                          </div>
+                          <div className="mx-auto max-w-[10rem] text-sm font-extrabold leading-7 text-foreground line-clamp-2">{q.prompt}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              };
+
               return (
                 <div className="space-y-4" dir="rtl">
                   <div className="flex items-center justify-between gap-3">
                     <h3 className="text-[0.95rem] font-bold text-foreground">استبيان الرضا</h3>
-                    {coursesWithResp.length > 1 && (
-                      <div className="w-56">
-                        <Select value={selCourse?.id ?? ""} onValueChange={setSatisfactionResultsCourseId}>
+                    <div className="flex items-center gap-3">
+                      {satisfactionResultCourses.length > 0 && (
+                        <Button
+                          variant="outline"
+                          className="rounded-full px-4 sm:px-5"
+                          onClick={() => void handleExportSatisfactionIndicatorsPdf(isAllSatisfactionCoursesSelected ? "جميع_الدورات" : (selCourse?.title ?? "الدورة"))}
+                        >
+                          <Download className="size-4" />
+                          تصدير
+                        </Button>
+                      )}
+                      {satisfactionResultCourses.length > 0 && (
+                        <div className="w-56">
+                          <Select value={isAllSatisfactionCoursesSelected ? SATISFACTION_ALL_RESULTS_ID : (selCourse?.id ?? "")} onValueChange={setSatisfactionResultsCourseId}>
                           <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            {coursesWithResp.map((c) => <SelectItem key={c.id} value={c.id} className="justify-end pr-3 text-right">{c.title}</SelectItem>)}
+                            <SelectItem value={SATISFACTION_ALL_RESULTS_ID} className="justify-end pr-3 text-right">جميع الدورات</SelectItem>
+                            {satisfactionResultCourses.map((c) => <SelectItem key={c.id} value={c.id} className="justify-end pr-3 text-right">{c.title}</SelectItem>)}
                           </SelectContent>
                         </Select>
-                      </div>
-                    )}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  {!selCourse || coursesWithResp.length === 0 ? (
+                  {coursesToRender.length === 0 ? (
                     <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-white/70 p-6 text-center text-sm text-muted-foreground">لا توجد استجابات بعد.</div>
                   ) : (() => {
-                    const allResp = satisfactionResponses.filter((r) => r.courseId === selCourse.id);
-                    const respondentIds = [...new Set(allResp.map((r) => r.loginCode))];
-                    const courseQuestions = satisfactionQuestions.filter((q) => q.courseId === selCourse.id);
-                    const ratingQs = courseQuestions.filter((q) => q.type === "rating");
-                    const allRatingVals = allResp.filter((r) => {
-                      const q = courseQuestions.find((q) => q.id === r.questionId);
-                      return q?.type === "rating" && r.ratingValue != null;
-                    }).map((r) => r.ratingValue as number);
-                    const overallAvg = allRatingVals.length > 0 ? allRatingVals.reduce((a, b) => a + b, 0) / allRatingVals.length : null;
-                    const qIndicators = ratingQs.map((q) => {
-                      const vals = allResp.filter((r) => r.questionId === q.id && r.ratingValue != null).map((r) => r.ratingValue as number);
-                      const avg = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
-                      return { q, avg };
-                    });
+                    const selectedCourseResponses = selCourse
+                      ? satisfactionResponses.filter((r) => r.courseId === selCourse.id)
+                      : [];
+                    const respondentIds = [...new Set(selectedCourseResponses.map((r) => r.loginCode))];
+                    const courseQuestions = selCourse
+                      ? satisfactionQuestions.filter((q) => q.courseId === selCourse.id)
+                      : [];
                     return (
                       <>
-                        {(qIndicators.length > 0 || overallAvg != null) && (
-                          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
-                            {overallAvg != null && (() => {
-                              const pct = clampPercent((overallAvg / 10) * 100);
-                              const col = circleColors[0];
-                              return (
-                                <div className="rounded-[1.9rem] border border-border/60 bg-white p-5 text-center shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
-                                  <div className="relative mx-auto mb-4 flex h-44 w-44 items-center justify-center rounded-full p-[16px] transition-all duration-700"
-                                    style={{ background: pct === 0 ? "conic-gradient(from 215deg, #e5e7eb 0%, #e5e7eb 100%)" : `conic-gradient(from 215deg, ${col.colorStart} 0%, ${col.colorEnd} ${pct}%, #e5e7eb ${pct}% 100%)`, boxShadow: pct === 0 ? "none" : `0 24px 50px -22px ${col.shadow}` }}>
-                                    <div className="pointer-events-none absolute inset-[13px] rounded-full blur-md" style={{ background: pct === 0 ? "transparent" : `radial-gradient(circle, ${col.glow} 0%, transparent 72%)` }} />
-                                    <div className="relative flex h-full w-full items-center justify-center rounded-full border border-white/10 text-center" style={{ background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)", boxShadow: "inset 0 2px 12px rgba(255,255,255,0.9), 0 10px 24px rgba(8,65,89,0.08)" }}>
-                                      <div className="text-[2rem] font-black leading-none tracking-[-0.03em]" style={{ color: pct === 0 ? "#9ca3af" : col.colorEnd }}>{fmtAvg(overallAvg)}</div>
-                                    </div>
-                                  </div>
-                                  <div className="mx-auto max-w-[10rem] text-sm font-extrabold leading-7 text-foreground">الإجمالي من 10</div>
-                                </div>
-                              );
-                            })()}
-                            {qIndicators.map(({ q, avg }, i) => {
-                              const pct = avg != null ? clampPercent((avg / 10) * 100) : 0;
-                              const col = circleColors[(i + 1) % circleColors.length];
-                              return (
-                                <div key={q.id} className="rounded-[1.9rem] border border-border/60 bg-white p-5 text-center shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
-                                  <div className="relative mx-auto mb-4 flex h-44 w-44 items-center justify-center rounded-full p-[16px] transition-all duration-700"
-                                    style={{ background: pct === 0 ? "conic-gradient(from 215deg, #e5e7eb 0%, #e5e7eb 100%)" : `conic-gradient(from 215deg, ${col.colorStart} 0%, ${col.colorEnd} ${pct}%, #e5e7eb ${pct}% 100%)`, boxShadow: pct === 0 ? "none" : `0 24px 50px -22px ${col.shadow}` }}>
-                                    <div className="pointer-events-none absolute inset-[13px] rounded-full blur-md" style={{ background: pct === 0 ? "transparent" : `radial-gradient(circle, ${col.glow} 0%, transparent 72%)` }} />
-                                    <div className="relative flex h-full w-full items-center justify-center rounded-full border border-white/10 text-center" style={{ background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)", boxShadow: "inset 0 2px 12px rgba(255,255,255,0.9), 0 10px 24px rgba(8,65,89,0.08)" }}>
-                                      <div className="text-[2rem] font-black leading-none tracking-[-0.03em]" style={{ color: pct === 0 ? "#9ca3af" : col.colorEnd }}>{fmtAvg(avg)}</div>
-                                    </div>
-                                  </div>
-                                  <div className="mx-auto max-w-[10rem] text-sm font-extrabold leading-7 text-foreground line-clamp-2">{q.prompt}</div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
+                        <div ref={satisfactionIndicatorsExportRef} className="space-y-6 rounded-[1.5rem] bg-white/40 p-1">
+                          {coursesToRender.map((course) => (
+                            <div key={course.id} className="space-y-4 rounded-[1.6rem] border border-border/60 bg-white/85 p-5 [break-inside:avoid-page]">
+                              <div className="text-right text-base font-extrabold text-foreground">{course.title}</div>
+                              {renderIndicatorCards(course.id)}
+                            </div>
+                          ))}
+                        </div>
+                        {!isAllSatisfactionCoursesSelected && selCourse && (
                         <Card className="border-primary/10 bg-white/90 overflow-hidden">
                           <CardHeader className="pb-3">
                             <CardTitle className="text-base">استجابات الطلاب</CardTitle>
@@ -5156,7 +5232,7 @@ const Dashboard = () => {
                             ) : (
                               <div className="divide-y divide-border/40">
                                 {respondentIds.map((loginCode) => {
-                                  const studentResp = allResp.filter((r) => r.loginCode === loginCode);
+                                  const studentResp = selectedCourseResponses.filter((r) => r.loginCode === loginCode);
                                   const studentName = studentResp[0]?.studentName ?? loginCode;
                                   const ratingResps = studentResp.filter((r) => {
                                     const q = courseQuestions.find((q) => q.id === r.questionId);
@@ -5202,6 +5278,7 @@ const Dashboard = () => {
                             )}
                           </CardContent>
                         </Card>
+                        )}
                       </>
                     );
                   })()}
