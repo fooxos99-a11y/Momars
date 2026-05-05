@@ -85,7 +85,7 @@ const seedData: DashboardData = {
       courseId: "course-1",
       studentName: "طالب النتائج",
       loginId: "2001",
-      source: "post-test",
+      source: "manual",
       createdAt: new Date().toISOString(),
     },
   ],
@@ -116,7 +116,7 @@ describe("dashboard results attendance", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /النتائج/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /النتائج/i }));
 
     await waitFor(() => {
       expect(screen.getByText("الحاضرين: 1")).toBeInTheDocument();

@@ -116,13 +116,13 @@ describe("reciter transfer ui", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /الإقراء/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /الإقراء/i }));
 
     await waitFor(() => {
-      expect(screen.getAllByRole("button", { name: /^نقل$/i }).length).toBeGreaterThan(0);
+      expect(screen.getAllByRole("button", { name: /طالب منقول/i }).length).toBeGreaterThan(0);
     });
 
-    fireEvent.click(screen.getAllByRole("button", { name: /^نقل$/i })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: /طالب منقول/i })[0]);
 
     await waitFor(() => {
       expect(screen.getByText("نقل الطالب")).toBeInTheDocument();
@@ -130,6 +130,17 @@ describe("reciter transfer ui", () => {
   });
 
   it("shows a transfer button in the reciter page and opens the transfer dialog", async () => {
+    window.localStorage.setItem(
+      "mmars-access-session",
+      JSON.stringify({
+        role: "reciter",
+        redirectPath: "/reciter?login=r1",
+        loginCode: "r1",
+        name: "مقرئ أول",
+        branchId: "male",
+      }),
+    );
+
     render(
       <MemoryRouter initialEntries={["/reciter?login=r1"]}>
         <Routes>
@@ -139,10 +150,10 @@ describe("reciter transfer ui", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getAllByRole("button", { name: /^نقل$/i }).length).toBeGreaterThan(0);
+      expect(screen.getByRole("button", { name: /طالب منقول/i })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getAllByRole("button", { name: /^نقل$/i })[0]);
+    fireEvent.click(screen.getByRole("button", { name: /طالب منقول/i }));
 
     await waitFor(() => {
       expect(screen.getByText("نقل الطالب")).toBeInTheDocument();

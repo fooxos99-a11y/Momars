@@ -729,11 +729,14 @@ const AdminTasksTab = ({ canEdit = true, managedBranchId = null }: AdminTasksTab
     return (
       <Dialog open={isCreateQuestionDialogOpen} onOpenChange={handleCreateQuestionDialogChange}>
         <DialogContent className="flex h-[90vh] w-[min(95vw,780px)] flex-col rounded-[1.5rem] border-white/80 bg-white p-0 text-right shadow-[0_24px_70px_rgba(15,23,42,0.14)] [&>button]:hidden">
-          <div className="shrink-0 border-b border-border/60 px-5 py-4">
-            <span className="text-base font-bold text-foreground">إضافة أسئلة</span>
+          <div className="shrink-0 border-b border-border/60 px-4 py-3">
+            <div className="flex items-center justify-end gap-2 text-right">
+              <Plus className="size-4 text-primary" strokeWidth={2.5} />
+              <span className="text-base font-bold text-foreground">إضافة أسئلة</span>
+            </div>
           </div>
 
-          <div className="shrink-0 border-b border-border/60 px-5 py-3 flex gap-2 items-start">
+          <div className="shrink-0 border-b border-border/60 px-4 py-2.5 flex gap-2 items-start">
             <textarea
               className="flex-1 min-h-[64px] max-h-32 resize-y rounded-xl border border-border/70 bg-muted/20 px-3 py-2 text-sm text-right placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
               placeholder="الصق الأسئلة هنا... سيتم تقسيمها تلقائيًا"
@@ -760,7 +763,7 @@ const AdminTasksTab = ({ canEdit = true, managedBranchId = null }: AdminTasksTab
             </Button>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
             {questionForms.map((form, index) => renderQuestionFormCard(form, index))}
 
             <button
@@ -773,7 +776,7 @@ const AdminTasksTab = ({ canEdit = true, managedBranchId = null }: AdminTasksTab
             </button>
           </div>
 
-          <div className="shrink-0 border-t border-border/60 px-5 py-4">
+          <div className="shrink-0 border-t border-border/60 px-4 py-3">
             <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-start">
               <Button type="button" variant="outline" onClick={() => handleCreateQuestionDialogChange(false)}>إلغاء</Button>
               <Button type="button" onClick={handleAddDraftQuestion}>حفظ {questionForms.length > 1 ? `(${questionForms.length} أسئلة)` : ""}</Button>

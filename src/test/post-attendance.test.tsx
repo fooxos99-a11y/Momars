@@ -108,7 +108,7 @@ describe("post attendance", () => {
     window.localStorage.clear();
   });
 
-  it("creates attendance when the post-test is submitted", async () => {
+  it("does not create attendance when the post-test is submitted", async () => {
     const { result } = renderHook(() => useDashboardStore());
 
     await waitFor(() => {
@@ -124,14 +124,9 @@ describe("post attendance", () => {
     });
 
     await waitFor(() => {
-      expect(result.current.data.attendance).toHaveLength(1);
+      expect(result.current.data.submissions).toHaveLength(1);
     });
 
-    expect(result.current.data.attendance[0]).toMatchObject({
-      courseId: "course-1",
-      loginId: "1001",
-      studentName: "طالب تجريبي",
-      source: "post-test",
-    });
+    expect(result.current.data.attendance).toHaveLength(0);
   });
 });

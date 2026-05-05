@@ -135,13 +135,14 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
     const loginFromQuery = searchParams.get("login")?.trim();
     const session = loadAccessSession();
     const loginFromSession = session?.role === "student" ? session.loginCode.trim() : "";
-    const resolvedLogin = loginFromQuery || loginFromSession;
-
-    if (!resolvedLogin) {
+    if (!loginFromSession) {
+      if (loginFromQuery) {
+        setLoginId(loginFromQuery);
+      }
       return;
     }
 
-    const foundStudent = getStudentByLoginId(data, resolvedLogin);
+    const foundStudent = getStudentByLoginId(data, loginFromSession);
 
     if (foundStudent) {
       setLoginId(foundStudent.loginId);
@@ -300,7 +301,7 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
           }
         }}>
           <DialogContent className="max-w-xl rounded-[2rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_24px_70px_rgba(8,65,89,0.14)] [&>button]:hidden">
-            <div className="space-y-5 px-6 py-7 sm:px-8">
+            <div className="space-y-4 px-4 py-5 sm:px-5">
               <div className="space-y-2 text-right">
                 <h2 className="text-3xl font-extrabold text-foreground">لا يوجد بيانات حاليًا</h2>
                 <p className="text-base leading-8 text-muted-foreground">لا توجد أي دورة مفعلة حاليًا، لذلك لا يمكن عرض الاختبارات الآن.</p>
@@ -425,7 +426,7 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
                 }
               }}
             >
-              <div className="space-y-5 px-6 py-6">
+              <div className="space-y-4 px-4 py-4">
                 <div className="space-y-2 text-right">
                   <div className="text-sm text-muted-foreground">دخول الطالب</div>
                   <div className="text-xl font-bold text-foreground sm:text-2xl">أدخل رقم الحساب</div>
@@ -544,7 +545,7 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
             </CardContent>
             </Card>
 
-            {assessmentType === "post" && student && existingSubmission && satisfactionQuestions.length > 0 && !alreadySubmittedSatisfaction && (
+            {assessmentType === "post" && student && satisfactionQuestions.length > 0 && !alreadySubmittedSatisfaction && (
               <Card className="relative mt-6 overflow-hidden rounded-[2rem] border border-white/80 bg-white shadow-[0_24px_70px_rgba(8,65,89,0.16)] backdrop-blur-xl">
                 <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-primary/10 via-primary/5 to-transparent" aria-hidden />
                 <CardContent className="relative space-y-5 px-4 pb-5 pt-5 sm:px-6 sm:pb-6 sm:pt-6">
@@ -553,7 +554,7 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
                       <Badge className="border border-primary/15 bg-primary/10 text-primary hover:bg-primary/10">قسم مستقل</Badge>
                       <div className="text-xl font-extrabold text-foreground">استبيان الرضا بعد الاختبار</div>
                     </div>
-                    <div className="text-sm text-muted-foreground">يظهر هذا الاستبيان بعد إرسال الاختبار البعدي، لكنه منفصل تمامًا ولا يدخل في الدرجة أو تقييم الاختبار.</div>
+                    <div className="text-sm text-muted-foreground">هذا الاستبيان مستقل عن الاختبار البعدي، ولا يدخل في الدرجة أو تقييم الاختبار.</div>
                   </div>
                   {satisfactionQuestions.map((question, index) => (
                     <div key={question.id} className="rounded-[1.75rem] border border-primary/10 bg-[#f6fbfd] p-4 shadow-[0_10px_30px_rgba(8,65,89,0.06)] sm:p-5">
@@ -596,7 +597,7 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
               </Card>
             )}
 
-            {assessmentType === "post" && student && existingSubmission && satisfactionQuestions.length > 0 && alreadySubmittedSatisfaction && (
+            {assessmentType === "post" && student && satisfactionQuestions.length > 0 && alreadySubmittedSatisfaction && (
               <div className="mt-6 rounded-[1.75rem] border border-emerald-200 bg-emerald-50/95 px-5 py-4 text-right text-sm font-bold text-emerald-700">
                 شكرًا! تم استلام استبيان الرضا.
               </div>

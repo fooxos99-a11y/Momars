@@ -14,8 +14,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   type AssessmentType,
   type CourseQuestion,
+  clearAccessSession,
   isDashboardRole,
   loadAccessSession,
+  resolveAccessByLoginCode,
   useDashboardStore,
 } from "@/lib/dashboard-store";
 import DocumentEditor from "@/components/editor/DocumentEditor";
@@ -79,16 +81,10 @@ interface AdminAssessmentPageProps {
 }
 
 const AdminAssessmentPage = ({ assessmentType }: AdminAssessmentPageProps) => {
-  const session = loadAccessSession();
-
-  if (!session || !isDashboardRole(session.role)) {
-    return <Navigate to="/" replace />;
-  }
-
-  const canEditQuestions = session.role === "admin";
+  const storedSession = loadAccessSession();
 
   const store = useDashboardStore();
-  const { data } = store;
+  const { data, isHydrated } = store;
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const courseId = searchParams.get("courseId")?.trim() ?? "";
@@ -99,6 +95,40 @@ const AdminAssessmentPage = ({ assessmentType }: AdminAssessmentPageProps) => {
   const [isSaving, setIsSaving] = useState(false);
   const [templateDraft, setTemplateDraft] = useState("");
   const [templateSaving, setTemplateSaving] = useState(false);
+
+  const session = useMemo(() => {
+    if (!storedSession || !isHydrated) {
+      return null;
+    }
+
+    const resolved = resolveAccessByLoginCode(data, storedSession.loginCode);
+
+    if (!resolved || resolved.role !== storedSession.role || !isDashboardRole(resolved.role)) {
+      return null;
+    }
+
+    return storedSession;
+  }, [data, isHydrated, storedSession]);
+
+  useEffect(() => {
+    if (isHydrated && storedSession && !session) {
+      clearAccessSession();
+    }
+  }, [isHydrated, session, storedSession]);
+
+  if (!storedSession) {
+    return <Navigate to="/" replace />;
+  }
+
+  if (!isHydrated) {
+    return null;
+  }
+
+  if (!session) {
+    return <Navigate to="/" replace />;
+  }
+
+  const canEditQuestions = session.role === "admin";
 
   const selectedCourse = useMemo(
     () => data.courses.find((course) => course.id === courseId) ?? null,
@@ -444,14 +474,15 @@ const AdminAssessmentPage = ({ assessmentType }: AdminAssessmentPageProps) => {
       <DialogContent className="flex h-[90vh] w-[min(95vw,780px)] flex-col rounded-[1.5rem] border-white/80 bg-white p-0 text-right shadow-[0_24px_70px_rgba(15,23,42,0.14)] [&>button]:hidden">
 
         {/* Header */}
-        <div className="shrink-0 border-b border-border/60 px-5 py-4">
-          <div className="flex items-center justify-between gap-4">
+        <div className="shrink-0 border-b border-border/60 px-4 py-3">
+          <div className="flex items-center justify-end gap-2 text-right">
+            <Plus className="size-4 text-primary" strokeWidth={2.5} />
             <span className="text-base font-bold text-foreground">إضافة أسئلة</span>
           </div>
         </div>
 
         {/* Paste import area */}
-        <div className="shrink-0 border-b border-border/60 px-5 py-3 flex gap-2 items-start">
+        <div className="shrink-0 border-b border-border/60 px-4 py-2.5 flex gap-2 items-start">
           <textarea
             className="flex-1 min-h-[64px] max-h-32 resize-y rounded-xl border border-border/70 bg-muted/20 px-3 py-2 text-sm text-right placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
             placeholder="الصق الأسئلة هنا... سيتم تقسيمها تلقائيًا"
@@ -485,7 +516,7 @@ const AdminAssessmentPage = ({ assessmentType }: AdminAssessmentPageProps) => {
         </div>
 
         {/* Scrollable question list */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
           {questionForms.map((form, index) => renderQuestionFormCard(form, index))}
 
           <button
@@ -499,7 +530,7 @@ const AdminAssessmentPage = ({ assessmentType }: AdminAssessmentPageProps) => {
         </div>
 
         {/* Footer */}
-        <div className="shrink-0 border-t border-border/60 px-5 py-4">
+        <div className="shrink-0 border-t border-border/60 px-4 py-3">
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-start">
             <Button type="button" variant="outline" onClick={() => handleCreateDialogChange(false)}>إلغاء</Button>
             <Button type="button" onClick={() => void handleSaveAllQuestions()} disabled={!canEditQuestions || isSaving}>

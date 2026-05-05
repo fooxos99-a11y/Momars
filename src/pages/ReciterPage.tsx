@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { ArrowRightLeft, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { type BranchId, getAssignedStudents, useDashboardStore } from "@/lib/dashboard-store";
+import { type BranchId, getAssignedStudents, loadAccessSession, saveAccessSession, useDashboardStore } from "@/lib/dashboard-store";
 import {
   getReciterAccountByLoginCodeFromDatabase,
   toggleStudentPartInDatabase,
@@ -23,7 +23,7 @@ interface PendingTransferStudent {
 
 const ReciterPage = () => {
   const store = useDashboardStore();
-  const { data } = store;
+  const { data, isHydrated } = store;
   const [selectedReciterId, setSelectedReciterId] = useState("");
   const [databaseReciter, setDatabaseReciter] = useState<Awaited<ReturnType<typeof getReciterAccountByLoginCodeFromDatabase>>>(null);
   const [databaseError, setDatabaseError] = useState("");
@@ -38,11 +38,18 @@ const ReciterPage = () => {
   const [assignSubmitting, setAssignSubmitting] = useState(false);
   const [searchParams] = useSearchParams();
   const loginCodeFromQuery = searchParams.get("login")?.trim().toLowerCase() ?? "";
+  const session = loadAccessSession();
+  const loginCodeFromSession = session?.role === "reciter" ? session.loginCode.trim().toLowerCase() : "";
   const [sortBy, setSortBy] = useState<"most-read" | "least-read">("most-read");
 
   useEffect(() => {
-    if (!loginCodeFromQuery) {
+    if (!isHydrated) {
+      return;
+    }
+
+    if (!loginCodeFromSession) {
       setDatabaseReciter(null);
+      setSelectedReciterId("");
       setDatabaseError("");
       return;
     }
@@ -54,7 +61,7 @@ const ReciterPage = () => {
       setDatabaseError("");
 
       try {
-        const reciterAccount = await getReciterAccountByLoginCodeFromDatabase(loginCodeFromQuery);
+        const reciterAccount = await getReciterAccountByLoginCodeFromDatabase(loginCodeFromSession);
 
         if (cancelled) {
           return;
@@ -62,8 +69,17 @@ const ReciterPage = () => {
 
         setDatabaseReciter(reciterAccount);
 
-        if (!reciterAccount) {
-          const localReciter = data.reciters.find((item) => item.loginCode.trim().toLowerCase() === loginCodeFromQuery);
+        if (reciterAccount) {
+          saveAccessSession({
+            role: "reciter",
+            loginCode: reciterAccount.loginCode,
+            name: reciterAccount.name,
+            redirectPath: `/reciter?login=${encodeURIComponent(reciterAccount.loginCode)}`,
+            branchId: reciterAccount.branchId,
+          });
+          setSelectedReciterId(reciterAccount.id);
+        } else {
+          const localReciter = data.reciters.find((item) => item.loginCode.trim().toLowerCase() === loginCodeFromSession);
           if (localReciter) {
             setSelectedReciterId(localReciter.id);
           }
@@ -84,11 +100,11 @@ const ReciterPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [data.reciters, loginCodeFromQuery]);
+  }, [data.reciters, isHydrated, loginCodeFromSession]);
 
   const selectedReciter = databaseReciter
     ? { id: databaseReciter.id, name: databaseReciter.name, loginCode: databaseReciter.loginCode }
-    : data.reciters.find((reciter) => reciter.id === selectedReciterId) ?? data.reciters[0] ?? null;
+    : data.reciters.find((reciter) => reciter.id === selectedReciterId) ?? null;
   const reciterStudents = useMemo(() => {
     const students = databaseReciter
       ? databaseReciter.students
@@ -136,6 +152,18 @@ const ReciterPage = () => {
   const hasAvailableTransferTarget = (branchId: BranchId, currentReciterId: string) => data.reciters.some(
     (reciter) => reciter.id !== currentReciterId && reciter.branchId === branchId,
   );
+
+  if (!isHydrated) {
+    return null;
+  }
+
+  if (!loginCodeFromSession) {
+    return <Navigate to="/" replace />;
+  }
+
+  if (loginCodeFromQuery && loginCodeFromQuery !== loginCodeFromSession) {
+    return <Navigate to="/reciter" replace />;
+  }
 
   const resetTransferState = () => {
     setPendingTransferStudent(null);

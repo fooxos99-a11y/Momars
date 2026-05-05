@@ -3,7 +3,7 @@ import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSe
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Link, Navigate, useNavigate } from "react-router-dom";
-import { AlertCircle, ArrowRightLeft, BarChart3, Bell, BookOpen, Check, ClipboardList, Copy, Database, Download, Eye, EyeOff, FilePen, FileText, FileUp, GraduationCap, Home, Info, LayoutPanelTop, Maximize2, Menu, Minus, Pencil, Plus, Power, ShieldCheck, SquarePen, Trash2, TrendingDown, TrendingUp, Users, X } from "lucide-react";
+import { AlertCircle, ArrowRightLeft, BarChart3, Bell, BookOpen, Check, ClipboardList, Copy, Database, Download, Eye, FilePen, FileText, FileUp, GraduationCap, Home, Info, LayoutPanelTop, Maximize2, Menu, Minus, Pencil, Plus, Power, ShieldCheck, SquarePen, Trash2, TrendingDown, TrendingUp, Users, X } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -53,9 +53,11 @@ import {
   getTasks,
   getTaskLink,
   getRoleLabel,
+  resolveAccessByLoginCode,
   isAssessmentEnabledForCourse,
   isFinalExamAvailable,
   isDashboardRole,
+  clearAccessSession,
   loadAccessSession,
   useDashboardStore,
 } from "@/lib/dashboard-store";
@@ -410,7 +412,7 @@ const dashboardMenu = [
   { id: "results", label: "النتائج", icon: BarChart3, hint: "الحضور والتقييم" },
   { id: "permissions", label: "الصلاحيات", icon: ShieldCheck, hint: "صلاحيات المسؤولين" },
   { id: "notifications", label: "الإشعارات", icon: Bell, hint: "إرسال التنبيهات" },
-  { id: "indicators", label: "الإحصائيات", icon: LayoutPanelTop, hint: "مؤشرات الأداء" },
+  { id: "indicators", label: "إحصائيات الطلاب", icon: LayoutPanelTop, hint: "إحصائيات الطلاب" },
   { id: "satisfaction", label: "استبيان الرضا", icon: ClipboardList, hint: "أسئلة الاستبيان ونتائجه" },
 ] as const;
 
@@ -418,6 +420,7 @@ const dashboardCardClass = "rounded-[1.5rem] border-white/80 bg-white/95 shadow-
 const dashboardMutedPanelClass = "rounded-[1.25rem] border border-border/60 bg-muted/20";
 const dashboardPlainPanelClass = "rounded-[1.25rem] border border-border/60 bg-white";
 const dashboardEmptyStateClass = "rounded-[1.25rem] border border-dashed border-border/70 bg-white/70";
+const FINAL_EXAM_RESULTS_ID = "__final_exam_results__";
 
 const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
 const formatPercent = (value: number) => `${Math.round(clampPercent(value))}%`;
@@ -583,21 +586,45 @@ const SortableCourseCard = ({ id, children }: { id: string; children: React.Reac
 };
 
 const Dashboard = () => {
-  const session = loadAccessSession();
+  const storedSession = loadAccessSession();
   const navigate = useNavigate();
 
-  if (!session || !isDashboardRole(session.role)) {
-    return <Navigate to="/" replace />;
-  }
+  const store = useDashboardStore();
+  const { data, loadError, isHydrated } = store;
+  const validatedSession = useMemo(() => {
+    if (!storedSession || !isHydrated) {
+      return null;
+    }
 
+    const resolved = resolveAccessByLoginCode(data, storedSession.loginCode);
+
+    if (!resolved || resolved.role !== storedSession.role || !isDashboardRole(resolved.role)) {
+      return null;
+    }
+
+    return {
+      ...storedSession,
+      loginCode: resolved.loginCode,
+      name: resolved.name,
+      redirectPath: resolved.redirectPath,
+      branchId: resolved.branchId ?? null,
+    };
+  }, [data, isHydrated, storedSession]);
+
+  useEffect(() => {
+    if (isHydrated && storedSession && !validatedSession) {
+      clearAccessSession();
+    }
+  }, [isHydrated, storedSession, validatedSession]);
+
+  const session = validatedSession ?? (storedSession && isDashboardRole(storedSession.role)
+    ? storedSession
+    : { role: "male_manager" as const, loginCode: "", name: "", redirectPath: "/dashboard", branchId: null });
   const managedBranchId = getManagedBranchId(session.role);
   const canManageDashboardAccounts = session.role === "admin";
   const canCreateCourses = session.role === "admin";
   const canEditCourseModels = session.role === "admin";
   const canManageStandaloneTasks = session.role === "admin" || session.role === "male_manager" || session.role === "female_manager";
-
-  const store = useDashboardStore();
-  const { data, loadError } = store;
   const [dashboardTab, setDashboardTab] = useState<"home" | "students" | "reciters" | "reader" | "courses" | "tasks" | "attendance" | "notifications" | "indicators" | "results" | "statistics">("home");
   const [studentsOpen, setStudentsOpen] = useState(false);
   const [studentEntryMode, setStudentEntryMode] = useState<"single" | "bulk">("single");
@@ -679,7 +706,6 @@ const Dashboard = () => {
   const [indicatorsCourseId, setIndicatorsCourseId] = useState("all");
   const [courseIndicatorsBranch, setCourseIndicatorsBranch] = useState<BranchId>("male");
   const [courseIndicatorsCourseId, setCourseIndicatorsCourseId] = useState("");
-  const [showSummaryIndicators, setShowSummaryIndicators] = useState(true);
   const [detailsSubmissionId, setDetailsSubmissionId] = useState<string | null>(null);
   const [importResultsOpen, setImportResultsOpen] = useState(false);
   const [manualGradesOpen, setManualGradesOpen] = useState(false);
@@ -720,7 +746,11 @@ const Dashboard = () => {
   }, [managedBranchId]);
 
   const effectiveFinalExamManageBranch = managedBranchId ?? finalExamManageBranch;
-  const finalExamManageSetting = data.finalExamSettings[effectiveFinalExamManageBranch];
+  const finalExamSettings = data.finalExamSettings ?? {
+    male: { isEnabled: false, closesAt: null },
+    female: { isEnabled: false, closesAt: null },
+  };
+  const finalExamManageSetting = finalExamSettings[effectiveFinalExamManageBranch];
   const isFinalExamManageEnabled = isFinalExamAvailable(finalExamManageSetting);
 
   const handleCopyFinalExamQuestionsToBranch = async (to: BranchId) => {
@@ -755,8 +785,8 @@ const Dashboard = () => {
 
   const hasPermission = (key: PermissionKey): boolean => {
     if (session.role === "admin") return true;
-    const rolePerms = data.rolePermissions[session.role] ?? {};
-    return (rolePerms[key] as boolean | undefined) ?? true;
+    const rolePerms = data.rolePermissions?.[session.role];
+    return rolePerms?.[key] === true;
   };
 
   const availableDashboardMenu = dashboardMenu.filter((item) => {
@@ -939,12 +969,6 @@ const Dashboard = () => {
     store.reorderCourses(next);
   }, [courseItems, store]);
 
-  const handleDeleteSelectedSatisfactionQuestions = useCallback(async () => {
-    for (const question of selectedSatisfactionQuestions) {
-      await store.deleteSatisfactionQuestion(question.id);
-    }
-  }, [selectedSatisfactionQuestions, store]);
-
   const dndSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
@@ -955,10 +979,15 @@ const Dashboard = () => {
   const selectedCourse = courseItems.find((course) => course.id === selectedCourseId) ?? courseItems[0] ?? null;
   const selectedSatisfactionCourse = satisfactionCourseItems.find((course) => course.id === satisfactionCourseId) ?? satisfactionCourseItems[0] ?? null;
   const selectedSatisfactionQuestions = selectedSatisfactionCourse
-    ? data.satisfactionQuestions
+    ? (data.satisfactionQuestions ?? [])
         .filter((question) => question.courseId === selectedSatisfactionCourse.id)
         .sort((left, right) => left.sortOrder - right.sortOrder)
     : [];
+  const handleDeleteSelectedSatisfactionQuestions = useCallback(async () => {
+    for (const question of selectedSatisfactionQuestions) {
+      await store.deleteSatisfactionQuestion(question.id);
+    }
+  }, [selectedSatisfactionQuestions, store]);
   const activeCourse = getActiveCourse(data);
   const indicatorStudents = indicatorsBranchId === "all" ? data.students : getBranchStudents(data, indicatorsBranchId);
   const selectedIndicatorsCourse = indicatorsCourseId === "all"
@@ -970,7 +999,10 @@ const Dashboard = () => {
   const selectedCourseSubmissions = selectedCourse
     ? data.submissions.filter((submission) => submission.courseId === selectedCourse.id)
     : [];
-  const resultsCourse = [...courseItems, ...getTasks(data).sort((a, b) => a.sortOrder - b.sortOrder)].find((course) => course.id === resultsCourseId) ?? courseItems[0] ?? null;
+  const isResultsFinalExamSelected = resultsCourseId === FINAL_EXAM_RESULTS_ID;
+  const resultsCourse = isResultsFinalExamSelected
+    ? null
+    : [...courseItems, ...getTasks(data).sort((a, b) => a.sortOrder - b.sortOrder)].find((course) => course.id === resultsCourseId) ?? courseItems[0] ?? null;
   const resultsStudents = resultsCourse
     ? (resultsBranchId === "all" ? data.students : getBranchStudents(data, resultsBranchId))
     : [];
@@ -1368,9 +1400,9 @@ const Dashboard = () => {
       return;
     }
 
-    setAdminsOpen(true);
     resetAdminForm();
     await loadAdmins();
+    setAdminsOpen(true);
   };
 
   useEffect(() => {
@@ -1795,8 +1827,8 @@ const Dashboard = () => {
     }
     setCrossCourseConflict(null);
 
-    // If no time limit, closesAt is undefined (open until manually closed)
     const closesAt = assessmentNoTimeLimit ? undefined : new Date(Date.now() + duration * 60 * 1000).toISOString();
+    const windowValue = assessmentNoTimeLimit ? "__always_open__" : closesAt;
     const branchLabel = branchLabels[targetBranchId];
     const assessmentLabel = assessmentLabels[pendingAssessmentAvailability.assessmentType];
     const template = assessmentTemplateDraft.trim() || getDefaultAssessmentNotificationTemplate(pendingAssessmentAvailability.assessmentType);
@@ -1811,9 +1843,8 @@ const Dashboard = () => {
       // Keep the other branch as-is; activation is additive per branch.
       const globalWindowKey = pendingAssessmentAvailability.assessmentType;
       const existingGlobalWindow = course.assessmentWindows.global[globalWindowKey];
-      // When no time limit, clear the global window so isFutureDateTime returns true (always open)
       const nextGlobalWindow = assessmentNoTimeLimit
-        ? undefined
+        ? "__always_open__"
         : (!existingGlobalWindow || new Date(existingGlobalWindow) < new Date(closesAt!))
           ? closesAt
           : existingGlobalWindow;
@@ -1829,7 +1860,7 @@ const Dashboard = () => {
         global: { ...course.assessmentWindows.global, [globalWindowKey]: nextGlobalWindow },
         [targetBranchId]: {
           ...course.assessmentWindows[targetBranchId],
-          [pendingAssessmentAvailability.assessmentType]: closesAt,
+          [pendingAssessmentAvailability.assessmentType]: windowValue,
         },
       };
       await store.updateCourse(course.id, {
@@ -2827,98 +2858,6 @@ const Dashboard = () => {
     };
   }, [courseItems, courseIndicatorsCourseId, courseIndicatorsBranch, data.attendance, data.courses, data.submissions, data.students]);
 
-  const summaryIndicators = [
-    {
-      key: "memorization",
-      label: "مجموع الأجزاء المقروءة",
-      value: 100,
-      displayValue: indicatorMetrics.completedPartsCount,
-      suffix: "",
-      colorStart: "#0f766e",
-      colorEnd: "#0d9488",
-      track: "#1f3c3a",
-      innerTint: "rgba(8, 33, 31, 0.94)",
-      glow: "rgba(15, 118, 110, 0.12)",
-      shadow: "rgba(3, 31, 29, 0.45)",
-      textClassName: "text-emerald-100",
-    },
-    {
-      key: "pre",
-      label: "الاختبارات القبلية",
-      value: indicatorMetrics.summary.pre,
-      displayValue: indicatorMetrics.summary.pre,
-      suffix: "%",
-      detail: undefined,
-      colorStart: "#1e40af",
-      colorEnd: "#2563eb",
-      track: "#21345f",
-      innerTint: "rgba(18, 32, 71, 0.95)",
-      glow: "rgba(37, 99, 235, 0.12)",
-      shadow: "rgba(23, 37, 84, 0.45)",
-      textClassName: "text-blue-100",
-    },
-    {
-      key: "post",
-      label: "الاختبارات البعدية",
-      value: indicatorMetrics.summary.post,
-      displayValue: indicatorMetrics.summary.post,
-      suffix: "%",
-      detail: undefined,
-      colorStart: "#6d28d9",
-      colorEnd: "#7c3aed",
-      track: "#34204f",
-      innerTint: "rgba(37, 18, 65, 0.95)",
-      glow: "rgba(109, 40, 217, 0.12)",
-      shadow: "rgba(59, 7, 100, 0.45)",
-      textClassName: "text-violet-100",
-    },
-    {
-      key: "attendance",
-      label: "الحضور",
-      value: indicatorMetrics.summary.attendance,
-      displayValue: indicatorMetrics.summary.attendance,
-      suffix: "%",
-      detail: undefined,
-      colorStart: "#166534",
-      colorEnd: "#16a34a",
-      track: "#1f4228",
-      innerTint: "rgba(10, 40, 20, 0.95)",
-      glow: "rgba(21, 128, 61, 0.12)",
-      shadow: "rgba(5, 46, 22, 0.45)",
-      textClassName: "text-green-100",
-    },
-    {
-      key: "tasks",
-      label: "التكاليف",
-      value: indicatorMetrics.summary.tasks,
-      displayValue: indicatorMetrics.summary.tasks,
-      suffix: "%",
-      detail: undefined,
-      colorStart: "#9a3412",
-      colorEnd: "#c2410c",
-      track: "#4f2b1c",
-      innerTint: "rgba(53, 24, 13, 0.95)",
-      glow: "rgba(194, 65, 12, 0.12)",
-      shadow: "rgba(67, 20, 7, 0.45)",
-      textClassName: "text-orange-100",
-    },
-    {
-      key: "completed-thirty",
-      label: "الطلاب الذين أنهوا 30 جزءًا",
-      value: 100,
-      displayValue: indicatorMetrics.completedThirtyStudents,
-      suffix: "",
-      detail: undefined,
-      colorStart: "#0369a1",
-      colorEnd: "#0284c7",
-      track: "#1e4156",
-      innerTint: "rgba(10, 35, 51, 0.95)",
-      glow: "rgba(3, 105, 161, 0.12)",
-      shadow: "rgba(8, 47, 73, 0.45)",
-      textClassName: "text-sky-100",
-    },
-  ] as const;
-
   const homeMetrics = useMemo(() => {
     const students = homeBranchFilter === "all" ? data.students : getBranchStudents(data, homeBranchFilter);
     const branchLoginIds = new Set(students.map((s) => s.loginId));
@@ -3058,6 +2997,18 @@ const Dashboard = () => {
     </div>
   );
 
+  if (!storedSession) {
+    return <Navigate to="/" replace />;
+  }
+
+  if (!isHydrated) {
+    return null;
+  }
+
+  if (!validatedSession) {
+    return <Navigate to="/" replace />;
+  }
+
   return (
     <div dir="rtl" className="min-h-screen bg-[linear-gradient(180deg,#f8fbfb,#eef5f5)] text-right text-foreground">
       <div className="flex min-h-screen w-full items-start lg:flex-row">
@@ -3136,8 +3087,8 @@ const Dashboard = () => {
                   </>
                 )}
                 {canManageDashboardAccounts && (
-                  <Button variant="outline" className="rounded-full px-4 sm:px-5" onClick={handleOpenAdmins} aria-label="الإشراف">
-                    الإشراف
+                  <Button variant="outline" className="rounded-full px-4 sm:px-5" onClick={handleOpenAdmins} aria-label="الإشراف" disabled={adminsLoading}>
+                    {adminsLoading ? "جارٍ التحميل..." : "الإشراف"}
                   </Button>
                 )}
                 {canCreateCourses && (
@@ -3308,13 +3259,7 @@ const Dashboard = () => {
 
         {dashboardTab === "students" && (
           <div className="space-y-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-right">
-                <h2 className="flex items-center gap-2 text-xl font-bold text-foreground">
-                  <SquarePen className="size-5" />
-                  تعديل الدرجات
-                </h2>
-              </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
               <div className="flex w-full flex-wrap justify-end gap-2 sm:w-auto sm:flex-nowrap">
                 <TooltipProvider>
                   <Tooltip>
@@ -3331,7 +3276,7 @@ const Dashboard = () => {
                 </TooltipProvider>
                 <Button className="gap-2 rounded-full px-4 sm:px-5" variant="outline" onClick={() => setManualGradesOpen(true)}>
                   <Pencil className="size-4" />
-                  تعديل يدوي
+                  تعديل الدرجات
                 </Button>
                 {hasPermission("add_student") && (
                   <Button className="rounded-full px-4 sm:px-5" onClick={() => openStudentEditor()}>
@@ -4047,18 +3992,6 @@ const Dashboard = () => {
                   {selectedCourseForAttendance && (
                     <>
                       <Separator />
-                      <div className="flex items-center gap-3">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleToggleAll}
-                          className={cn(isAllSelected && "border-primary bg-primary/10 text-primary")}
-                        >
-                          <span className={cn("size-2.5 rounded-full ml-1.5", isAllSelected ? "bg-primary" : "bg-muted-foreground/30")} />
-                          تحديد الكل
-                        </Button>
-                      </div>
-
                       {attendanceFileError && (
                         <p className="text-sm font-medium text-destructive">{attendanceFileError}</p>
                       )}
@@ -4066,19 +3999,25 @@ const Dashboard = () => {
                       {branchStudents.length === 0 ? (
                         <div className={cn(dashboardEmptyStateClass, "p-5 text-sm text-muted-foreground")}>لا يوجد طلاب في هذا الفرع.</div>
                       ) : (
-                        <div className="rounded-[1.25rem] border border-border/60 bg-white overflow-hidden">
+                        <div className="space-y-3">
+                          <div className="flex justify-end">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={handleToggleAll}
+                              className={cn("rounded-full px-4", isAllSelected && "border-primary bg-primary/10 text-primary")}
+                            >
+                              تحديد الكل
+                            </Button>
+                          </div>
+                          <div className="rounded-[1.25rem] border border-border/60 bg-white overflow-hidden">
                           <Table>
                             <TableHeader>
                               <TableRow>
                                 <TableHead className="text-right">الاسم</TableHead>
                                 <TableHead className="text-right">رقم الدخول</TableHead>
                                 {isTask && <TableHead className="text-right">الحالة</TableHead>}
-                                <TableHead className="w-20 text-center">
-                                  <div className="flex flex-col items-center justify-center gap-1">
-                                    <span>{presentLabel}</span>
-                                    <span className="h-5 w-5 rounded-full border-2 border-primary/70" aria-hidden="true" />
-                                  </div>
-                                </TableHead>
+                                <TableHead className="w-28 text-center">{presentLabel}</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -4122,6 +4061,7 @@ const Dashboard = () => {
                               })}
                             </TableBody>
                           </Table>
+                          </div>
                         </div>
                       )}
 
@@ -4142,111 +4082,74 @@ const Dashboard = () => {
           <div className="space-y-6">
             <div className="flex items-center justify-between gap-4">
               <div className="text-right">
-                <h2 className="text-xl font-bold text-foreground">المؤشرات</h2>
+                <h2 className="text-xl font-bold text-foreground">إحصائيات الطلاب</h2>
               </div>
             </div>
 
-            <Card className={dashboardCardClass}>
-              <CardHeader className="relative space-y-4 pl-20 text-right">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="absolute left-5 top-5 h-10 w-10 shrink-0 rounded-full border-slate-300 bg-white p-0 text-slate-800 hover:bg-slate-100"
-                  onClick={() => setShowSummaryIndicators((current) => !current)}
-                  aria-label={showSummaryIndicators ? "إخفاء المؤشرات" : "عرض المؤشرات"}
-                  title={showSummaryIndicators ? "إخفاء المؤشرات" : "عرض المؤشرات"}
-                >
-                  {showSummaryIndicators ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
-                </Button>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2 text-right">
-                    <div className="text-sm font-medium text-muted-foreground">الفرع</div>
-                    <Select value={indicatorsBranchId} onValueChange={(value) => setIndicatorsBranchId(value as IndicatorsBranchFilter)}>
-                      <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">جميع الفروع</SelectItem>
-                        {data.branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.label}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {indicatorMetrics.totalStudents === 0 ? (
+            <div className="w-full max-w-sm">
+              <div className="space-y-2 text-right">
+                <div className="text-sm font-medium text-muted-foreground">الفرع</div>
+                <Select value={indicatorsBranchId} onValueChange={(value) => setIndicatorsBranchId(value as IndicatorsBranchFilter)}>
+                  <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">جميع الفروع</SelectItem>
+                    {data.branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {indicatorMetrics.totalStudents === 0 ? (
+              <div className={cn(dashboardEmptyStateClass, "p-6 text-sm text-muted-foreground")}>
+                {indicatorsBranchId === "all" ? "لا يوجد طلاب في جميع الفروع بعد." : `لا يوجد طلاب في فرع ${branchLabels[indicatorsBranchId]} بعد.`}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {indicatorMetrics.studentRows.length === 0 ? (
                   <div className={cn(dashboardEmptyStateClass, "p-6 text-sm text-muted-foreground")}>
-                    {indicatorsBranchId === "all" ? "لا يوجد طلاب في جميع الفروع بعد." : `لا يوجد طلاب في فرع ${branchLabels[indicatorsBranchId]} بعد.`}
+                    لا يوجد طلاب لعرض مؤشراتهم في الدورة المختارة.
                   </div>
                 ) : (
-                  <>
-                    <div className="space-y-4">
+                  indicatorMetrics.studentRows.map((student) => {
+                    const itemMetrics = [
+                      { label: "الأجزاء", value: student.memorizationPercent },
+                      { label: "الحضور", value: student.attendancePercent },
+                      { label: "القبلي", value: student.prePercent },
+                      { label: "البعدي", value: student.postPercent },
+                      { label: "التكاليف", value: student.tasksPercent },
+                      { label: "الإجمالي", value: student.overallPercent },
+                    ];
 
-                      {showSummaryIndicators && (
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-8 lg:grid-cols-3 lg:gap-x-6 lg:gap-y-10">
-                          {summaryIndicators.map((indicator) => {
-                            return (
-                              <ProgramIndicatorRing
-                                key={indicator.key}
-                                label={indicator.label}
-                                progressValue={indicator.value}
-                                displayValue={indicator.displayValue}
-                                suffix={indicator.suffix}
-                              />
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
+                    return (
+                      <Card key={student.id} className={dashboardCardClass}>
+                        <CardContent className="space-y-5 p-5">
+                          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                            <div className="text-right">
+                              <div className="text-lg font-bold text-foreground">{student.name}</div>
+                              <div className="mt-1 text-xs text-muted-foreground">المقرئ: {student.reciterName}</div>
+                            </div>
+                          </div>
 
-                    <div className="space-y-4">
-                      {indicatorMetrics.studentRows.length === 0 ? (
-                        <div className={cn(dashboardEmptyStateClass, "p-6 text-sm text-muted-foreground")}>
-                          لا يوجد طلاب لعرض مؤشراتهم في الدورة المختارة.
-                        </div>
-                      ) : (
-                        indicatorMetrics.studentRows.map((student) => {
-                          const itemMetrics = [
-                            { label: "الأجزاء", value: student.memorizationPercent },
-                            { label: "الحضور", value: student.attendancePercent },
-                            { label: "القبلي", value: student.prePercent },
-                            { label: "البعدي", value: student.postPercent },
-                            { label: "التكاليف", value: student.tasksPercent },
-                            { label: "الإجمالي", value: student.overallPercent },
-                          ];
-
-                          return (
-                            <Card key={student.id} className={dashboardCardClass}>
-                              <CardContent className="space-y-5 p-5">
-                                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                  <div className="text-right">
-                                    <div className="text-lg font-bold text-foreground">{student.name}</div>
-                                    <div className="mt-1 text-xs text-muted-foreground">المقرئ: {student.reciterName}</div>
-                                  </div>
+                          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                            {itemMetrics.map((metric) => (
+                              <div key={metric.label} className="space-y-2 rounded-[1.1rem] border border-border/60 bg-white p-4">
+                                <div className="flex items-center justify-between gap-3 text-sm">
+                                  <span className="font-medium text-muted-foreground">{metric.label}</span>
+                                  <span className="font-bold text-foreground">{formatPercent(metric.value)}</span>
                                 </div>
-
-                                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                                  {itemMetrics.map((metric) => (
-                                    <div key={metric.label} className="space-y-2 rounded-[1.1rem] border border-border/60 bg-white p-4">
-                                      <div className="flex items-center justify-between gap-3 text-sm">
-                                        <span className="font-medium text-muted-foreground">{metric.label}</span>
-                                        <span className="font-bold text-foreground">{formatPercent(metric.value)}</span>
-                                      </div>
-                                      <Progress value={clampPercent(metric.value)} className="h-2.5 bg-muted" />
-                                    </div>
-                                  ))}
-                                </div>
-                              </CardContent>
-                            </Card>
-                          );
-                        })
-                      )}
-                    </div>
-                  </>
+                                <Progress value={clampPercent(metric.value)} className="h-2.5 bg-muted" />
+                              </div>
+                            ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            )}
           </div>
         )}
 
@@ -4341,7 +4244,7 @@ const Dashboard = () => {
                       <div key={group.label}>
                         <div className="pt-4 pb-2 text-xs font-extrabold uppercase tracking-wide text-muted-foreground">{group.label}</div>
                         {group.permissions.map((perm) => {
-                          const isEnabled = (data.rolePermissions[role]?.[perm.key] as boolean | undefined) ?? true;
+                          const isEnabled = data.rolePermissions?.[role]?.[perm.key] === true;
                           return (
                             <div key={perm.key} className="flex items-center justify-between border-b border-border/40 py-3 last:border-0">
                               <span className={cn("text-sm font-medium", !isEnabled && "text-muted-foreground")}>{perm.label}</span>
@@ -4363,7 +4266,7 @@ const Dashboard = () => {
 
         {dashboardTab === "satisfaction" && (() => {
           const courseResponses = selectedSatisfactionCourse
-            ? data.satisfactionResponses.filter((r) => r.courseId === selectedSatisfactionCourse.id)
+            ? (data.satisfactionResponses ?? []).filter((r) => r.courseId === selectedSatisfactionCourse.id)
             : [];
           const ratingIndicators = selectedSatisfactionQuestions
             .filter((q) => q.type === "rating")
@@ -4388,22 +4291,21 @@ const Dashboard = () => {
               {/* ─── Manage questions ────────────────────────────────────────── */}
               <div className="space-y-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <h3 className="text-[0.95rem] font-bold text-foreground">أسئلة الاستبيان</h3>
+                  <div className="w-full sm:w-72">
+                    <Select value={selectedSatisfactionCourse?.id ?? ""} onValueChange={setSatisfactionCourseId}>
+                      <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
+                        <SelectValue placeholder="اختر الدورة" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {satisfactionCourseItems.map((course) => (
+                          <SelectItem key={course.id} value={course.id} className="justify-end pr-3 text-right">
+                            {course.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                    <div className="w-full sm:w-72">
-                      <Select value={selectedSatisfactionCourse?.id ?? ""} onValueChange={setSatisfactionCourseId}>
-                        <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
-                          <SelectValue placeholder="اختر الدورة" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {satisfactionCourseItems.map((course) => (
-                            <SelectItem key={course.id} value={course.id} className="justify-end pr-3 text-right">
-                              {course.title}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
                     <Button className="rounded-full px-6" disabled={!selectedSatisfactionCourse} onClick={() => setSatisfactionAddDialogOpen(true)}>
                       <Plus className="size-4" />
                       إضافة
@@ -4433,7 +4335,6 @@ const Dashboard = () => {
                           progressValue={average == null ? 0 : average * 10}
                           displayValue={average ?? 0}
                           suffix=""
-                          size="small"
                           formatDisplay={formatRatingAverage}
                         />
                       );
@@ -4549,125 +4450,13 @@ const Dashboard = () => {
         {dashboardTab === "courses" && (
           <div className="space-y-6">
 
-            {/* Course Assessment Indicators */}
-            <Card className={dashboardCardClass}>
-              <CardHeader>
-                <CardTitle className="text-lg">مؤشرات الدورة</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <div className="text-sm font-medium text-muted-foreground">الفرع</div>
-                    <Select value={courseIndicatorsBranch} onValueChange={(v) => setCourseIndicatorsBranch(v as BranchId)}>
-                      <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {data.branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.label}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="text-sm font-medium text-muted-foreground">الدورة</div>
-                    <Select value={courseIndicatorsCourseId} onValueChange={setCourseIndicatorsCourseId}>
-                      <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
-                        <SelectValue placeholder="اختر الدورة" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {courseItems.map((c) => <SelectItem key={c.id} value={c.id}>{c.title}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {courseIndicatorsMetrics ? (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="gap-2 text-xs"
-                        onClick={() => {
-                          const branchLabel = data.branches.find((b) => b.id === courseIndicatorsBranch)?.label ?? courseIndicatorsBranch;
-                          const wsData = [
-                            ["الاسم", "رقم الدخول", "الاختبار القبلي %", "الاختبار البعدي %", "الفرق", "الحضور"],
-                            ...courseIndicatorsMetrics.studentRows.map((r) => [
-                              r.name,
-                              r.loginId,
-                              r.prePct ?? "",
-                              r.postPct ?? "",
-                              r.diff ?? "",
-                              r.attended ? "حضر" : "غائب",
-                            ]),
-                            [],
-                            ["الإجمالي", "", `${Math.round(courseIndicatorsMetrics.pre)}%`, `${Math.round(courseIndicatorsMetrics.post)}%`, `${Math.round(courseIndicatorsMetrics.rise) >= 0 ? "+" : ""}${Math.round(courseIndicatorsMetrics.rise)}%`, `${Math.round(courseIndicatorsMetrics.attendance)}%`],
-                          ];
-                          const ws = XLSX.utils.aoa_to_sheet(wsData);
-                          const wb = XLSX.utils.book_new();
-                          XLSX.utils.book_append_sheet(wb, ws, "مؤشرات");
-                          XLSX.writeFile(wb, `مؤشرات-${courseIndicatorsMetrics.courseName}-${branchLabel}.xlsx`);
-                        }}
-                      >
-                        <Download className="size-3.5" />
-                        تصدير
-                      </Button>
-                      <div className="text-xs text-muted-foreground">{courseIndicatorsMetrics.courseName} — {data.branches.find((b) => b.id === courseIndicatorsBranch)?.label}</div>
-                    </div>
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    {/* Pre exam */}
-                    <div className="rounded-[1.5rem] border border-border/60 bg-white p-5 text-center shadow-sm">
-                      <FileText className="mx-auto mb-2 size-5 text-blue-500" aria-hidden="true" />
-                      <div className="text-3xl font-black text-blue-600">{formatPercent(courseIndicatorsMetrics.pre)}</div>
-                      <div className="mt-1 text-xs text-muted-foreground">{courseIndicatorsMetrics.preCount} / {courseIndicatorsMetrics.totalStudents} طالب</div>
-                      <div className="mt-2 text-sm font-bold text-foreground">الاختبار القبلي</div>
-                    </div>
-                    {/* Post exam */}
-                    <div className="rounded-[1.5rem] border border-border/60 bg-white p-5 text-center shadow-sm">
-                      <FileText className="mx-auto mb-2 size-5 text-emerald-500" aria-hidden="true" />
-                      <div className="text-3xl font-black text-emerald-600">{formatPercent(courseIndicatorsMetrics.post)}</div>
-                      <div className="mt-1 text-xs text-muted-foreground">{courseIndicatorsMetrics.postCount} / {courseIndicatorsMetrics.totalStudents} طالب</div>
-                      <div className="mt-2 text-sm font-bold text-foreground">الاختبار البعدي</div>
-                    </div>
-                    {/* Rise / fall */}
-                    <div className="rounded-[1.5rem] border border-border/60 bg-white p-5 text-center shadow-sm">
-                      {courseIndicatorsMetrics.rise > 0 ? (
-                        <TrendingUp className="mx-auto mb-2 size-5 text-emerald-500" aria-hidden="true" />
-                      ) : courseIndicatorsMetrics.rise < 0 ? (
-                        <TrendingDown className="mx-auto mb-2 size-5 text-destructive" aria-hidden="true" />
-                      ) : (
-                        <Minus className="mx-auto mb-2 size-5 text-muted-foreground" aria-hidden="true" />
-                      )}
-                      <div className={cn("text-3xl font-black", courseIndicatorsMetrics.rise > 0 ? "text-emerald-600" : courseIndicatorsMetrics.rise < 0 ? "text-destructive" : "text-muted-foreground")}>
-                        {courseIndicatorsMetrics.rise > 0 ? "+" : ""}{Math.round(courseIndicatorsMetrics.rise)}%
-                      </div>
-                      <div className="mt-1 text-xs text-muted-foreground">{courseIndicatorsMetrics.bothCount} طالب اختبروا كليهما</div>
-                      <div className="mt-2 text-sm font-bold text-foreground">
-                        {courseIndicatorsMetrics.rise > 0 ? "ارتفاع" : courseIndicatorsMetrics.rise < 0 ? "انخفاض" : "مستقر"}
-                      </div>
-                    </div>
-                    {/* Attendance */}
-                    <div className="rounded-[1.5rem] border border-border/60 bg-white p-5 text-center shadow-sm">
-                      <Users className="mx-auto mb-2 size-5 text-orange-400" aria-hidden="true" />
-                      <div className="text-3xl font-black text-orange-500">{formatPercent(courseIndicatorsMetrics.attendance)}</div>
-                      <div className="mt-1 text-xs text-muted-foreground">{courseIndicatorsMetrics.attendanceCount} / {courseIndicatorsMetrics.totalStudents} طالب</div>
-                      <div className="mt-2 text-sm font-bold text-foreground">الحضور</div>
-                    </div>
-                  </div>
-                  </div>
-                ) : (
-                  <div className={cn(dashboardEmptyStateClass, "p-4 text-center text-sm text-muted-foreground")}>اختر دورة لعرض المؤشرات</div>
-                )}
-              </CardContent>
-            </Card>
-
             <div className="space-y-4">              <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleCourseOrderDragEnd}>
                 <SortableContext items={courseItems.map((c) => c.id)} strategy={rectSortingStrategy}>
                   <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
                     {courseItems.length === 0 && <Card className={cn(dashboardEmptyStateClass, "md:col-span-2 lg:col-span-3")}><CardContent className="p-6 text-sm text-muted-foreground">لا توجد دورات بعد.</CardContent></Card>}
                     {courseItems.map((course) => (
                       <SortableCourseCard key={course.id} id={course.id}>
-                    <Card className={cn(dashboardCardClass, selectedCourse?.id === course.id && "ring-2 ring-primary/20")}>
+                    <Card className={dashboardCardClass}>
                     <CardHeader>
                       <div className="flex items-start justify-between gap-3">
                         <div className="text-right">
@@ -5001,17 +4790,23 @@ const Dashboard = () => {
               <CardContent className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-bold text-foreground">الدورة / المهام</label>
-                    <Select value={resultsCourse?.id ?? ""} onValueChange={(v) => {
+                    <label className="text-sm font-bold text-foreground">القسم</label>
+                    <Select value={isResultsFinalExamSelected ? FINAL_EXAM_RESULTS_ID : resultsCourse?.id ?? ""} onValueChange={(v) => {
+                      if (v === FINAL_EXAM_RESULTS_ID) {
+                        setResultsCourseId(v);
+                        return;
+                      }
+
                       const isTask = getTasks(data).some((t) => t.id === v);
                       setResultsCourseId(v);
                       if (isTask) setResultsType("tasks");
                       else if (resultsType === "tasks") setResultsType("attendance");
                     }}>
-                      <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue placeholder="اختر الدورة" /></SelectTrigger>
+                      <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue placeholder="اختر القسم" /></SelectTrigger>
                       <SelectContent className="text-right">
                         {courseItems.length > 0 && courseItems.map((course) => <SelectItem key={course.id} value={course.id} className="justify-end pr-3 text-right">{course.title}</SelectItem>)}
                         {getTasks(data).length > 0 && [...getTasks(data)].sort((a, b) => a.sortOrder - b.sortOrder).map((task) => <SelectItem key={task.id} value={task.id} className="justify-end pr-3 text-right">تكليف: {task.title}</SelectItem>)}
+                        <SelectItem value={FINAL_EXAM_RESULTS_ID} className="justify-end pr-3 text-right">الاختبار النهائي</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -5025,7 +4820,7 @@ const Dashboard = () => {
                       </SelectContent>
                     </Select>
                   </div>
-                  {resultsCourse?.entityType !== "task" && (
+                  {!isResultsFinalExamSelected && resultsCourse?.entityType !== "task" && (
                   <div className="space-y-2 md:col-span-2 xl:col-span-2">
                     <label className="text-sm font-bold text-foreground">نوع البيانات</label>
                     <Select value={resultsType} onValueChange={(value) => setResultsType(value as "attendance" | AssessmentType)}>
@@ -5042,7 +4837,7 @@ const Dashboard = () => {
               </CardContent>
             </Card>
 
-            {!resultsCourse && (
+            {!resultsCourse && !isResultsFinalExamSelected && (
               <Card className="border-dashed border-primary/20 bg-white/80">
                 <CardContent className="p-6 text-sm text-muted-foreground">أنشئ دورة أولًا لعرض النتائج.</CardContent>
               </Card>
@@ -5152,12 +4947,11 @@ const Dashboard = () => {
               </Card>
             )}
 
-            {/* نتائج الاختبار النهائي */}
-            {(() => {
+            {isResultsFinalExamSelected && (() => {
               const feBranch = managedBranchId ?? finalExamResultsBranch;
-              const feQuestions = data.finalExamQuestions.filter((q) => q.branchCode === feBranch);
+              const feQuestions = (data.finalExamQuestions ?? []).filter((q) => q.branchCode === feBranch);
               const feTotal = feQuestions.reduce((sum, q) => sum + q.points, 0);
-              const feSubs = data.finalExamSubmissions.filter((s) => s.branchCode === feBranch);
+              const feSubs = (data.finalExamSubmissions ?? []).filter((s) => s.branchCode === feBranch);
               return (
                 <Card className="border-primary/10 bg-white/90">
                   <CardHeader>
@@ -5218,10 +5012,12 @@ const Dashboard = () => {
 
             {/* ─── استبيان الرضا ────────────────────────────────────────────── */}
             {(() => {
+              const satisfactionResponses = data.satisfactionResponses ?? [];
+              const satisfactionQuestions = data.satisfactionQuestions ?? [];
               const coursesWithResp = data.courses.filter((c) =>
-                data.satisfactionResponses.some((r) => r.courseId === c.id),
+                satisfactionResponses.some((r) => r.courseId === c.id),
               );
-              if (data.satisfactionQuestions.length === 0 && coursesWithResp.length === 0) return null;
+              if (satisfactionQuestions.length === 0 && coursesWithResp.length === 0) return null;
               const selCourse = data.courses.find((c) => c.id === satisfactionResultsCourseId) ?? coursesWithResp[0];
               const fmtAvg = (v: number | null) => v == null ? "—" : (v === Math.floor(v) ? String(Math.round(v)) : v.toFixed(1).replace(".", ","));
               const circleColors = [
@@ -5250,9 +5046,9 @@ const Dashboard = () => {
                   {!selCourse || coursesWithResp.length === 0 ? (
                     <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-white/70 p-6 text-center text-sm text-muted-foreground">لا توجد استجابات بعد.</div>
                   ) : (() => {
-                    const allResp = data.satisfactionResponses.filter((r) => r.courseId === selCourse.id);
+                    const allResp = satisfactionResponses.filter((r) => r.courseId === selCourse.id);
                     const respondentIds = [...new Set(allResp.map((r) => r.loginCode))];
-                    const courseQuestions = data.satisfactionQuestions.filter((q) => q.courseId === selCourse.id);
+                    const courseQuestions = satisfactionQuestions.filter((q) => q.courseId === selCourse.id);
                     const ratingQs = courseQuestions.filter((q) => q.type === "rating");
                     const allRatingVals = allResp.filter((r) => {
                       const q = courseQuestions.find((q) => q.id === r.questionId);
@@ -5377,15 +5173,15 @@ const Dashboard = () => {
         <DialogContent className="max-w-sm rounded-[1.75rem] p-0 text-right [&>button]:hidden">
           {assessmentPickerStep === "pick" && (
             <>
-              <DialogHeader className="border-b border-border/60 px-6 py-5 text-right">
+              <DialogHeader className="border-b border-border/60 px-4 py-3 text-right">
                 <DialogTitle className="text-right text-xl">
                   {assessmentActionPicker ? assessmentLabels[assessmentActionPicker.assessmentType] : ""}
                 </DialogTitle>
               </DialogHeader>
-              <div className="grid grid-cols-2 gap-3 p-6">
+              <div className="grid grid-cols-2 gap-2.5 p-4">
                 <button
                   type="button"
-                  className="flex flex-col items-center gap-3 rounded-[1.25rem] border border-border/70 bg-muted/20 p-5 text-center transition-colors hover:border-primary/40 hover:bg-primary/5"
+                  className="flex flex-col items-center gap-2.5 rounded-[1.25rem] border border-border/70 bg-muted/20 p-3.5 text-center transition-colors hover:border-primary/40 hover:bg-primary/5"
                   onClick={() => {
                     if (!assessmentActionPicker) return;
                     handleOpenAssessmentAvailabilityDialog(assessmentActionPicker.courseId, assessmentActionPicker.assessmentType);
@@ -5397,7 +5193,7 @@ const Dashboard = () => {
                 </button>
                 <button
                   type="button"
-                  className="flex flex-col items-center gap-3 rounded-[1.25rem] border border-border/70 bg-muted/20 p-5 text-center transition-colors hover:border-primary/40 hover:bg-primary/5"
+                  className="flex flex-col items-center gap-2.5 rounded-[1.25rem] border border-border/70 bg-muted/20 p-3.5 text-center transition-colors hover:border-primary/40 hover:bg-primary/5"
                   onClick={() => {
                     if (!assessmentActionPicker) return;
                     setAssessmentActionPicker(null);
@@ -5408,17 +5204,17 @@ const Dashboard = () => {
                   <div className="text-sm font-bold text-foreground">عرض الأسئلة</div>
                 </button>
               </div>
-              <div className="flex justify-end border-t border-border/60 px-6 py-4">
+              <div className="flex justify-end border-t border-border/60 px-4 py-3">
                 <Button variant="outline" className="rounded-full px-5" onClick={() => setAssessmentActionPicker(null)}>إلغاء</Button>
               </div>
             </>
           )}
           {assessmentPickerStep === "timer" && (
             <>
-              <DialogHeader className="border-b border-border/60 px-6 py-5 text-right">
+              <DialogHeader className="border-b border-border/60 px-4 py-3 text-right">
                 <DialogTitle className="text-right text-xl">مؤقت فتح الاختبار</DialogTitle>
               </DialogHeader>
-              <div className="space-y-4 p-6">
+              <div className="space-y-3 p-4">
                 {!managedBranchId && (
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-foreground">الفرع</label>
@@ -5589,11 +5385,11 @@ const Dashboard = () => {
         }
       }}>
         <DialogContent className="max-w-xl rounded-[1.75rem] p-0 text-right [&>button]:hidden">
-          <DialogHeader className="border-b border-border/60 px-6 py-5 text-right">
+          <DialogHeader className="border-b border-border/60 px-4 py-3 text-right">
             <DialogTitle className="text-right text-xl">{editingStudentId ? "تعديل بيانات الطالب/ة" : "إضافة طالب/ة"}</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4 p-6">
+          <div className="space-y-3 p-4">
             {!editingStudentId && (
               <div className="grid grid-cols-2 gap-3">
                 <Button type="button" variant={studentEntryMode === "single" ? "default" : "outline"} className={studentEntryMode === "single" ? "text-white" : ""} onClick={() => setStudentEntryMode("single")}>
@@ -5714,13 +5510,13 @@ const Dashboard = () => {
           setAdminDeletingId(null);
         }
       }}>
-        <DialogContent className="max-w-lg rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_20px_50px_rgba(15,23,42,0.08)] [&>button]:hidden">
-          <DialogHeader className="border-b border-border/60 px-5 py-4 text-right">
+        <DialogContent className="max-w-md rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_20px_50px_rgba(15,23,42,0.08)] [&>button]:hidden">
+          <DialogHeader className="border-b border-border/60 px-4 py-3 text-right">
             <DialogTitle className="text-right text-xl text-foreground">الإشراف</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 px-5 py-4">
+          <div className="space-y-3 px-4 py-3">
             <div className="space-y-2">
-              <div className="max-h-48 space-y-2 overflow-y-auto rounded-[1.25rem] border border-border/60 bg-white p-3">
+              <div className="max-h-48 space-y-2 overflow-y-auto rounded-[1.15rem] border border-border/60 bg-white p-2.5">
                 {adminsLoading ? (
                   <div className="py-3 text-sm text-muted-foreground">جارٍ تحميل المشرفين...</div>
                 ) : adminsList.length > 0 ? (
@@ -5728,7 +5524,7 @@ const Dashboard = () => {
                     const isCurrentAdmin = admin.loginCode === session?.loginCode;
 
                     return (
-                      <div key={admin.id} className="flex items-center justify-between rounded-2xl border border-border/60 bg-muted/10 px-3 py-2">
+                      <div key={admin.id} className="flex items-center justify-between rounded-[1rem] border border-border/60 bg-muted/10 px-2.5 py-2">
                         <div className="text-right">
                           <div className="text-sm font-medium text-foreground">{admin.name}</div>
                           <div className="text-xs text-muted-foreground">{getRoleLabel(admin.role)} - {admin.loginCode}</div>
@@ -5772,7 +5568,7 @@ const Dashboard = () => {
             </div>
             {adminError && <p className="text-sm font-medium text-destructive">{adminError}</p>}
           </div>
-          <div className="flex justify-end gap-3 border-t border-border/60 px-5 py-4">
+          <div className="flex justify-end gap-3 border-t border-border/60 px-4 py-3">
             <Button variant="outline" className="rounded-full px-5" onClick={() => setAdminsOpen(false)} disabled={adminSubmitting}>إلغاء</Button>
             <Button className="rounded-full px-5" onClick={handleSaveAdmin} disabled={adminSubmitting}>{adminSubmitting ? "جارٍ الحفظ..." : "إضافة"}</Button>
           </div>
@@ -5780,12 +5576,11 @@ const Dashboard = () => {
       </Dialog>
 
       <Dialog open={coursesManageOpen} onOpenChange={setCoursesManageOpen}>
-        <DialogContent className="max-w-lg overflow-hidden rounded-[2rem] border border-primary/15 bg-white/95 p-0 text-right shadow-[0_28px_80px_rgba(8,65,89,0.16)] [&>button]:hidden">
-          <div className="flex items-center justify-between border-b border-border/60 px-5 py-4">
-            <button type="button" className="text-muted-foreground hover:text-foreground" onClick={() => setCoursesManageOpen(false)}><X className="size-5" /></button>
-            <DialogTitle className="text-lg font-bold">إدارة الدورات</DialogTitle>
-          </div>
-          <div className="space-y-4 px-5 py-4">
+        <DialogContent className="max-w-md overflow-hidden rounded-[1.75rem] border border-primary/15 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(8,65,89,0.12)] [&>button]:hidden">
+          <DialogHeader className="border-b border-border/60 px-3 py-3 text-right">
+            <DialogTitle className="text-right text-xl font-bold text-foreground">إدارة الدورات</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2.5 px-3 py-2.5">
             <div className="flex items-center gap-3">
               <Input
                 value={courseTitle}
@@ -5800,12 +5595,13 @@ const Dashboard = () => {
               </Button>
             </div>
             {courseError && <p className="text-sm font-medium text-destructive">{courseError}</p>}
-            <div className="max-h-72 space-y-2 overflow-y-auto">
+            <div className="max-h-72 space-y-2 overflow-y-auto rounded-[1.1rem] border border-border/50 bg-muted/10 p-1.5">
               {courseItems.length === 0 && (
                 <p className="py-4 text-center text-sm text-muted-foreground">لا توجد دورات بعد.</p>
               )}
               {courseItems.map((course) => (
-                <div key={course.id} className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-white px-4 py-3">
+                <div key={course.id} className="flex items-center gap-3 rounded-[1rem] border border-border/60 bg-white px-3 py-2.5">
+                  <span className="flex-1 truncate text-left text-sm font-medium text-foreground">{course.title}</span>
                   <div className="flex shrink-0 gap-2">
                     <Button variant="outline" size="icon" className="h-8 w-8 rounded-xl" onClick={() => handleEditCourse(course.id, course.title)}>
                       <Pencil className="size-3.5" />
@@ -5814,10 +5610,12 @@ const Dashboard = () => {
                       <Trash2 className="size-3.5" />
                     </Button>
                   </div>
-                  <span className="truncate text-sm font-medium text-foreground">{course.title}</span>
                 </div>
               ))}
             </div>
+          </div>
+          <div className="flex justify-end border-t border-border/60 px-3 py-2.5">
+            <Button variant="outline" className="rounded-full px-5" onClick={() => setCoursesManageOpen(false)}>إلغاء</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -5836,11 +5634,11 @@ const Dashboard = () => {
               <div className="absolute -bottom-10 -right-6 h-24 w-24 rounded-full bg-accent/10 blur-3xl" />
             </div>
 
-            <DialogHeader className="relative border-b border-border/60 px-6 py-5 text-right">
+            <DialogHeader className="relative border-b border-border/60 px-4 py-3 text-right">
               <DialogTitle className="text-right text-2xl text-foreground">تعديل اسم الدورة</DialogTitle>
             </DialogHeader>
 
-            <div className="relative space-y-4 px-6 py-5">
+            <div className="relative space-y-3 px-4 py-3">
               <div className="space-y-2">
                 <div className="text-sm font-medium text-muted-foreground">اسم الدورة</div>
                 <Input
@@ -5858,7 +5656,7 @@ const Dashboard = () => {
               {courseEditError && <p className="text-sm font-medium text-destructive">{courseEditError}</p>}
             </div>
 
-            <div className="relative flex justify-end gap-3 border-t border-border/60 px-6 py-5">
+            <div className="relative flex justify-end gap-3 border-t border-border/60 px-4 py-3">
               <Button
                 variant="outline"
                 className="rounded-full border-primary/20 bg-white/80 px-5 hover:bg-primary/5"
@@ -5878,7 +5676,7 @@ const Dashboard = () => {
 
       <Dialog open={Boolean(detailsSubmission)} onOpenChange={(open) => !open && setDetailsSubmissionId(null)}>
         <DialogContent className="max-h-[90vh] w-[calc(100vw-1.5rem)] max-w-4xl overflow-y-auto rounded-[2rem] p-0 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300/80 [&::-webkit-scrollbar-track]:bg-transparent [&>button]:hidden">
-          <DialogHeader className="flex flex-row items-center justify-between border-b border-border px-6 py-5 text-right">
+          <DialogHeader className="flex flex-row items-center justify-between border-b border-border px-4 py-3 text-right">
             <div className="flex-1">
               <DialogTitle className="text-right text-2xl">
                 <span className="inline-flex items-center gap-2">
@@ -5907,7 +5705,7 @@ const Dashboard = () => {
               );
             })()}
           </DialogHeader>
-          <div className="space-y-4 p-6">
+          <div className="space-y-3 p-4">
             {detailsSubmission && (() => {
               const questions = getAssessmentQuestionsForCourse(detailsSubmission.courseId, detailsSubmission.assessmentType);
               const realAnswers = detailsSubmission.answers.filter((answer) => answer.questionId !== "__score_override__");
@@ -5919,7 +5717,7 @@ const Dashboard = () => {
               return (
                 <>
                   {isDocumentTaskSubmission && documentTaskAnswer ? (
-                    <div className="rounded-3xl border border-primary/10 bg-white p-5">
+                    <div className="rounded-3xl border border-primary/10 bg-white p-4">
                       <DocumentEditor value={documentTaskAnswer.value || "<p>لا يوجد محتوى</p>"} editable={false} />
                     </div>
                   ) : (
@@ -5930,13 +5728,13 @@ const Dashboard = () => {
                         : false;
 
                       return (
-                        <div key={question.id} className="rounded-3xl border border-primary/10 bg-white p-5">
+                        <div key={question.id} className="rounded-3xl border border-primary/10 bg-white p-4">
                           <div className="mb-2 font-bold text-foreground">{index + 1}. {question.prompt} <span className="text-sm font-medium text-muted-foreground">• الدرجة: {question.points}</span></div>
                           {question.correctAnswer && <div className="mb-2 text-sm font-medium text-emerald-700">الإجابة الصحيحة: {question.correctAnswer}</div>}
                           {answer && question.correctAnswer && <div className={cn("mb-3 text-sm font-medium", isCorrect ? "text-emerald-700" : "text-rose-700")}>{isCorrect ? "صحيحة" : "غير صحيحة"}</div>}
                           <div className="text-sm text-muted-foreground">إجابة الطالب: {answer?.value || "لا توجد إجابة"}</div>
                           {answer?.fileName && (
-                            <div className="mt-3 rounded-2xl border border-border/60 bg-muted/10 p-4 text-xs text-muted-foreground">
+                            <div className="mt-3 rounded-2xl border border-border/60 bg-muted/10 p-3 text-xs text-muted-foreground">
                               <div className="mb-3 font-medium text-foreground">الملف المرفق: {answer.fileName}</div>
                               {answer.fileDataUrl ? (
                                 answer.fileType?.startsWith("image/") || answer.fileDataUrl.startsWith("data:image/") ? (
@@ -5980,7 +5778,7 @@ const Dashboard = () => {
                                     </span>
                                   </button>
                                 ) : (
-                                  <div className="rounded-2xl border border-dashed border-border/60 bg-white px-4 py-5 text-center text-muted-foreground">
+                                  <div className="rounded-2xl border border-dashed border-border/60 bg-white px-3 py-4 text-center text-muted-foreground">
                                     هذا النوع من الملفات لا يدعم المعاينة داخل النافذة.
                                   </div>
                                 )
@@ -5997,7 +5795,7 @@ const Dashboard = () => {
               );
             })()}
           </div>
-          <div className="flex justify-end border-t border-border px-6 py-5">
+          <div className="flex justify-end border-t border-border px-4 py-3">
             <Button variant="outline" className="rounded-full px-5" onClick={() => setDetailsSubmissionId(null)}>إغلاق</Button>
           </div>
         </DialogContent>
@@ -6055,7 +5853,7 @@ const Dashboard = () => {
 
       <Dialog open={notifTemplatesOpen} onOpenChange={setNotifTemplatesOpen}>
         <DialogContent className="max-w-xl rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
-          <DialogHeader className="border-b border-border/60 px-5 py-4 text-right">
+          <DialogHeader className="border-b border-border/60 px-4 py-3 text-right">
             <div className="flex items-center justify-between">
               <DialogTitle className="text-right text-xl text-foreground">قوالب الإشعارات</DialogTitle>
               <Popover>
@@ -6088,7 +5886,7 @@ const Dashboard = () => {
               </Popover>
             </div>
           </DialogHeader>
-          <div className="space-y-4 px-5 py-4">
+          <div className="space-y-3 px-4 py-3">
             <div className="space-y-2">
               <label className="text-sm font-bold text-foreground">قالب الاختبار القبلي</label>
               <Textarea value={notifTemplatePre} onChange={(e) => setNotifTemplatePre(e.target.value)} className="min-h-24 text-right" dir="rtl" />
@@ -6102,7 +5900,7 @@ const Dashboard = () => {
               <Textarea value={notifTemplateTasks} onChange={(e) => setNotifTemplateTasks(e.target.value)} className="min-h-24 text-right" dir="rtl" />
             </div>
           </div>
-          <div className="flex justify-end gap-3 border-t border-border/60 px-5 py-4">
+          <div className="flex justify-end gap-3 border-t border-border/60 px-4 py-3">
             <Button variant="outline" className="rounded-full px-5" onClick={() => setNotifTemplatesOpen(false)}>إلغاء</Button>
             <Button className="rounded-full px-5" disabled={notifTemplateSaving} onClick={async () => {
               if (!activeCourse) return;
@@ -6126,33 +5924,33 @@ const Dashboard = () => {
       </Dialog>
 
       <Dialog open={courseLinksOpen} onOpenChange={setCourseLinksOpen}>
-        <DialogContent className="max-w-xl rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
-          <DialogHeader className="border-b border-border/60 px-5 py-4 text-right">
+        <DialogContent className="max-w-lg rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
+          <DialogHeader className="border-b border-border/60 px-3 py-2.5 text-right">
             <DialogTitle className="text-right text-xl text-foreground">الروابط</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 px-5 py-4 text-right">
-            <div className={cn(dashboardMutedPanelClass, "space-y-2 p-3.5")}>
+          <div className="space-y-2 px-3 py-2.5 text-right">
+            <div className={cn(dashboardMutedPanelClass, "space-y-1.5 p-2.5")}>
               <div className="space-y-1">
                 <div className="text-sm font-bold text-foreground">رابط الاختبارات القبلية</div>
                 <div className="break-all text-sm text-muted-foreground">{getCourseLink("pre")}</div>
               </div>
               <Button variant="outline" size="sm" onClick={() => handleCopyCourseLink("pre")}><Copy className="size-4" />نسخ الرابط</Button>
             </div>
-            <div className={cn(dashboardMutedPanelClass, "space-y-2 p-3.5")}>
+            <div className={cn(dashboardMutedPanelClass, "space-y-1.5 p-2.5")}>
               <div className="space-y-1">
                 <div className="text-sm font-bold text-foreground">رابط الاختبارات البعدية</div>
                 <div className="break-all text-sm text-muted-foreground">{getCourseLink("post")}</div>
               </div>
               <Button variant="outline" size="sm" onClick={() => handleCopyCourseLink("post")}><Copy className="size-4" />نسخ الرابط</Button>
             </div>
-            <div className={cn(dashboardMutedPanelClass, "space-y-2 p-3.5")}>
+            <div className={cn(dashboardMutedPanelClass, "space-y-1.5 p-2.5")}>
               <div className="space-y-1">
                 <div className="text-sm font-bold text-foreground">رابط التكاليف</div>
                 <div className="break-all text-sm text-muted-foreground">{getTaskLink()}</div>
               </div>
               <Button variant="outline" size="sm" onClick={() => void navigator.clipboard.writeText(getTaskLink())}><Copy className="size-4" />نسخ الرابط</Button>
             </div>
-            <div className={cn(dashboardMutedPanelClass, "space-y-2 p-3.5")}>
+            <div className={cn(dashboardMutedPanelClass, "space-y-1.5 p-2.5")}>
               <div className="space-y-1">
                 <div className="text-sm font-bold text-foreground">رابط الاختبار النهائي</div>
                 <div className="break-all text-sm text-muted-foreground">{typeof window !== "undefined" ? `${window.location.origin}/final-exam` : "/final-exam"}</div>
@@ -6160,7 +5958,7 @@ const Dashboard = () => {
               <Button variant="outline" size="sm" onClick={() => void navigator.clipboard.writeText(typeof window !== "undefined" ? `${window.location.origin}/final-exam` : "/final-exam")}><Copy className="size-4" />نسخ الرابط</Button>
             </div>
           </div>
-          <div className="flex justify-end border-t border-border/60 px-5 py-4">
+          <div className="flex justify-end border-t border-border/60 px-3 py-2.5">
             <Button variant="outline" className="rounded-full px-5" onClick={() => setCourseLinksOpen(false)}>إلغاء</Button>
           </div>
         </DialogContent>
@@ -6171,15 +5969,15 @@ const Dashboard = () => {
           <DialogHeader className="border-b border-border/60 px-6 py-5 text-right">
             <DialogTitle className="text-right text-xl">نسخ الأسئلة إلى</DialogTitle>
           </DialogHeader>
-          <p className="px-6 pt-4 text-sm text-muted-foreground">اختر الفرع الذي تريد نسخ أسئلة {branchLabels[effectiveFinalExamManageBranch]} إليه.</p>
-          <div className="grid grid-cols-2 gap-3 p-6">
+          <p className="px-4 pt-3 text-sm text-muted-foreground">اختر الفرع الذي تريد نسخ أسئلة {branchLabels[effectiveFinalExamManageBranch]} إليه.</p>
+          <div className="grid grid-cols-2 gap-2.5 p-4">
             {(["male", "female"] as BranchId[]).map((branchId) => (
               <button
                 key={branchId}
                 type="button"
                 disabled={branchId === effectiveFinalExamManageBranch}
                 className={cn(
-                  "flex flex-col items-center gap-3 rounded-[1.25rem] border border-border/70 bg-muted/20 p-5 text-center transition-colors hover:border-primary/40 hover:bg-primary/5",
+                  "flex flex-col items-center gap-2.5 rounded-[1.25rem] border border-border/70 bg-muted/20 p-3.5 text-center transition-colors hover:border-primary/40 hover:bg-primary/5",
                   branchId === effectiveFinalExamManageBranch && "cursor-not-allowed opacity-40",
                 )}
                 onClick={() => void handleCopyFinalExamQuestionsToBranch(branchId)}
@@ -6189,7 +5987,7 @@ const Dashboard = () => {
               </button>
             ))}
           </div>
-          <div className="flex justify-end border-t border-border/60 px-6 py-4">
+          <div className="flex justify-end border-t border-border/60 px-4 py-3">
             <Button variant="outline" className="rounded-full px-5" onClick={() => setFinalExamCopyOpen(false)}>إلغاء</Button>
           </div>
         </DialogContent>
@@ -6197,10 +5995,10 @@ const Dashboard = () => {
 
       <Dialog open={finalExamActivationDialogOpen} onOpenChange={setFinalExamActivationDialogOpen}>
         <DialogContent className="max-w-sm rounded-[1.75rem] p-0 text-right [&>button]:hidden">
-          <DialogHeader className="border-b border-border/60 px-6 py-5 text-right">
+          <DialogHeader className="border-b border-border/60 px-4 py-3 text-right">
             <DialogTitle className="text-right text-xl">تفعيل الاختبار النهائي</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 px-6 py-5">
+          <div className="space-y-3 px-4 py-3">
             <p className="text-sm text-muted-foreground">حدد مدة فتح الاختبار لفرع {branchLabels[effectiveFinalExamManageBranch]} فقط.</p>
             <div className="space-y-2">
               <label className="text-sm font-bold text-foreground">المدة بالدقائق</label>
@@ -6208,7 +6006,7 @@ const Dashboard = () => {
             </div>
             {finalExamActivationError && <p className="text-sm font-medium text-destructive">{finalExamActivationError}</p>}
           </div>
-          <div className="flex justify-end gap-3 border-t border-border/60 px-6 py-4">
+          <div className="flex justify-end gap-3 border-t border-border/60 px-4 py-3">
             <Button variant="outline" className="rounded-full px-5" onClick={() => setFinalExamActivationDialogOpen(false)}>إلغاء</Button>
             <Button className="rounded-full px-5" onClick={() => void handleActivateFinalExam()}>تفعيل</Button>
           </div>
@@ -6222,10 +6020,10 @@ const Dashboard = () => {
         }
       }}>
         <DialogContent className="max-w-lg rounded-[1.75rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
-          <DialogHeader className="border-b border-border/60 px-6 py-5 text-right">
+          <DialogHeader className="border-b border-border/60 px-4 py-3 text-right">
             <DialogTitle className="text-right text-xl text-foreground">{editingReciterId ? "تعديل المقرئ" : "إضافة مقرئ"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 px-6 py-5">
+          <div className="space-y-3 px-4 py-3">
             <div className="space-y-2">
               <div className="text-sm font-medium text-muted-foreground">اسم المقرئ</div>
               <Input value={reciterForm.name} onChange={(event) => setReciterForm((current) => ({ ...current, name: event.target.value }))} placeholder="اسم المقرئ" />
@@ -6300,7 +6098,7 @@ const Dashboard = () => {
             </div>
             {reciterError && <p className="text-sm font-medium text-destructive">{reciterError}</p>}
           </div>
-          <div className="flex justify-end gap-3 border-t border-border/60 px-6 py-5">
+          <div className="flex justify-end gap-3 border-t border-border/60 px-4 py-3">
             <Button variant="outline" className="rounded-full px-5" onClick={() => setRecitersOpen(false)} disabled={reciterSubmitting}>إلغاء</Button>
             <Button className="rounded-full px-5" onClick={handleSaveReciter} disabled={reciterSubmitting}>{reciterSubmitting ? "جارٍ الحفظ..." : editingReciterId ? "حفظ" : "إضافة"}</Button>
           </div>
@@ -6309,14 +6107,14 @@ const Dashboard = () => {
 
       <Dialog open={Boolean(selectedReciterActions)} onOpenChange={(open) => !open && resetReciterActionsState()}>
         <DialogContent className="max-w-md rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
-          <DialogHeader className="border-b border-border/60 px-6 py-5 text-right">
+          <DialogHeader className="border-b border-border/60 px-4 py-3 text-right">
             <DialogTitle className="text-right text-xl text-foreground">إجراءات المقرئ</DialogTitle>
             <DialogDescription className="text-right">
               {selectedReciterActions ? `اختر الإجراء المناسب للمقرئ ${selectedReciterActions.reciter.name}.` : ""}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3 px-6 py-5">
+          <div className="space-y-2.5 px-4 py-3">
             {hasPermission("transfer_reciter_student") && (
             <Button
               variant="outline"
@@ -6351,7 +6149,7 @@ const Dashboard = () => {
             )}
           </div>
 
-          <div className="flex justify-end border-t border-border/60 px-6 py-5">
+          <div className="flex justify-end border-t border-border/60 px-4 py-3">
             <Button variant="outline" className="rounded-full px-5" onClick={resetReciterActionsState}>إغلاق</Button>
           </div>
         </DialogContent>
@@ -6359,11 +6157,11 @@ const Dashboard = () => {
 
       <Dialog open={Boolean(pendingAdminTransfer)} onOpenChange={(open) => !open && resetAdminTransferState()}>
         <DialogContent className="w-[calc(100vw-1.5rem)] max-w-md rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
-          <DialogHeader className="border-b border-border/60 px-6 py-5 text-right">
+          <DialogHeader className="border-b border-border/60 px-4 py-3 text-right">
             <DialogTitle className="text-right text-xl text-foreground">نقل الطالب</DialogTitle>
             <DialogDescription className="sr-only"></DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 px-6 py-5">
+          <div className="space-y-3 px-4 py-3">
             <div className="space-y-2">
               <div className="text-sm font-medium text-muted-foreground">المقرئ الجديد</div>
               <Select
@@ -6381,7 +6179,7 @@ const Dashboard = () => {
             </div>
             {adminTransferError && <p className="text-sm font-medium text-destructive">{adminTransferError}</p>}
           </div>
-          <div className="flex justify-end gap-3 border-t border-border/60 px-6 py-5">
+          <div className="flex justify-end gap-3 border-t border-border/60 px-4 py-3">
             <Button variant="outline" className="rounded-full px-5" onClick={resetAdminTransferState} disabled={adminTransferSubmitting}>إلغاء</Button>
             <Button className="rounded-full px-5" onClick={() => void handleAdminTransferStudent()} disabled={adminTransferSubmitting || availableAdminTransferReciters.length === 0}>
               {adminTransferSubmitting ? "جارٍ النقل..." : "نقل"}
@@ -6392,13 +6190,13 @@ const Dashboard = () => {
 
       <AlertDialog open={Boolean(pendingDeleteStudent)} onOpenChange={(open) => !open && setPendingDeleteStudent(null)}>
         <AlertDialogContent className="max-w-sm rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
-          <AlertDialogHeader className="border-b border-border/60 px-5 py-4 text-right">
+          <AlertDialogHeader className="border-b border-border/60 px-4 py-3 text-right">
             <AlertDialogTitle className="text-right text-lg text-foreground">تأكيد حذف الطالب</AlertDialogTitle>
             <AlertDialogDescription className="text-right text-sm leading-6 text-muted-foreground">
               {pendingDeleteStudent ? `سيتم حذف ${pendingDeleteStudent.name} نهائيًا من القائمة.` : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter className="justify-start gap-2 px-5 py-4 sm:justify-start sm:space-x-0">
+          <AlertDialogFooter className="justify-start gap-2 px-4 py-3 sm:justify-start sm:space-x-0">
             <AlertDialogAction className="rounded-full bg-destructive px-4 text-destructive-foreground hover:bg-destructive/90" onClick={confirmDeleteStudent}>
               حذف
             </AlertDialogAction>
@@ -6414,13 +6212,13 @@ const Dashboard = () => {
               <div className="absolute -top-10 -left-6 h-24 w-24 rounded-full bg-primary/10 blur-3xl" />
               <div className="absolute -bottom-10 -right-6 h-24 w-24 rounded-full bg-destructive/10 blur-3xl" />
             </div>
-            <AlertDialogHeader className="relative border-b border-border/60 px-5 py-5 text-right">
+            <AlertDialogHeader className="relative border-b border-border/60 px-4 py-3 text-right">
               <AlertDialogTitle className="text-right text-xl text-foreground">تأكيد حذف الدورة</AlertDialogTitle>
               <AlertDialogDescription className="text-right text-sm leading-6 text-muted-foreground">
                 {pendingDeleteCourse ? `سيتم حذف الدورة ${pendingDeleteCourse.name} نهائيًا مع أسئلتها ونتائجها المرتبطة.` : ""}
               </AlertDialogDescription>
             </AlertDialogHeader>
-            <AlertDialogFooter className="relative justify-start gap-2 px-5 py-4 sm:justify-start sm:space-x-0">
+            <AlertDialogFooter className="relative justify-start gap-2 px-4 py-3 sm:justify-start sm:space-x-0">
               <AlertDialogAction className="rounded-full bg-destructive px-5 text-destructive-foreground hover:bg-destructive/90" onClick={confirmDeleteCourse}>
                 حذف الدورة
               </AlertDialogAction>
@@ -6432,13 +6230,13 @@ const Dashboard = () => {
 
       <AlertDialog open={Boolean(pendingDeleteReciter)} onOpenChange={(open) => !open && setPendingDeleteReciter(null)}>
         <AlertDialogContent className="max-w-sm rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
-          <AlertDialogHeader className="border-b border-border/60 px-5 py-4 text-right">
+          <AlertDialogHeader className="border-b border-border/60 px-4 py-3 text-right">
             <AlertDialogTitle className="text-right text-lg text-foreground">تأكيد حذف المقرئ</AlertDialogTitle>
             <AlertDialogDescription className="text-right text-sm leading-6 text-muted-foreground">
               {pendingDeleteReciter ? `سيتم حذف ${pendingDeleteReciter.name} نهائيًا من القائمة.` : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter className="justify-start gap-2 px-5 py-4 sm:justify-start sm:space-x-0">
+          <AlertDialogFooter className="justify-start gap-2 px-4 py-3 sm:justify-start sm:space-x-0">
             <AlertDialogAction className="rounded-full bg-destructive px-4 text-destructive-foreground hover:bg-destructive/90" onClick={confirmDeleteReciter}>
               {reciterDeleting ? "جارٍ الحذف..." : "حذف"}
             </AlertDialogAction>

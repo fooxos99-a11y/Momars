@@ -202,6 +202,7 @@ const Stats = () => {
     const students = data.students;
     const totalStudents = students.length;
     if (totalStudents === 0) return null;
+    const manualAttendance = (data.attendance ?? []).filter((record) => record.source === "manual");
 
     const loginIds = new Set(students.map((s) => s.loginId));
     const courses = getCourses(data).sort((a, b) => a.sortOrder - b.sortOrder);
@@ -247,7 +248,7 @@ const Stats = () => {
 
     // Attendance
     const attendedLoginIds = new Set(
-      data.attendance.filter((r) => courseIds.includes(r.courseId) && loginIds.has(r.loginId)).map((r) => r.loginId),
+      manualAttendance.filter((r) => courseIds.includes(r.courseId) && loginIds.has(r.loginId)).map((r) => r.loginId),
     );
     const attendance = (attendedLoginIds.size / totalStudents) * 100;
 

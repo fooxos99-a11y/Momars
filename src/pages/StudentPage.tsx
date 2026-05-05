@@ -59,20 +59,17 @@ const StudentPage = () => {
       return;
     }
 
-    const loginFromQuery = searchParams.get("login")?.trim();
     const session = loadAccessSession();
     const loginFromSession = session?.role === "student" ? session.loginCode.trim() : "";
-    const resolvedLogin = loginFromQuery || loginFromSession;
 
-    if (!resolvedLogin) {
+    if (!loginFromSession) {
       setStudentResolved(true);
       return;
     }
 
-    // A login was attempted — track this so we don't silently redirect on data load failure
     setLoginAttempted(true);
 
-    const foundStudent = getStudentByLoginId(data, resolvedLogin);
+    const foundStudent = getStudentByLoginId(data, loginFromSession);
 
     if (foundStudent) {
       setStudentLoginId(foundStudent.loginId);
@@ -272,11 +269,12 @@ const StudentPage = () => {
 
   const tasksRows = useMemo(() => {
     if (!student) return [];
+    const manualAttendance = (data.attendance ?? []).filter((record) => record.source === "manual");
     return getTasks(data).sort((a, b) => a.sortOrder - b.sortOrder).map((task) => {
       const hasSubmission = data.submissions.some(
         (s) => s.courseId === task.id && s.assessmentType === "tasks" && s.loginId === student.loginId,
       );
-      const hasAttendance = data.attendance.some(
+      const hasAttendance = manualAttendance.some(
         (r) => r.courseId === task.id && r.loginId === student.loginId,
       );
       return { task, done: hasSubmission || hasAttendance };
@@ -285,8 +283,9 @@ const StudentPage = () => {
 
   const attendanceRows = useMemo(() => {
     if (!student) return [];
+    const manualAttendance = (data.attendance ?? []).filter((record) => record.source === "manual");
     return sortedCourses.map((course) => {
-      const present = data.attendance.some(
+      const present = manualAttendance.some(
         (r) => r.courseId === course.id && r.loginId === student.loginId,
       );
       return { course, present };

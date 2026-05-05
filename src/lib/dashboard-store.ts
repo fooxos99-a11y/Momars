@@ -284,6 +284,7 @@ const ACCESS_STORAGE_KEY = "mmars-access-session";
 export const ACCESS_SESSION_SYNC_EVENT = "mmars-access-session-sync";
 const isBrowser = typeof window !== "undefined";
 const createId = () => crypto.randomUUID();
+const OPEN_ENDED_ASSESSMENT_WINDOW = "__always_open__";
 
 const defaultCourseBranchAvailability = (): Record<BranchId, CourseBranchAvailability> => ({
   male: { pre: true, post: true, tasks: true },
@@ -313,6 +314,42 @@ const defaultAssessmentNotificationTemplates = (): CourseAssessmentTemplates => 
   post: getDefaultAssessmentNotificationTemplate("post"),
   tasks: getDefaultAssessmentNotificationTemplate("tasks"),
 });
+
+const buildSatisfactionQuestionsForCourse = (
+  allQuestions: SatisfactionQuestion[],
+  courseId: string,
+) => {
+  const templateQuestionsByCourse = new Map<string, SatisfactionQuestion[]>();
+
+  allQuestions.forEach((question) => {
+    if (question.courseId === courseId) {
+      return;
+    }
+
+    const current = templateQuestionsByCourse.get(question.courseId) ?? [];
+    current.push(question);
+    templateQuestionsByCourse.set(question.courseId, current);
+  });
+
+  const templateQuestions = [...templateQuestionsByCourse.values()]
+    .sort((left, right) => right.length - left.length)[0]
+    ?.slice()
+    .sort((left, right) => left.sortOrder - right.sortOrder);
+
+  if (!templateQuestions || templateQuestions.length === 0) {
+    return [] as SatisfactionQuestion[];
+  }
+
+  const now = new Date().toISOString();
+
+  return templateQuestions.map((question, index) => ({
+    ...question,
+    id: createId(),
+    courseId,
+    sortOrder: index,
+    createdAt: now,
+  }));
+};
 
 const initialData: DashboardData = {
   roles: [
@@ -491,10 +528,12 @@ const normalizeData = (input?: Partial<DashboardData>): DashboardData => {
         }))
       : initialData.submissions,
     attendance: Array.isArray(input?.attendance)
-      ? input.attendance.map((record) => ({
-          ...record,
-          source: "post-test",
-        }))
+      ? input.attendance
+          .filter((record) => record.source === "manual")
+          .map((record) => ({
+            ...record,
+            source: "manual" as const,
+          }))
       : initialData.attendance,
     notifications: Array.isArray(input?.notifications)
       ? input.notifications
@@ -545,7 +584,7 @@ const useCreateDashboardStore = () => {
   useEffect(() => {
     let cancelled = false;
 
-    const hydrateFromDatabase = async () => {
+    const hydrateFromDatabase = async (markHydrated = false) => {
       try {
         const nextData = await loadDashboardDataFromDatabase();
 
@@ -559,16 +598,31 @@ const useCreateDashboardStore = () => {
           setLoadError(err instanceof Error ? err.message : "تعذر الاتصال بقاعدة البيانات.");
         }
       } finally {
-        if (!cancelled) {
+        if (!cancelled && markHydrated) {
           setIsHydrated(true);
         }
       }
     };
 
-    void hydrateFromDatabase();
+    void hydrateFromDatabase(true);
+
+    const refreshIfVisible = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return;
+      }
+
+      void hydrateFromDatabase();
+    };
+
+    const intervalId = window.setInterval(refreshIfVisible, 5000);
+    window.addEventListener("focus", refreshIfVisible);
+    document.addEventListener("visibilitychange", refreshIfVisible);
 
     return () => {
       cancelled = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshIfVisible);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
     };
   }, []);
 
@@ -793,8 +847,8 @@ const useCreateDashboardStore = () => {
           title,
           entityType,
           isActive: false,
-          isPreEnabled: true,
-          isPostEnabled: true,
+          isPreEnabled: false,
+          isPostEnabled: false,
           isTasksEnabled: false,
           branchAvailability: defaultCourseBranchAvailability(),
           assessmentWindows: defaultAssessmentWindows(),
@@ -854,6 +908,13 @@ const useCreateDashboardStore = () => {
     },
     updateCourse: async (courseId: string, updates: Partial<Omit<CourseRecord, "id" | "createdAt">>) => {
       const previousCourses = data.courses;
+      const targetCourse = data.courses.find((course) => course.id === courseId);
+      const shouldCloneSatisfactionQuestions = Boolean(
+        targetCourse &&
+        !targetCourse.isPostEnabled &&
+        updates.isPostEnabled === true &&
+        !data.satisfactionQuestions.some((question) => question.courseId === courseId),
+      );
 
       setCourses((courses) =>
         courses.map((course) =>
@@ -874,6 +935,42 @@ const useCreateDashboardStore = () => {
 
       try {
         await updateCourseInDatabase(courseId, updates);
+
+        if (shouldCloneSatisfactionQuestions) {
+          const clonedQuestions = buildSatisfactionQuestionsForCourse(data.satisfactionQuestions, courseId);
+
+          if (clonedQuestions.length > 0) {
+            setSatisfactionQuestions((questions) => [...questions, ...clonedQuestions]);
+
+            try {
+              const savedQuestions = await addSatisfactionQuestionsToDatabase(
+                clonedQuestions.map((question) => ({
+                  courseId: question.courseId,
+                  prompt: question.prompt,
+                  type: question.type,
+                  isRequired: question.isRequired,
+                  sortOrder: question.sortOrder,
+                })),
+              );
+
+              const savedByTempId = new Map(clonedQuestions.map((question, index) => [question.id, savedQuestions[index]]));
+
+              setSatisfactionQuestions((questions) =>
+                questions.map((question) => {
+                  if (question.courseId !== courseId) {
+                    return question;
+                  }
+
+                  const saved = savedByTempId.get(question.id);
+                  return saved ? { ...question, id: saved.id, createdAt: saved.createdAt } : question;
+                }),
+              );
+            } catch (error) {
+              setSatisfactionQuestions((questions) => questions.filter((question) => question.courseId !== courseId));
+              throw error;
+            }
+          }
+        }
       } catch (error) {
         setCourses(() => previousCourses);
         throw error;
@@ -1498,14 +1595,18 @@ export const getActiveTask = (data: DashboardData, branchId?: BranchId | null) =
   getTasks(data).find((task) => isAssessmentEnabledForCourse(task, "tasks", branchId ?? null)) ?? null;
 
 const isFutureDateTime = (value?: string) => {
-  if (!value) {
+  if (value === OPEN_ENDED_ASSESSMENT_WINDOW) {
     return true;
+  }
+
+  if (!value) {
+    return false;
   }
 
   const timestamp = new Date(value).getTime();
 
   if (Number.isNaN(timestamp)) {
-    return true;
+    return false;
   }
 
   return timestamp > Date.now();
@@ -1516,11 +1617,13 @@ export const getAssessmentAvailabilityDeadline = (course: CourseRecord | null, a
     return undefined;
   }
 
+  const normalizeWindowValue = (value?: string) => (value === OPEN_ENDED_ASSESSMENT_WINDOW ? undefined : value);
+
   if (branchId) {
-    return course.assessmentWindows[branchId][assessmentType] ?? course.assessmentWindows.global[assessmentType];
+    return normalizeWindowValue(course.assessmentWindows[branchId][assessmentType] ?? course.assessmentWindows.global[assessmentType]);
   }
 
-  return course.assessmentWindows.global[assessmentType];
+  return normalizeWindowValue(course.assessmentWindows.global[assessmentType]);
 };
 
 export const getRoleLabel = (role: UserRole) => {

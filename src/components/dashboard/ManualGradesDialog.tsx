@@ -116,17 +116,14 @@ export const ManualGradesDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="flex w-[min(98vw,700px)] max-h-[90vh] flex-col rounded-[1.5rem] p-0 text-right [&>button]:hidden">
-        <DialogHeader className="flex-shrink-0 border-b border-border/60 px-6 py-4">
-          <div className="flex items-center justify-between">
+      <DialogContent className="left-auto right-3 flex w-[min(98vw,700px)] max-h-[90vh] translate-x-0 flex-col rounded-[1.5rem] p-0 text-right sm:right-6 [&>button]:hidden">
+        <DialogHeader className="flex-shrink-0 border-b border-border/60 px-4 py-3">
+          <div className="flex items-center justify-end">
             <DialogTitle className="text-xl">تعديل الدرجات يدوياً</DialogTitle>
-            <Button variant="ghost" size="sm" className="rounded-full px-3" onClick={handleClose} disabled={saving}>
-              ✕
-            </Button>
           </div>
         </DialogHeader>
 
-        <div className="flex-1 space-y-5 overflow-y-auto p-6">
+        <div className="flex-1 space-y-4 overflow-y-auto px-4 py-3">
           {/* Selectors */}
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-2">
@@ -195,7 +192,7 @@ export const ManualGradesDialog = ({
           {courseId && branchStudents.length > 0 && (
             <div className="overflow-x-auto rounded-[1.25rem] border border-border/60 bg-white">
               {isTaskCourse && (
-                <div className="flex justify-end border-b border-border/60 px-4 py-3">
+                <div className="flex justify-end border-b border-border/60 px-3 py-2.5">
                   <Button
                     type="button"
                     variant="outline"
@@ -281,7 +278,7 @@ export const ManualGradesDialog = ({
         </div>
 
         {/* Footer */}
-        <div className="flex-shrink-0 flex items-center justify-between border-t border-border/60 px-6 py-4">
+        <div className="flex-shrink-0 flex items-center justify-between border-t border-border/60 px-4 py-3">
           <Button variant="outline" className="rounded-full px-5" onClick={handleClose} disabled={saving}>
             إلغاء
           </Button>

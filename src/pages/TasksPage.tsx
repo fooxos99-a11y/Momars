@@ -109,14 +109,15 @@ const TasksPage = () => {
     const loginFromQuery = searchParams.get("login")?.trim();
     const session = loadAccessSession();
     const loginFromSession = session?.role === "student" ? session.loginCode.trim() : "";
-    const resolvedLogin = loginFromQuery || loginFromSession;
-
-    if (!resolvedLogin) {
+    if (!loginFromSession) {
+      if (loginFromQuery) {
+        setLoginId(loginFromQuery);
+      }
       setStudentResolved(true);
       return;
     }
 
-    const foundStudent = getStudentByLoginId(data, resolvedLogin);
+    const foundStudent = getStudentByLoginId(data, loginFromSession);
 
     if (foundStudent) {
       setLoginId(foundStudent.loginId);
@@ -328,7 +329,7 @@ const TasksPage = () => {
       <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.12),_transparent_38%),linear-gradient(180deg,#f7fcfb_0%,#eff8f7_100%)]">
         <Dialog open onOpenChange={(open) => { if (!open) navigate("/"); }}>
           <DialogContent className="max-w-xl rounded-[2rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_24px_70px_rgba(8,65,89,0.14)] [&>button]:hidden">
-            <div className="space-y-5 px-6 py-7 sm:px-8">
+            <div className="space-y-4 px-4 py-5 sm:px-5">
               <div className="space-y-2 text-right">
                 <h2 className="text-3xl font-extrabold text-foreground">لا يوجد تكليف حاليًا</h2>
                 <p className="text-base leading-8 text-muted-foreground">لم يتم تفعيل أي تكليف في الوقت الحالي.</p>
@@ -378,7 +379,7 @@ const TasksPage = () => {
               onPointerDownOutside={(e) => { if (isLocked) e.preventDefault(); }}
               onInteractOutside={(e) => { if (isLocked) e.preventDefault(); }}
             >
-              <div className="space-y-5 px-6 py-6">
+              <div className="space-y-4 px-4 py-4">
                 <div className="space-y-2 text-right">
                   <div className="text-sm text-muted-foreground">دخول الطالب</div>
                   <div className="text-xl font-bold text-foreground sm:text-2xl">أدخل رقم الحساب</div>
@@ -398,13 +399,13 @@ const TasksPage = () => {
           {/* Details submission dialog */}
           <Dialog open={Boolean(detailsSubmission)} onOpenChange={(open) => !open && setDetailsSubmissionId(null)}>
             <DialogContent className="max-w-3xl rounded-[1.5rem] p-0 text-right [&>button]:hidden flex flex-col max-h-[90vh]">
-              <div className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-border/40 flex-shrink-0">
+              <div className="flex items-center justify-between border-b border-border/40 px-4 pb-2.5 pt-3.5 flex-shrink-0">
                 <Button variant="ghost" size="sm" className="rounded-full px-4" onClick={() => setDetailsSubmissionId(null)}>إغلاق ✕</Button>
                 <div className="text-xl font-bold text-foreground">تفاصيل الإرسال</div>
               </div>
-              <div className="overflow-y-auto flex-1 space-y-4 p-6">
+              <div className="overflow-y-auto flex-1 space-y-3 p-4">
                 {detailsSubmission?.answers.map((answer, index) => (
-                  <div key={`${answer.questionId}-${index}`} className="rounded-[1rem] border border-border/60 bg-muted/10 p-4">
+                  <div key={`${answer.questionId}-${index}`} className="rounded-[1rem] border border-border/60 bg-muted/10 p-3">
                     {detailsTask?.taskMode === "document" ? (
                       <DocumentEditor value={answer.value || "<p>لا يوجد محتوى</p>"} editable={false} />
                     ) : (

@@ -342,8 +342,8 @@ const Header = () => {
               <div className="absolute -bottom-12 -right-6 h-28 w-28 rounded-full bg-accent/10 blur-3xl" />
             </div>
 
-            <div className="relative space-y-6 px-6 py-6">
-              <div className="rounded-[1.6rem] border border-primary/15 bg-[linear-gradient(135deg,rgba(8,65,89,0.96),rgba(16,118,153,0.9))] px-5 py-5 text-white shadow-[0_18px_40px_rgba(8,65,89,0.2)]">
+            <div className="relative space-y-4 px-4 py-4">
+              <div className="rounded-[1.6rem] border border-primary/15 bg-[linear-gradient(135deg,rgba(8,65,89,0.96),rgba(16,118,153,0.9))] px-4 py-4 text-white shadow-[0_18px_40px_rgba(8,65,89,0.2)]">
                 <div className="flex items-start justify-between gap-4">
                   <div className="text-right">
                     <div className="text-sm text-white/75">الملف الشخصي</div>
@@ -356,11 +356,11 @@ const Header = () => {
               </div>
 
               <div className="space-y-4 text-right">
-                <div className="rounded-[1.6rem] border border-primary/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(239,249,251,0.92))] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+                <div className="rounded-[1.6rem] border border-primary/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(239,249,251,0.92))] px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
                   <div className="text-sm font-medium text-muted-foreground">نوع الحساب</div>
                   <div className="mt-2 text-xl font-extrabold text-foreground">{roleLabel}</div>
                 </div>
-                <div className="rounded-[1.6rem] border border-primary/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(239,249,251,0.92))] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+                <div className="rounded-[1.6rem] border border-primary/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(239,249,251,0.92))] px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
                   <div className="text-sm font-medium text-muted-foreground">رقم الدخول</div>
                   <div className="mt-2 text-xl font-extrabold text-foreground">{session?.loginCode ?? "-"}</div>
                 </div>
@@ -376,10 +376,10 @@ const Header = () => {
 
       <Dialog open={loginOpen} onOpenChange={setLoginOpen}>
         <DialogContent className="max-w-md rounded-[1.75rem] bg-white p-0 [&>button]:hidden">
-          <DialogHeader className="border-b border-border px-6 pb-3 pt-5 text-right">
+          <DialogHeader className="border-b border-border px-4 pb-2.5 pt-4 text-right">
             <DialogTitle className="text-right text-2xl">تسجيل الدخول</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 px-6 pb-6 pt-3">
+          <div className="space-y-3 px-4 pb-4 pt-2.5">
             <div className="space-y-2">
               <label className="text-sm font-bold text-foreground">رقم الدخول</label>
               <Input

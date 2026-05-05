@@ -33,14 +33,13 @@ const About = () => {
             <h3 className="text-2xl md:text-3xl font-extrabold mb-8">
               أهداف <span className="text-gradient-gold">البرنامج</span>
             </h3>
-            <ul className="grid grid-cols-1 md:grid-cols-2 gap-4 text-right">
+            <ul className="grid grid-cols-1 gap-4 text-right md:grid-cols-2 md:gap-5">
               {goals.map((g) => (
                 <li
                   key={g}
-                  className="flex items-start gap-3 p-4 rounded-2xl bg-card border border-primary/10 shadow-soft hover:shadow-card transition-smooth"
+                  className="rounded-[1.7rem] border border-primary/15 bg-white/90 px-6 py-6 shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition-smooth hover:border-primary/25"
                 >
-                  <span className="mt-0.5 h-7 w-7 shrink-0 rounded-full border-[3px] border-[#167190] bg-white/70" />
-                  <span className="bg-[var(--gradient-primary)] bg-clip-text text-transparent leading-relaxed font-semibold">{g}</span>
+                  <p className="text-base font-bold leading-8 text-[#0a4c61] md:text-[1.02rem]">{g}</p>
                 </li>
               ))}
             </ul>

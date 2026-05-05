@@ -86,9 +86,13 @@ const FinalExamPage = () => {
     const loginFromQuery = searchParams.get("login")?.trim();
     const session = loadAccessSession();
     const loginFromSession = session?.role === "student" ? session.loginCode.trim() : "";
-    const resolvedLogin = loginFromQuery || loginFromSession;
-    if (!resolvedLogin) return;
-    const foundStudent = getStudentByLoginId(data, resolvedLogin);
+    if (!loginFromSession) {
+      if (loginFromQuery) {
+        setLoginId(loginFromQuery);
+      }
+      return;
+    }
+    const foundStudent = getStudentByLoginId(data, loginFromSession);
     if (foundStudent) {
       setLoginId(foundStudent.loginId);
       setStudentLoginId(foundStudent.loginId);
@@ -206,7 +210,7 @@ const FinalExamPage = () => {
               onEscapeKeyDown={(e) => { if (isLocked) e.preventDefault(); }}
               onPointerDownOutside={(e) => { if (isLocked) e.preventDefault(); }}
             >
-              <div className="space-y-5 px-6 py-6">
+              <div className="space-y-4 px-4 py-4">
                 <div className="space-y-2 text-right">
                   <div className="text-sm text-muted-foreground">دخول الطالب</div>
                   <div className="text-xl font-bold text-foreground sm:text-2xl">أدخل رقم الحساب</div>
