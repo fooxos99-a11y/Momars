@@ -430,7 +430,7 @@ const ReciterPage = () => {
                     <div className="space-y-3 text-right">
                       <div className="text-sm font-bold text-foreground">المقروء</div>
 
-                      <div className="grid w-fit grid-cols-5 gap-1.5 sm:grid-cols-6">
+                      <div className="grid w-fit grid-cols-5 gap-2 sm:grid-cols-6">
                       {parts.map((part) => {
                         const active = student.completedParts.includes(part);
 
@@ -440,7 +440,7 @@ const ReciterPage = () => {
                             type="button"
                             onClick={() => void handleTogglePart(student.id, part, active)}
                             className={cn(
-                              "flex h-9 w-9 items-center justify-center rounded-full border text-[13px] font-black leading-none transition-smooth sm:h-8 sm:w-8 sm:text-sm",
+                              "flex h-10 w-10 items-center justify-center rounded-full border text-sm font-black leading-none transition-smooth sm:h-11 sm:w-11 sm:text-base",
                               active
                                 ? "border-cyan-200/30 bg-[linear-gradient(145deg,#0d7490,#0f3f5c)] text-white shadow-[0_12px_26px_rgba(8,61,93,0.35)] hover:brightness-110"
                                 : "border-slate-200 bg-white text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.06)] hover:border-cyan-300 hover:text-primary hover:shadow-[0_10px_24px_rgba(14,116,144,0.12)]",

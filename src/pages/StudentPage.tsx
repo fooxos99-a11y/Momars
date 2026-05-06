@@ -518,7 +518,7 @@ const StudentPage = () => {
                       </div>
                       <div className="rounded-[1.25rem] border border-border/60 bg-white p-4">
                         <div className="mb-4 text-sm font-bold text-foreground">المقروء</div>
-                        <div className="grid w-fit grid-cols-5 gap-1.5 sm:grid-cols-6">
+                        <div className="grid w-fit grid-cols-5 gap-2 sm:grid-cols-6">
                           {parts.map((part) => {
                             const active = student.completedParts.includes(part);
 
@@ -526,7 +526,7 @@ const StudentPage = () => {
                               <div
                                 key={part}
                                 className={cn(
-                                  "flex h-9 w-9 items-center justify-center rounded-full border text-[13px] font-black leading-none sm:h-8 sm:w-8 sm:text-sm",
+                                  "flex h-10 w-10 items-center justify-center rounded-full border text-sm font-black leading-none sm:h-11 sm:w-11 sm:text-base",
                                   active
                                     ? "border-cyan-200/30 bg-[linear-gradient(145deg,#0d7490,#0f3f5c)] text-white shadow-[0_12px_26px_rgba(8,61,93,0.35)]"
                                     : "border-slate-200 bg-white text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.06)]",

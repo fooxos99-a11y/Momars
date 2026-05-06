@@ -2377,7 +2377,7 @@ const Dashboard = () => {
   };
 
   const renderPartGrid = (studentId: string, completedParts: number[]) => (
-    <div className="grid w-fit grid-cols-5 gap-1.5 sm:grid-cols-6">
+    <div className="grid w-fit grid-cols-5 gap-2 sm:grid-cols-6">
       {parts.map((part) => {
         const active = completedParts.includes(part);
 
@@ -2387,7 +2387,7 @@ const Dashboard = () => {
             type="button"
             onClick={() => store.toggleStudentPart(studentId, part)}
             className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-full border text-sm font-black transition-smooth",
+              "flex h-10 w-10 items-center justify-center rounded-full border text-sm font-black transition-smooth sm:h-11 sm:w-11 sm:text-base",
               active
                 ? "border-cyan-200/30 bg-[linear-gradient(145deg,#0d7490,#0f3f5c)] text-white shadow-[0_12px_26px_rgba(8,61,93,0.35)] hover:brightness-110"
                 : "border-slate-200 bg-white text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.06)] hover:border-cyan-300 hover:text-primary hover:shadow-[0_10px_24px_rgba(14,116,144,0.12)]",
@@ -2664,32 +2664,20 @@ const Dashboard = () => {
       : [indicatorsCourseId];
 
     const getAssessmentIndicatorDetails = (assessmentType: AssessmentType) => {
-      const latestSubmissions = selectedCourseIds.flatMap((courseId) => {
+      const totalAssessmentSlots = totalStudents * selectedCourseIds.length;
+      const testedStudentsCount = selectedCourseIds.reduce((count, courseId) => {
         const latestByLoginId = getLatestSubmissionByLoginId(courseId, assessmentType);
+        return count + [...latestByLoginId.keys()].filter((loginId) => branchLoginIds.has(loginId)).length;
+      }, 0);
 
-        return [...latestByLoginId.values()].filter((submission) => branchLoginIds.has(submission.loginId));
-      });
-
-      const testedStudentsCount = latestSubmissions.length;
-
-      // Always use getSubmissionGrade so manualScore is respected (same logic as student rows)
-      const gradeBasedStats = latestSubmissions.reduce(
-        (sum, submission) => {
-          const grade = getSubmissionGrade(submission.courseId, assessmentType, submission.id);
-          if (grade.total <= 0) return sum;
-          return sum + (grade.score / grade.total) * 100;
-        },
-        0,
-      );
-
-      const averagePercent = testedStudentsCount > 0
-        ? clampPercent(gradeBasedStats / testedStudentsCount)
+      const completionPercent = totalAssessmentSlots > 0
+        ? clampPercent((testedStudentsCount / totalAssessmentSlots) * 100)
         : 0;
 
       return {
         testedStudentsCount,
         correctAnswersCount: 0,
-        correctAnswersPercent: averagePercent,
+        correctAnswersPercent: completionPercent,
       };
     };
 
@@ -2712,23 +2700,13 @@ const Dashboard = () => {
         return 0;
       }
 
-      const totalRatio = selectedCourseIds.reduce((sum, courseId) => {
+      const completedAssessmentsCount = selectedCourseIds.reduce((count, courseId) => {
         const submission = getLatestSubmissionByLoginId(courseId, assessmentType).get(loginId);
 
-        if (!submission) {
-          return sum;
-        }
-
-        const grade = getSubmissionGrade(courseId, assessmentType, submission.id);
-
-        if (grade.total <= 0) {
-          return sum;
-        }
-
-        return sum + (grade.score / grade.total) * 100;
+        return submission ? count + 1 : count;
       }, 0);
 
-      return clampPercent(totalRatio / selectedCourseIds.length);
+      return clampPercent((completedAssessmentsCount / selectedCourseIds.length) * 100);
     };
 
     const getTaskSubmissionPercent = (loginId: string) => {
@@ -2736,29 +2714,28 @@ const Dashboard = () => {
         return 0;
       }
 
-      const hasAnySubmission = taskCourseIds.some((courseId) => {
+      const submittedTasksCount = taskCourseIds.reduce((count, courseId) => {
         const submission = getLatestSubmissionByLoginId(courseId, "tasks").get(loginId);
-        return Boolean(submission);
-      });
+        return submission ? count + 1 : count;
+      }, 0);
 
-      return hasAnySubmission ? 100 : 0;
+      return clampPercent((submittedTasksCount / taskCourseIds.length) * 100);
     };
 
     const preAssessmentDetails = getAssessmentIndicatorDetails("pre");
     const postAssessmentDetails = getAssessmentIndicatorDetails("post");
     const preAverage = preAssessmentDetails.correctAnswersPercent;
     const postAverage = postAssessmentDetails.correctAnswersPercent;
-    const tasksSubmittedLoginIds = new Set<string>();
-    taskCourseIds.forEach((courseId) => {
+    const tasksSubmittedSlots = taskCourseIds.reduce((count, courseId) => {
       const latestByLoginId = getLatestSubmissionByLoginId(courseId, "tasks");
-      latestByLoginId.forEach((submission) => {
-        if (branchLoginIds.has(submission.loginId)) {
-          tasksSubmittedLoginIds.add(submission.loginId);
-        }
-      });
-    });
-    const tasksSubmittedStudentsCount = tasksSubmittedLoginIds.size;
-    const tasksAverage = totalStudents > 0 ? (tasksSubmittedStudentsCount / totalStudents) * 100 : 0;
+      return count + [...latestByLoginId.keys()].filter((loginId) => branchLoginIds.has(loginId)).length;
+    }, 0);
+    const tasksSubmittedStudentsCount = new Set(
+      taskCourseIds.flatMap((courseId) => [...getLatestSubmissionByLoginId(courseId, "tasks").keys()].filter((loginId) => branchLoginIds.has(loginId))),
+    ).size;
+    const tasksAverage = totalStudents > 0 && taskCourseIds.length > 0
+      ? (tasksSubmittedSlots / (totalStudents * taskCourseIds.length)) * 100
+      : 0;
     const attendanceAverage = totalStudents > 0
       ? indicatorStudents.reduce((sum, student) => sum + getAttendancePercent(student.loginId), 0) / totalStudents
       : 0;
@@ -3045,13 +3022,13 @@ const Dashboard = () => {
   }
 
   return (
-    <div dir="rtl" className="min-h-screen bg-[linear-gradient(180deg,#f8fbfb,#eef5f5)] text-right text-foreground">
-      <div className="flex min-h-screen w-full items-start lg:flex-row">
+    <div dir="rtl" className="h-screen overflow-hidden bg-[linear-gradient(180deg,#f8fbfb,#eef5f5)] text-right text-foreground">
+      <div className="flex h-full w-full items-start lg:flex-row">
         <aside className="sticky top-0 hidden h-screen w-[320px] shrink-0 border-l border-white/60 bg-white/95 shadow-[10px_0_35px_rgba(15,23,42,0.04)] lg:block">
           {renderDashboardNavigation()}
         </aside>
 
-        <main className="min-w-0 flex-1 px-4 py-4 text-right md:px-6 lg:px-8 lg:py-8">
+        <main className="min-w-0 flex-1 overflow-y-auto px-4 py-4 text-right md:px-6 lg:h-screen lg:px-8 lg:py-8">
           <div className="w-full">
             {loadError && (
               <div className="mb-4 rounded-2xl border border-destructive/30 bg-destructive/5 px-5 py-4 text-sm font-medium text-destructive">
@@ -4156,7 +4133,7 @@ const Dashboard = () => {
                       { label: "الحضور", value: student.attendancePercent },
                       { label: "القبلي", value: student.prePercent },
                       { label: "البعدي", value: student.postPercent },
-                      { label: "التكاليف", value: student.tasksPercent },
+                      { label: "المهام الأدائية", value: student.tasksPercent },
                       { label: "الإجمالي", value: student.overallPercent },
                     ];
 
