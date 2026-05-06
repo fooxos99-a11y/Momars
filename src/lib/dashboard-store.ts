@@ -2,6 +2,7 @@
 import {
   activateCourseInDatabase,
   addCourseToDatabase,
+  addActivityLogToDatabase,
   bulkUpsertSubmissionsToDatabase,
   addNotificationToDatabase,
   addTaskTemplateToDatabase,
@@ -14,6 +15,7 @@ import {
   deleteQuestionFromDatabase,
   deleteStudentFromDatabase,
   loadDashboardDataFromDatabase,
+  loadActivityLogsFromDatabase,
   resetDashboardDataInDatabase,
   saveReciterToDatabase,
   setManualAttendanceInDatabase,
@@ -35,6 +37,7 @@ import {
   setFinalExamManualScoreInDatabase,
   loadRolePermissionsFromDatabase,
   setRolePermissionInDatabase,
+  restoreDashboardDataInDatabase,
 } from "@/lib/supabase";
 
 export type UserRole = "admin" | "male_manager" | "female_manager" | "student" | "reciter" | "trainee";
@@ -195,6 +198,17 @@ export interface NotificationRecord {
   createdByName?: string;
 }
 
+export interface ActivityLogRecord {
+  id: string;
+  action: string;
+  target: string;
+  status: "نجحت" | "فشلت" | "ألغيت";
+  details: string;
+  actorName: string;
+  actorRole: string;
+  createdAt: string;
+}
+
 export interface SatisfactionQuestion {
   id: string;
   courseId: string;
@@ -264,6 +278,7 @@ export interface DashboardData {
   submissions: CourseSubmission[];
   attendance: AttendanceRecord[];
   notifications: NotificationRecord[];
+  activityLogs: ActivityLogRecord[];
   satisfactionQuestions: SatisfactionQuestion[];
   satisfactionResponses: SatisfactionResponse[];
   finalExamQuestions: FinalExamQuestion[];
@@ -371,6 +386,7 @@ const initialData: DashboardData = {
   submissions: [],
   attendance: [],
   notifications: [],
+  activityLogs: [],
   satisfactionQuestions: [],
   satisfactionResponses: [],
   finalExamQuestions: [],
@@ -548,6 +564,20 @@ const normalizeData = (input?: Partial<DashboardData>): DashboardData => {
           }))
           .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
       : initialData.notifications,
+    activityLogs: Array.isArray(input?.activityLogs)
+      ? input.activityLogs
+          .map((log) => ({
+            id: log.id,
+            action: log.action ?? "",
+            target: log.target ?? "",
+            status: log.status === "فشلت" ? "فشلت" : log.status === "ألغيت" ? "ألغيت" : "نجحت",
+            details: log.details ?? "",
+            actorName: log.actorName ?? "",
+            actorRole: log.actorRole ?? "",
+            createdAt: log.createdAt ?? new Date().toISOString(),
+          }))
+          .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+      : initialData.activityLogs,
     satisfactionQuestions: Array.isArray(input?.satisfactionQuestions)
       ? input.satisfactionQuestions
       : initialData.satisfactionQuestions,
@@ -652,6 +682,10 @@ const useCreateDashboardStore = () => {
 
   const setNotifications = (updater: (notifications: NotificationRecord[]) => NotificationRecord[]) => {
     setData((current) => ({ ...current, notifications: updater(current.notifications) }));
+  };
+
+  const setActivityLogs = (updater: (activityLogs: ActivityLogRecord[]) => ActivityLogRecord[]) => {
+    setData((current) => ({ ...current, activityLogs: updater(current.activityLogs) }));
   };
 
   const setSatisfactionQuestions = (updater: (questions: SatisfactionQuestion[]) => SatisfactionQuestion[]) => {
@@ -1351,6 +1385,28 @@ const useCreateDashboardStore = () => {
         throw error;
       }
     },
+    addActivityLog: async (input: Omit<ActivityLogRecord, "id" | "createdAt">) => {
+      const tempId = createId();
+      const createdAt = new Date().toISOString();
+      const nextEntry: ActivityLogRecord = { id: tempId, createdAt, ...input };
+
+      setActivityLogs((current) => [nextEntry, ...current].slice(0, 200));
+
+      try {
+        const saved = await addActivityLogToDatabase(input);
+        setActivityLogs((current) => current.map((item) => item.id === tempId ? saved : item));
+      } catch {
+        // Keep local log entry even if remote activity log table is unavailable.
+      }
+    },
+    reloadActivityLogs: async () => {
+      try {
+        const logs = await loadActivityLogsFromDatabase();
+        setActivityLogs(() => logs);
+      } catch {
+        // Keep current activity logs if remote load fails.
+      }
+    },
     addSatisfactionQuestion: async (question: { prompt: string; type: "rating" | "text"; isRequired: boolean }) => {
       const targetCourses = getCourses(data).filter((course) => course.isPostEnabled);
 
@@ -1549,6 +1605,10 @@ const useCreateDashboardStore = () => {
         setRolePermissions(() => prev);
         throw error;
       }
+    },
+    restoreBackupData: async (backupData: DashboardData) => {
+      await restoreDashboardDataInDatabase(backupData);
+      await hydrateFromDatabase();
     },
   };
 };

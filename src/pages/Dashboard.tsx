@@ -31,6 +31,7 @@ import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/s
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { ToastAction } from "@/components/ui/toast";
 import AdminTasksTab from "@/components/dashboard/AdminTasksTab";
 import AdminFinalExamTab from "@/components/dashboard/AdminFinalExamTab";
 import ImportResultsDialog, { type ImportRow } from "@/components/dashboard/ImportResultsDialog";
@@ -40,7 +41,9 @@ import {
   type AttendanceRecord,
   type BranchId,
   type CourseQuestion,
+  type DashboardData,
   type PermissionKey,
+  type StudentRecord,
   getAssessmentAvailabilityDeadline,
   getDefaultAssessmentNotificationTemplate,
   getManagedBranchId,
@@ -414,6 +417,7 @@ const dashboardMenu = [
   { id: "notifications", label: "الإشعارات", icon: Bell, hint: "إرسال التنبيهات" },
   { id: "indicators", label: "إحصائيات الطلاب", icon: LayoutPanelTop, hint: "إحصائيات الطلاب" },
   { id: "satisfaction", label: "استبيان الرضا", icon: ClipboardList, hint: "أسئلة الاستبيان ونتائجه" },
+  { id: "activity", label: "سجل النشاط", icon: ClipboardList, hint: "عمليات النظام الإدارية" },
 ] as const;
 
 const dashboardCardClass = "rounded-[1.5rem] border-white/80 bg-white/95 shadow-[0_18px_45px_rgba(15,23,42,0.05)]";
@@ -626,7 +630,7 @@ const Dashboard = () => {
   const canCreateCourses = session.role === "admin";
   const canEditCourseModels = session.role === "admin";
   const canManageStandaloneTasks = session.role === "admin" || session.role === "male_manager" || session.role === "female_manager";
-  const [dashboardTab, setDashboardTab] = useState<"home" | "students" | "reciters" | "reader" | "courses" | "tasks" | "attendance" | "notifications" | "indicators" | "results" | "statistics">("home");
+  const [dashboardTab, setDashboardTab] = useState<"home" | "students" | "reciters" | "reader" | "courses" | "tasks" | "attendance" | "notifications" | "indicators" | "results" | "statistics" | "activity">("home");
   const [studentsOpen, setStudentsOpen] = useState(false);
   const [studentEntryMode, setStudentEntryMode] = useState<"single" | "bulk">("single");
   const [selectedBranch, setSelectedBranch] = useState<IndicatorsBranchFilter>(managedBranchId ?? "male");
@@ -699,6 +703,15 @@ const Dashboard = () => {
   const [attendanceBranchId, setAttendanceBranchId] = useState<BranchId>("male");
   const [attendanceChecked, setAttendanceChecked] = useState<Set<string>>(new Set());
   const [attendanceSaving, setAttendanceSaving] = useState(false);
+  const [pendingAttendanceSave, setPendingAttendanceSave] = useState<{
+    courseId: string;
+    courseTitle: string;
+    isTask: boolean;
+    branchLabel: string;
+    presentStudents: StudentRecord[];
+    previousPresentStudents: StudentRecord[];
+    changedCount: number;
+  } | null>(null);
   const [attendanceFileError, setAttendanceFileError] = useState("");
   const attendanceFileInputRef = useRef<HTMLInputElement | null>(null);
   const [resultsCourseId, setResultsCourseId] = useState("");
@@ -717,6 +730,31 @@ const Dashboard = () => {
   const [manualGradesOpen, setManualGradesOpen] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<PreviewAttachment | null>(null);
   const [courseLinksOpen, setCourseLinksOpen] = useState(false);
+  const [backupDialogOpen, setBackupDialogOpen] = useState(false);
+  const [backupImportConfirmOpen, setBackupImportConfirmOpen] = useState(false);
+  const [backupRestoreConfirmOpen, setBackupRestoreConfirmOpen] = useState(false);
+  const [backupRestoreRunning, setBackupRestoreRunning] = useState(false);
+  const [pendingBackupImportFile, setPendingBackupImportFile] = useState<File | null>(null);
+  const [pendingBackupData, setPendingBackupData] = useState<DashboardData | null>(null);
+  const [importedBackupSummary, setImportedBackupSummary] = useState<{
+    fileName: string;
+    exportedAt: string;
+    rolesCount: number;
+    branchesCount: number;
+    studentsCount: number;
+    recitersCount: number;
+    coursesCount: number;
+    taskTemplatesCount: number;
+    attendanceCount: number;
+    notificationsCount: number;
+    submissionsCount: number;
+    finalExamQuestionsCount: number;
+    finalExamSubmissionsCount: number;
+    hasFinalExamSettings: boolean;
+    hasRolePermissions: boolean;
+    hasIndicators: boolean;
+  } | null>(null);
+  const backupImportInputRef = useRef<HTMLInputElement | null>(null);
   const [notifTemplatesOpen, setNotifTemplatesOpen] = useState(false);
   const [notifTemplatePre, setNotifTemplatePre] = useState("");
   const [notifTemplatePost, setNotifTemplatePost] = useState("");
@@ -989,15 +1027,36 @@ const Dashboard = () => {
         .filter((question) => question.courseId === selectedSatisfactionCourse.id)
         .sort((left, right) => left.sortOrder - right.sortOrder)
     : [];
+  const pendingDeleteStudentRecord = pendingDeleteStudent
+    ? data.students.find((item) => item.id === pendingDeleteStudent.id) ?? null
+    : null;
+  const pendingDeleteStudentLinkedReciters = pendingDeleteStudentRecord
+    ? data.reciters.filter((reciter) => reciter.studentIds.includes(pendingDeleteStudentRecord.id))
+    : [];
   const handleDeleteSelectedSatisfactionQuestion = useCallback(async () => {
     if (!satisfactionDeleteQuestionId) {
       return;
     }
 
-    await store.deleteSatisfactionQuestion(satisfactionDeleteQuestionId);
-    setSatisfactionDeleteDialogOpen(false);
-    setSatisfactionDeleteQuestionId("");
-  }, [satisfactionDeleteQuestionId, store]);
+    const question = data.satisfactionQuestions.find((item) => item.id === satisfactionDeleteQuestionId) ?? null;
+    const removedResponsesCount = (data.satisfactionResponses ?? []).filter((item) => item.questionId === satisfactionDeleteQuestionId).length;
+
+    try {
+      await store.deleteSatisfactionQuestion(satisfactionDeleteQuestionId);
+      setSatisfactionDeleteDialogOpen(false);
+      setSatisfactionDeleteQuestionId("");
+      showSuccessToast(
+        "تم حذف السؤال",
+        question
+          ? `تم حذف السؤال "${question.prompt}"${removedResponsesCount > 0 ? ` مع إزالة ${removedResponsesCount} استجابة مرتبطة.` : "."}`
+          : "تم حذف السؤال بنجاح.",
+      );
+      appendActivityLog({ action: "حذف سؤال الاستبيان", target: question?.prompt ?? "سؤال استبيان", status: "نجحت", details: removedResponsesCount > 0 ? `تم حذف السؤال مع إزالة ${removedResponsesCount} استجابة مرتبطة.` : "تم حذف السؤال بدون استجابات مرتبطة." });
+    } catch {
+      showErrorToast("تعذر حذف سؤال الاستبيان.");
+      appendActivityLog({ action: "حذف سؤال الاستبيان", target: question?.prompt ?? "سؤال استبيان", status: "فشلت", details: "فشل حذف سؤال الاستبيان." });
+    }
+  }, [data.satisfactionQuestions, data.satisfactionResponses, satisfactionDeleteQuestionId, store]);
   const activeCourse = getActiveCourse(data);
   const indicatorStudents = indicatorsBranchId === "all" ? data.students : getBranchStudents(data, indicatorsBranchId);
   const selectedIndicatorsCourse = indicatorsCourseId === "all"
@@ -1006,6 +1065,22 @@ const Dashboard = () => {
   const selectedCourseAttendance = selectedCourse
     ? data.attendance.filter((record) => record.courseId === selectedCourse.id)
     : [];
+  const pendingDeleteCourseRecord = pendingDeleteCourse
+    ? data.courses.find((item) => item.id === pendingDeleteCourse.id) ?? null
+    : null;
+  const pendingDeleteCourseSubmissionsCount = pendingDeleteCourse
+    ? data.submissions.filter((submission) => submission.courseId === pendingDeleteCourse.id).length
+    : 0;
+  const pendingDeleteCourseAttendanceCount = pendingDeleteCourse
+    ? data.attendance.filter((record) => record.courseId === pendingDeleteCourse.id).length
+    : 0;
+  const pendingDeleteCourseQuestionsCount = pendingDeleteCourseRecord
+    ? pendingDeleteCourseRecord.preQuestions.length + pendingDeleteCourseRecord.postQuestions.length + pendingDeleteCourseRecord.taskQuestions.length
+    : 0;
+  const pendingDeleteReciterRecord = pendingDeleteReciter
+    ? data.reciters.find((item) => item.id === pendingDeleteReciter.id) ?? null
+    : null;
+  const pendingDeleteReciterStudentsCount = pendingDeleteReciterRecord?.studentIds.length ?? 0;
   const selectedCourseSubmissions = selectedCourse
     ? data.submissions.filter((submission) => submission.courseId === selectedCourse.id)
     : [];
@@ -1203,6 +1278,172 @@ const Dashboard = () => {
     if (html2pdf) {
       await html2pdf().set(opt).from(element).save();
     }
+  };
+
+  const handleExportBackup = () => {
+    try {
+      const exportedAt = new Date().toISOString();
+      const backupPayload = {
+        version: 1,
+        exportedAt,
+        app: "momars",
+        type: "dashboard-backup",
+        data: {
+          roles: data.roles,
+          branches: data.branches,
+          students: data.students,
+          reciters: data.reciters,
+          courses: data.courses,
+          taskTemplates: data.taskTemplates,
+          attendance: data.attendance,
+          notifications: data.notifications,
+          submissions: data.submissions,
+          satisfactionQuestions: data.satisfactionQuestions ?? [],
+          satisfactionResponses: data.satisfactionResponses ?? [],
+          finalExamQuestions: data.finalExamQuestions,
+          finalExamSubmissions: data.finalExamSubmissions,
+          finalExamSettings: data.finalExamSettings,
+          rolePermissions: data.rolePermissions,
+        },
+        indicators: {
+          filters: {
+            homeBranchFilter,
+            homeCourseFilter,
+            indicatorsBranchId,
+            indicatorsCourseId,
+            indicatorsSortOrder,
+            courseIndicatorsBranch,
+            courseIndicatorsCourseId,
+          },
+          home: homeMetrics,
+          students: indicatorMetrics,
+          courseIndicators: courseIndicatorsMetrics,
+        },
+      };
+
+      const fileName = `momars-backup-${exportedAt.slice(0, 19).replace(/[T:]/g, "-")}.json`;
+      const blob = new Blob([JSON.stringify(backupPayload, null, 2)], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      showSuccessToast("تم تصدير النسخة الاحتياطية", "تم تنزيل ملف JSON يشمل البيانات والمؤشرات الحالية.");
+      appendActivityLog({ action: "تنزيل نسخة احتياطية", target: fileName, status: "نجحت", details: "تم تنزيل نسخة احتياطية من بيانات النظام والمؤشرات الحالية." });
+    } catch {
+      showErrorToast("تعذر تصدير النسخة الاحتياطية.");
+      appendActivityLog({ action: "تنزيل نسخة احتياطية", target: "ملف النسخة", status: "فشلت", details: "فشل تنزيل ملف النسخة الاحتياطية." });
+    }
+  };
+
+  const processBackupImportFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as {
+        exportedAt?: string;
+        data?: {
+          roles?: unknown[];
+          branches?: unknown[];
+          students?: unknown[];
+          reciters?: unknown[];
+          courses?: unknown[];
+          taskTemplates?: unknown[];
+          attendance?: unknown[];
+          notifications?: unknown[];
+          submissions?: unknown[];
+          satisfactionQuestions?: unknown[];
+          satisfactionResponses?: unknown[];
+          finalExamQuestions?: unknown[];
+          finalExamSubmissions?: unknown[];
+          finalExamSettings?: unknown;
+          rolePermissions?: unknown;
+        };
+        indicators?: unknown;
+      };
+
+      const normalizedBackupData: DashboardData = {
+        roles: Array.isArray(parsed.data?.roles) ? parsed.data.roles as DashboardData["roles"] : data.roles,
+        branches: Array.isArray(parsed.data?.branches) ? parsed.data.branches as DashboardData["branches"] : data.branches,
+        students: Array.isArray(parsed.data?.students) ? parsed.data.students as DashboardData["students"] : [],
+        reciters: Array.isArray(parsed.data?.reciters) ? parsed.data.reciters as DashboardData["reciters"] : [],
+        courses: Array.isArray(parsed.data?.courses) ? parsed.data.courses as DashboardData["courses"] : [],
+        taskTemplates: Array.isArray(parsed.data?.taskTemplates) ? parsed.data.taskTemplates as DashboardData["taskTemplates"] : [],
+        submissions: Array.isArray(parsed.data?.submissions) ? parsed.data.submissions as DashboardData["submissions"] : [],
+        attendance: Array.isArray(parsed.data?.attendance) ? parsed.data.attendance as DashboardData["attendance"] : [],
+        notifications: Array.isArray(parsed.data?.notifications) ? parsed.data.notifications as DashboardData["notifications"] : [],
+        satisfactionQuestions: Array.isArray(parsed.data?.satisfactionQuestions) ? parsed.data.satisfactionQuestions as DashboardData["satisfactionQuestions"] : [],
+        satisfactionResponses: Array.isArray(parsed.data?.satisfactionResponses) ? parsed.data.satisfactionResponses as DashboardData["satisfactionResponses"] : [],
+        finalExamQuestions: Array.isArray(parsed.data?.finalExamQuestions) ? parsed.data.finalExamQuestions as DashboardData["finalExamQuestions"] : [],
+        finalExamSubmissions: Array.isArray(parsed.data?.finalExamSubmissions) ? parsed.data.finalExamSubmissions as DashboardData["finalExamSubmissions"] : [],
+        finalExamSettings: (parsed.data?.finalExamSettings as DashboardData["finalExamSettings"] | undefined) ?? { male: { isEnabled: false, closesAt: null }, female: { isEnabled: false, closesAt: null } },
+        rolePermissions: (parsed.data?.rolePermissions as DashboardData["rolePermissions"] | undefined) ?? {},
+      };
+
+      setPendingBackupData(normalizedBackupData);
+
+      setImportedBackupSummary({
+        fileName: file.name,
+        exportedAt: parsed.exportedAt ?? "غير معروف",
+        rolesCount: parsed.data?.roles?.length ?? 0,
+        branchesCount: parsed.data?.branches?.length ?? 0,
+        studentsCount: parsed.data?.students?.length ?? 0,
+        recitersCount: parsed.data?.reciters?.length ?? 0,
+        coursesCount: parsed.data?.courses?.length ?? 0,
+        taskTemplatesCount: parsed.data?.taskTemplates?.length ?? 0,
+        attendanceCount: parsed.data?.attendance?.length ?? 0,
+        notificationsCount: parsed.data?.notifications?.length ?? 0,
+        submissionsCount: parsed.data?.submissions?.length ?? 0,
+        finalExamQuestionsCount: parsed.data?.finalExamQuestions?.length ?? 0,
+        finalExamSubmissionsCount: parsed.data?.finalExamSubmissions?.length ?? 0,
+        hasFinalExamSettings: Boolean(parsed.data?.finalExamSettings),
+        hasRolePermissions: Boolean(parsed.data?.rolePermissions),
+        hasIndicators: Boolean(parsed.indicators),
+      });
+      showSuccessToast("تم رفع ملف النسخة", "تمت قراءة ملف النسخة الاحتياطية وعرض ملخصه.");
+      appendActivityLog({ action: "رفع نسخة احتياطية", target: file.name, status: "نجحت", details: "تمت قراءة ملف النسخة الاحتياطية وتجهيز المقارنة قبل الاسترجاع." });
+    } catch {
+      setPendingBackupData(null);
+      setImportedBackupSummary(null);
+      showErrorToast("ملف النسخة الاحتياطية غير صالح أو تالف.");
+      appendActivityLog({ action: "رفع نسخة احتياطية", target: file.name, status: "فشلت", details: "الملف غير صالح أو تالف ولم تتم قراءته." });
+    }
+  };
+
+  const handleRestoreBackup = async () => {
+    if (!pendingBackupData || !importedBackupSummary) {
+      return;
+    }
+
+    setBackupRestoreRunning(true);
+    try {
+      await store.restoreBackupData(pendingBackupData);
+      setBackupRestoreConfirmOpen(false);
+      setBackupDialogOpen(false);
+      setPendingBackupData(null);
+      setImportedBackupSummary(null);
+      showSuccessToast("تم استرجاع النسخة", "تم استبدال البيانات الحالية بالنسخة الاحتياطية بنجاح.");
+      appendActivityLog({ action: "استرجاع نسخة احتياطية", target: importedBackupSummary.fileName, status: "نجحت", details: "تم تنفيذ استرجاع مطابق للنسخة الاحتياطية وإعادة تحميل البيانات من قاعدة البيانات." });
+    } catch {
+      showErrorToast("تعذر استرجاع النسخة الاحتياطية.");
+      appendActivityLog({ action: "استرجاع نسخة احتياطية", target: importedBackupSummary.fileName, status: "فشلت", details: "فشل الاسترجاع المطابق للنسخة الاحتياطية." });
+    } finally {
+      setBackupRestoreRunning(false);
+    }
+  };
+
+  const handleBackupImportSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+
+    setPendingBackupImportFile(file);
+    setBackupImportConfirmOpen(true);
   };
 
   const applyBranchToBulkStudents = (branchId: BranchId) => {
@@ -1601,9 +1842,13 @@ const Dashboard = () => {
       if (editingStudentId === pendingDeleteStudent.id) {
         resetStudentForm();
       }
+      showSuccessToast("تم حذف الطالب", `تم حذف ${pendingDeleteStudent.name} من قائمة الطلاب بنجاح.`);
+      appendActivityLog({ action: "حذف طالب", target: pendingDeleteStudent.name, status: "نجحت", details: "تم حذف الطالب من النظام." });
       setPendingDeleteStudent(null);
     } catch (error) {
       setStudentError(getSupabaseErrorMessage(error, "تعذر حذف الطالب من قاعدة البيانات."));
+      showErrorToast("تعذر حذف الطالب من قاعدة البيانات.");
+      appendActivityLog({ action: "حذف طالب", target: pendingDeleteStudent.name, status: "فشلت", details: "فشل حذف الطالب من قاعدة البيانات." });
     }
   };
 
@@ -2046,9 +2291,13 @@ const Dashboard = () => {
         setSelectedCourseAssessment(null);
       }
 
+      showSuccessToast("تم حذف الدورة", `تم حذف الدورة ${pendingDeleteCourse.name} وما يرتبط بها بنجاح.`);
+      appendActivityLog({ action: "حذف دورة", target: pendingDeleteCourse.name, status: "نجحت", details: "تم حذف الدورة وكل بياناتها المرتبطة من النظام." });
       setPendingDeleteCourse(null);
     } catch (error) {
       setCourseError(getSupabaseErrorMessage(error, "تعذر حذف الدورة من قاعدة البيانات."));
+      showErrorToast("تعذر حذف الدورة من قاعدة البيانات.");
+      appendActivityLog({ action: "حذف دورة", target: pendingDeleteCourse.name, status: "فشلت", details: "فشل حذف الدورة من قاعدة البيانات." });
     }
   };
 
@@ -2072,11 +2321,72 @@ const Dashboard = () => {
       if (selectedReciterId === pendingDeleteReciter.id) {
         setSelectedReciterId("");
       }
+      showSuccessToast("تم حذف المقرئ", `تم حذف ${pendingDeleteReciter.name} من قائمة المقرئين بنجاح.`);
+      appendActivityLog({ action: "حذف مقرئ", target: pendingDeleteReciter.name, status: "نجحت", details: "تم حذف المقرئ من النظام." });
       setPendingDeleteReciter(null);
     } catch (error) {
       setReciterError(getSupabaseErrorMessage(error, "تعذر حذف المقرئ من قاعدة البيانات."));
+      showErrorToast("تعذر حذف المقرئ من قاعدة البيانات.");
+      appendActivityLog({ action: "حذف مقرئ", target: pendingDeleteReciter.name, status: "فشلت", details: "فشل حذف المقرئ من قاعدة البيانات." });
     } finally {
       setReciterDeleting(false);
+    }
+  };
+
+  const handleUndoAttendanceSave = async (courseId: string, previousPresentStudents: StudentRecord[], isTask: boolean) => {
+    try {
+      await store.setManualAttendance(courseId, previousPresentStudents);
+      showSuccessToast(isTask ? "تم التراجع عن حفظ المهام" : "تم التراجع عن حفظ التحضير", "تمت استعادة الحالة السابقة بنجاح.");
+      appendActivityLog({ action: isTask ? "تراجع عن حفظ المهام" : "تراجع عن حفظ التحضير", target: courseId, status: "نجحت", details: "تمت استعادة الحالة السابقة بنجاح." });
+    } catch {
+      showErrorToast(isTask ? "تعذر التراجع عن حفظ المهام." : "تعذر التراجع عن حفظ التحضير.");
+      appendActivityLog({ action: isTask ? "تراجع عن حفظ المهام" : "تراجع عن حفظ التحضير", target: courseId, status: "فشلت", details: "فشل التراجع عن الحالة السابقة." });
+    }
+  };
+
+  const handleSaveFinalExamManualScore = async (submissionId: string, score: number, previousScore: number | null, studentName: string) => {
+    try {
+      await store.setFinalExamManualScore(submissionId, score);
+      setFinalExamScoreEdit(null);
+      showSuccessToast(
+        "تم حفظ الدرجة",
+        `تم تحديث درجة ${studentName} بنجاح.`,
+        <ToastAction altText="تراجع" onClick={() => void store.setFinalExamManualScore(submissionId, previousScore)}>
+          تراجع
+        </ToastAction>,
+      );
+      appendActivityLog({ action: "تعديل درجة النهائي", target: studentName, status: "نجحت", details: `تم تحديث الدرجة اليدوية إلى ${score}.` });
+    } catch {
+      showErrorToast("تعذر حفظ الدرجة اليدوية.");
+      appendActivityLog({ action: "تعديل درجة النهائي", target: studentName, status: "فشلت", details: "فشل حفظ الدرجة اليدوية." });
+    }
+  };
+
+  const confirmAttendanceSave = async () => {
+    if (!pendingAttendanceSave) {
+      return;
+    }
+
+    setAttendanceSaving(true);
+    try {
+      await store.setManualAttendance(pendingAttendanceSave.courseId, pendingAttendanceSave.presentStudents);
+      showSuccessToast(
+        pendingAttendanceSave.isTask ? "تم حفظ المهام" : "تم حفظ التحضير",
+        `${pendingAttendanceSave.isTask ? "تم تحديث حالة التنفيذ" : "تم تحديث الحضور"} لدورة ${pendingAttendanceSave.courseTitle}.`,
+        <ToastAction
+          altText="تراجع"
+          onClick={() => void handleUndoAttendanceSave(pendingAttendanceSave.courseId, pendingAttendanceSave.previousPresentStudents, pendingAttendanceSave.isTask)}
+        >
+          تراجع
+        </ToastAction>,
+      );
+      appendActivityLog({ action: pendingAttendanceSave.isTask ? "حفظ المهام" : "حفظ التحضير", target: pendingAttendanceSave.courseTitle, status: "نجحت", details: `عدد التغييرات المطبقة: ${pendingAttendanceSave.changedCount}.` });
+      setPendingAttendanceSave(null);
+    } catch {
+      showErrorToast(pendingAttendanceSave.isTask ? "تعذر حفظ المهام." : "تعذر حفظ التحضير.");
+      appendActivityLog({ action: pendingAttendanceSave.isTask ? "حفظ المهام" : "حفظ التحضير", target: pendingAttendanceSave.courseTitle, status: "فشلت", details: "فشل حفظ الحالة الجديدة." });
+    } finally {
+      setAttendanceSaving(false);
     }
   };
 
@@ -2953,7 +3263,22 @@ const Dashboard = () => {
   }, [homeBranchFilter, data.students, data.submissions, data.attendance, data.courses, courseItems]);
 
   const adminName = session.name;
-  const activeMenuItem = availableDashboardMenu.find((item) => item.id === dashboardTab) ?? availableDashboardMenu[0];
+  const activeMenuItem = dashboardTab === "activity"
+    ? { id: "activity", label: "سجل النشاط" }
+    : availableDashboardMenu.find((item) => item.id === dashboardTab) ?? availableDashboardMenu[0];
+  const appendActivityLog = (entry: { action: string; target: string; status: "نجحت" | "فشلت" | "ألغيت"; details: string }) => {
+    void store.addActivityLog({
+      ...entry,
+      actorName: adminName || "مستخدم النظام",
+      actorRole: getRoleLabel(session.role),
+    });
+  };
+  const showSuccessToast = (title: string, description: string, action?: React.ReactElement<typeof ToastAction>) => {
+    toast({ title, description, action });
+  };
+  const showErrorToast = (description: string) => {
+    toast({ title: "تعذر تنفيذ العملية", description, variant: "destructive" });
+  };
   const formatAttendanceTime = (value?: string) => {
     if (!value) {
       return "";
@@ -2973,6 +3298,29 @@ const Dashboard = () => {
       minute: "2-digit",
     }).format(date);
   };
+  const backupComparisonRows = useMemo(() => {
+    if (!pendingBackupData) {
+      return [] as Array<{ label: string; current: number; backup: number; diff: number }>;
+    }
+
+    const currentCompletedParts = data.students.reduce((sum, student) => sum + student.completedParts.length, 0);
+    const backupCompletedParts = pendingBackupData.students.reduce((sum, student) => sum + student.completedParts.length, 0);
+
+    return [
+      { label: "الطلاب", current: data.students.length, backup: pendingBackupData.students.length, diff: pendingBackupData.students.length - data.students.length },
+      { label: "الأجزاء المحفوظة", current: currentCompletedParts, backup: backupCompletedParts, diff: backupCompletedParts - currentCompletedParts },
+      { label: "المقرئون", current: data.reciters.length, backup: pendingBackupData.reciters.length, diff: pendingBackupData.reciters.length - data.reciters.length },
+      { label: "الدورات", current: data.courses.length, backup: pendingBackupData.courses.length, diff: pendingBackupData.courses.length - data.courses.length },
+      { label: "قوالب المهام", current: data.taskTemplates.length, backup: pendingBackupData.taskTemplates.length, diff: pendingBackupData.taskTemplates.length - data.taskTemplates.length },
+      { label: "الحضور", current: data.attendance.length, backup: pendingBackupData.attendance.length, diff: pendingBackupData.attendance.length - data.attendance.length },
+      { label: "الإشعارات", current: data.notifications.length, backup: pendingBackupData.notifications.length, diff: pendingBackupData.notifications.length - data.notifications.length },
+      { label: "النتائج", current: data.submissions.length, backup: pendingBackupData.submissions.length, diff: pendingBackupData.submissions.length - data.submissions.length },
+      { label: "أسئلة الاستبيان", current: data.satisfactionQuestions.length, backup: pendingBackupData.satisfactionQuestions.length, diff: pendingBackupData.satisfactionQuestions.length - data.satisfactionQuestions.length },
+      { label: "ردود الاستبيان", current: data.satisfactionResponses.length, backup: pendingBackupData.satisfactionResponses.length, diff: pendingBackupData.satisfactionResponses.length - data.satisfactionResponses.length },
+      { label: "أسئلة النهائي", current: data.finalExamQuestions.length, backup: pendingBackupData.finalExamQuestions.length, diff: pendingBackupData.finalExamQuestions.length - data.finalExamQuestions.length },
+      { label: "نتائج النهائي", current: data.finalExamSubmissions.length, backup: pendingBackupData.finalExamSubmissions.length, diff: pendingBackupData.finalExamSubmissions.length - data.finalExamSubmissions.length },
+    ];
+  }, [data.attendance.length, data.courses.length, data.finalExamQuestions.length, data.finalExamSubmissions.length, data.notifications.length, data.reciters.length, data.satisfactionQuestions.length, data.satisfactionResponses.length, data.students, data.submissions.length, data.taskTemplates.length, pendingBackupData]);
 
   const renderDashboardNavigation = (isMobile = false) => (
     <div className="flex h-full flex-col bg-white">
@@ -3017,6 +3365,26 @@ const Dashboard = () => {
             );
           })}
         </div>
+        {canCreateCourses && (
+          <div className="mt-4 border-t border-border/60 pt-4 space-y-2">
+            <button
+              type="button"
+              onClick={() => {
+                setBackupDialogOpen(true);
+                if (isMobile) {
+                  setMobileMenuOpen(false);
+                }
+              }}
+              className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-[15px] font-medium text-foreground transition-all duration-300 hover:bg-primary/5 hover:text-primary"
+            >
+              <div className="flex items-center gap-2.5">
+                <span>النسخة الاحتياطية</span>
+                <Database className="size-4 text-primary/70" />
+              </div>
+              <span className="h-2.5 w-2.5 rounded-full bg-primary/20" />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -3048,7 +3416,6 @@ const Dashboard = () => {
       <>
         <Button variant="outline" className={actionClassName} onClick={() => handleAction(() => setCourseLinksOpen(true))}>
           <span>الروابط</span>
-          <Link className="pointer-events-none size-4 opacity-0" to="/" aria-hidden="true" tabIndex={-1} />
         </Button>
         {dashboardTab === "satisfaction" && selectedSatisfactionQuestions.length > 0 && (
           <Button
@@ -3359,6 +3726,48 @@ const Dashboard = () => {
               </div>
             )}
 
+          </div>
+        )}
+
+        {dashboardTab === "activity" && (
+          <div className="space-y-5" dir="rtl">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-[0.95rem] font-bold text-foreground">سجل النشاط</h3>
+                <p className="mt-1 text-sm text-muted-foreground">آخر العمليات الإدارية الحساسة والتنفيذية داخل النظام.</p>
+              </div>
+              <Button variant="outline" className="rounded-full" onClick={() => void store.reloadActivityLogs()}>
+                تحديث السجل
+              </Button>
+            </div>
+
+            {data.activityLogs.length === 0 ? (
+              <div className={cn(dashboardMutedPanelClass, "rounded-[1.5rem] border border-dashed border-border/70 p-6 text-center text-sm text-muted-foreground")}>
+                لا توجد عمليات مسجلة حتى الآن.
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                {data.activityLogs.map((entry) => (
+                  <div key={entry.id} className={cn(dashboardMutedPanelClass, "rounded-[1.35rem] p-4")}>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="space-y-1 text-right">
+                        <div className="text-sm font-bold text-foreground">{entry.action}</div>
+                        <div className="text-sm text-muted-foreground">{entry.target}</div>
+                      </div>
+                      <Badge variant={entry.status === "نجحت" ? "default" : entry.status === "ألغيت" ? "secondary" : "destructive"} className="rounded-full px-3 py-1 text-xs">
+                        {entry.status}
+                      </Badge>
+                    </div>
+                    <div className="mt-3 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
+                      <div>المنفذ: {entry.actorName}</div>
+                      <div>الدور: {entry.actorRole}</div>
+                      <div>الوقت: {formatAttendanceTime(entry.createdAt)}</div>
+                      <div>التفاصيل: {entry.details}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -3920,18 +4329,30 @@ const Dashboard = () => {
             setAttendanceChecked(new Set());
           };
 
-          const handleSave = async () => {
+          const handleSave = () => {
             if (!selectedCourseForAttendance) return;
-            setAttendanceSaving(true);
-            try {
-              const present = branchStudents.filter((s) => displayChecked.has(s.loginId));
-              await store.setManualAttendance(selectedCourseForAttendance.id, present);
-              toast({ title: "تم الحفظ", description: "تم حفظ التحضير بنجاح." });
-            } catch {
-              toast({ title: "خطأ", description: "تعذر حفظ التحضير.", variant: "destructive" });
-            } finally {
-              setAttendanceSaving(false);
-            }
+            const presentStudents = branchStudents.filter((s) => displayChecked.has(s.loginId));
+            const previousPresentStudents = [...new Set(
+              data.attendance
+                .filter((record) => record.courseId === selectedCourseForAttendance.id)
+                .map((record) => record.loginId),
+            )]
+              .map((loginId) => data.students.find((student) => student.loginId === loginId) ?? null)
+              .filter((student): student is StudentRecord => Boolean(student));
+            const previousLoginIds = new Set(previousPresentStudents.map((student) => student.loginId));
+            const nextLoginIds = new Set(presentStudents.map((student) => student.loginId));
+            const unchangedCount = [...previousLoginIds].filter((loginId) => nextLoginIds.has(loginId)).length;
+            const changedCount = new Set([...previousLoginIds, ...nextLoginIds]).size - unchangedCount;
+
+            setPendingAttendanceSave({
+              courseId: selectedCourseForAttendance.id,
+              courseTitle: selectedCourseForAttendance.title,
+              isTask,
+              branchLabel: managedBranchId ? branchLabels[managedBranchId] : attendanceBranchId === "male" ? "معلمين" : "معلمات",
+              presentStudents,
+              previousPresentStudents,
+              changedCount,
+            });
           };
 
           const handleAttendanceFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -5181,12 +5602,11 @@ const Dashboard = () => {
                             {finalExamScoreEdit?.submissionId === sub.id ? (
                               <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:flex-nowrap">
                                 <Input className="h-8 w-20 rounded-xl text-center" value={finalExamScoreEdit.value} onChange={(e) => setFinalExamScoreEdit((c) => c ? { ...c, value: e.target.value } : null)} />
-                                <Button size="sm" className="rounded-xl h-8" onClick={async () => {
+                                <Button size="sm" className="rounded-xl h-8" onClick={() => {
                                   if (!finalExamScoreEdit) return;
                                   const n = Number(finalExamScoreEdit.value);
                                   if (!Number.isFinite(n) || n < 0) return;
-                                  await store.setFinalExamManualScore(sub.id, n);
-                                  setFinalExamScoreEdit(null);
+                                  void handleSaveFinalExamManualScore(sub.id, n, score, sub.studentName);
                                 }}>حفظ</Button>
                                 <Button size="sm" variant="ghost" className="rounded-xl h-8" onClick={() => setFinalExamScoreEdit(null)}>إلغاء</Button>
                               </div>
@@ -6199,6 +6619,134 @@ const Dashboard = () => {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={backupDialogOpen} onOpenChange={setBackupDialogOpen}>
+        <DialogContent className="max-w-lg rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
+          <DialogHeader className="border-b border-border/60 px-3 py-2.5 text-right">
+            <DialogTitle className="text-right text-xl text-foreground">النسخة الاحتياطية</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 px-3 py-3 text-right">
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Button className="h-11 rounded-2xl" onClick={handleExportBackup}>
+                <Download className="size-4" />
+                تحميل نسخة احتياطية
+              </Button>
+              <Button variant="outline" className="h-11 rounded-2xl" onClick={() => backupImportInputRef.current?.click()}>
+                <FileUp className="size-4" />
+                رفع نسخة احتياطية
+              </Button>
+              <input ref={backupImportInputRef} type="file" accept="application/json,.json" className="hidden" onChange={handleBackupImportSelect} />
+            </div>
+
+            {importedBackupSummary ? (
+              <div className="space-y-3">
+                <div className={cn(dashboardMutedPanelClass, "space-y-2 rounded-[1.25rem] p-3") }>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-bold text-foreground">آخر ملف مرفوع</span>
+                    <span className="text-xs text-muted-foreground">{importedBackupSummary.fileName}</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground">تاريخ التصدير: {importedBackupSummary.exportedAt}</div>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div className="rounded-xl bg-white px-3 py-2">الأدوار: {importedBackupSummary.rolesCount}</div>
+                    <div className="rounded-xl bg-white px-3 py-2">الفروع: {importedBackupSummary.branchesCount}</div>
+                    <div className="rounded-xl bg-white px-3 py-2">طلاب: {importedBackupSummary.studentsCount}</div>
+                    <div className="rounded-xl bg-white px-3 py-2">مقرئون: {importedBackupSummary.recitersCount}</div>
+                    <div className="rounded-xl bg-white px-3 py-2">دورات: {importedBackupSummary.coursesCount}</div>
+                    <div className="rounded-xl bg-white px-3 py-2">قوالب مهام: {importedBackupSummary.taskTemplatesCount}</div>
+                    <div className="rounded-xl bg-white px-3 py-2">حضور: {importedBackupSummary.attendanceCount}</div>
+                    <div className="rounded-xl bg-white px-3 py-2">إشعارات: {importedBackupSummary.notificationsCount}</div>
+                    <div className="rounded-xl bg-white px-3 py-2">نتائج: {importedBackupSummary.submissionsCount}</div>
+                    <div className="rounded-xl bg-white px-3 py-2">أسئلة النهائي: {importedBackupSummary.finalExamQuestionsCount}</div>
+                    <div className="rounded-xl bg-white px-3 py-2">نتائج النهائي: {importedBackupSummary.finalExamSubmissionsCount}</div>
+                    <div className="rounded-xl bg-white px-3 py-2">إعدادات النهائي: {importedBackupSummary.hasFinalExamSettings ? "موجودة" : "غير موجودة"}</div>
+                    <div className="rounded-xl bg-white px-3 py-2">الصلاحيات: {importedBackupSummary.hasRolePermissions ? "موجودة" : "غير موجودة"}</div>
+                    <div className="rounded-xl bg-white px-3 py-2">مؤشرات: {importedBackupSummary.hasIndicators ? "موجودة" : "غير موجودة"}</div>
+                  </div>
+                </div>
+
+                {backupComparisonRows.length > 0 && (
+                  <div className={cn(dashboardMutedPanelClass, "space-y-3 rounded-[1.25rem] p-3") }>
+                    <div className="text-sm font-bold text-foreground">مقارنة قبل الاسترجاع</div>
+                    <div className="grid gap-2">
+                      {backupComparisonRows.map((row) => (
+                        <div key={row.label} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm">
+                          <div className="font-medium text-foreground">{row.label}</div>
+                          <div className="text-muted-foreground">الحالي: {row.current}</div>
+                          <div className="text-muted-foreground">النسخة: {row.backup}</div>
+                          <div className={cn(row.diff === 0 ? "text-muted-foreground" : row.diff > 0 ? "text-emerald-700" : "text-destructive")}>{row.diff > 0 ? `+${row.diff}` : row.diff}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex justify-end">
+                      <Button variant="destructive" className="rounded-full px-5" onClick={() => setBackupRestoreConfirmOpen(true)}>
+                        استرجاع مطابق
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className={cn(dashboardMutedPanelClass, "rounded-[1.25rem] p-3 text-sm text-muted-foreground")}>
+                بعد رفع ملف النسخة، سيظهر هنا ملخص سريع لمحتواه.
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end border-t border-border/60 px-3 py-2.5">
+            <Button variant="outline" className="rounded-full px-5" onClick={() => setBackupDialogOpen(false)}>إغلاق</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={backupImportConfirmOpen} onOpenChange={setBackupImportConfirmOpen}>
+        <AlertDialogContent className="max-w-sm rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
+          <AlertDialogHeader className="border-b border-border/60 px-4 py-3 text-right">
+            <AlertDialogTitle className="text-right text-lg text-foreground">تأكيد رفع النسخة</AlertDialogTitle>
+            <AlertDialogDescription className="text-right text-sm leading-6 text-muted-foreground">
+              {pendingBackupImportFile
+                ? `تم اختيار الملف ${pendingBackupImportFile.name}. هل أنت متأكد من متابعة قراءة هذا الملف؟`
+                : "هل أنت متأكد من متابعة رفع ملف النسخة الاحتياطية؟"}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="justify-start gap-2 px-4 py-3 sm:justify-start sm:space-x-0">
+            <AlertDialogAction
+              className="rounded-full px-4"
+              onClick={() => {
+                const file = pendingBackupImportFile;
+                setBackupImportConfirmOpen(false);
+                setPendingBackupImportFile(null);
+                if (file) {
+                  void processBackupImportFile(file);
+                }
+              }}
+            >
+              نعم، متابعة
+            </AlertDialogAction>
+            <AlertDialogCancel
+              className="mt-0 rounded-full px-4"
+              onClick={() => setPendingBackupImportFile(null)}
+            >
+              إلغاء
+            </AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={backupRestoreConfirmOpen} onOpenChange={setBackupRestoreConfirmOpen}>
+        <AlertDialogContent className="max-w-sm rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
+          <AlertDialogHeader className="border-b border-border/60 px-4 py-3 text-right">
+            <AlertDialogTitle className="text-right text-lg text-foreground">تأكيد الاسترجاع المطابق</AlertDialogTitle>
+            <AlertDialogDescription className="text-right text-sm leading-6 text-muted-foreground">
+              سيتم استبدال البيانات الحالية في النظام بالكامل بمحتوى النسخة المرفوعة. أي عنصر غير موجود داخل النسخة سيتم حذفه من قاعدة البيانات الحالية.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="justify-start gap-2 px-4 py-3 sm:justify-start sm:space-x-0">
+            <AlertDialogAction className="rounded-full bg-destructive px-4 text-destructive-foreground hover:bg-destructive/90" onClick={() => void handleRestoreBackup()}>
+              {backupRestoreRunning ? "جارٍ الاسترجاع..." : "نعم، استرجع"}
+            </AlertDialogAction>
+            <AlertDialogCancel className="mt-0 rounded-full px-4">إلغاء</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <Dialog open={finalExamCopyOpen} onOpenChange={setFinalExamCopyOpen}>
         <DialogContent className="max-w-sm rounded-[1.75rem] p-0 text-right [&>button]:hidden">
           <DialogHeader className="border-b border-border/60 px-6 py-5 text-right">
@@ -6428,7 +6976,9 @@ const Dashboard = () => {
           <AlertDialogHeader className="border-b border-border/60 px-4 py-3 text-right">
             <AlertDialogTitle className="text-right text-lg text-foreground">تأكيد حذف الطالب</AlertDialogTitle>
             <AlertDialogDescription className="text-right text-sm leading-6 text-muted-foreground">
-              {pendingDeleteStudent ? `سيتم حذف ${pendingDeleteStudent.name} نهائيًا من القائمة.` : ""}
+              {pendingDeleteStudent
+                ? `سيتم حذف ${pendingDeleteStudent.name} نهائيًا من القائمة${pendingDeleteStudentLinkedReciters.length > 0 ? ` وإزالته من ${pendingDeleteStudentLinkedReciters.length} ${pendingDeleteStudentLinkedReciters.length === 1 ? "مقرئ مرتبط" : "روابط مقرئين"}` : ""}.`
+                : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="justify-start gap-2 px-4 py-3 sm:justify-start sm:space-x-0">
@@ -6450,7 +7000,7 @@ const Dashboard = () => {
             <AlertDialogHeader className="relative border-b border-border/60 px-4 py-3 text-right">
               <AlertDialogTitle className="text-right text-xl text-foreground">تأكيد حذف الدورة</AlertDialogTitle>
               <AlertDialogDescription className="text-right text-sm leading-6 text-muted-foreground">
-                {pendingDeleteCourse ? `سيتم حذف الدورة ${pendingDeleteCourse.name} نهائيًا مع أسئلتها ونتائجها المرتبطة.` : ""}
+                {pendingDeleteCourse ? `سيتم حذف الدورة ${pendingDeleteCourse.name} نهائيًا مع ${pendingDeleteCourseQuestionsCount} سؤال و${pendingDeleteCourseSubmissionsCount} نتيجة و${pendingDeleteCourseAttendanceCount} سجل حضور مرتبط.` : ""}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter className="relative justify-start gap-2 px-4 py-3 sm:justify-start sm:space-x-0">
@@ -6468,12 +7018,31 @@ const Dashboard = () => {
           <AlertDialogHeader className="border-b border-border/60 px-4 py-3 text-right">
             <AlertDialogTitle className="text-right text-lg text-foreground">تأكيد حذف المقرئ</AlertDialogTitle>
             <AlertDialogDescription className="text-right text-sm leading-6 text-muted-foreground">
-              {pendingDeleteReciter ? `سيتم حذف ${pendingDeleteReciter.name} نهائيًا من القائمة.` : ""}
+              {pendingDeleteReciter ? `سيتم حذف ${pendingDeleteReciter.name} نهائيًا من القائمة${pendingDeleteReciterStudentsCount > 0 ? ` مع فك ارتباط ${pendingDeleteReciterStudentsCount} ${pendingDeleteReciterStudentsCount === 1 ? "طالب" : "طلاب"}` : ""}.` : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="justify-start gap-2 px-4 py-3 sm:justify-start sm:space-x-0">
             <AlertDialogAction className="rounded-full bg-destructive px-4 text-destructive-foreground hover:bg-destructive/90" onClick={confirmDeleteReciter}>
               {reciterDeleting ? "جارٍ الحذف..." : "حذف"}
+            </AlertDialogAction>
+            <AlertDialogCancel className="mt-0 rounded-full px-4">إلغاء</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={Boolean(pendingAttendanceSave)} onOpenChange={(open) => !open && setPendingAttendanceSave(null)}>
+        <AlertDialogContent className="max-w-sm rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
+          <AlertDialogHeader className="border-b border-border/60 px-4 py-3 text-right">
+            <AlertDialogTitle className="text-right text-lg text-foreground">تأكيد {pendingAttendanceSave?.isTask ? "حفظ المهام" : "حفظ التحضير"}</AlertDialogTitle>
+            <AlertDialogDescription className="text-right text-sm leading-6 text-muted-foreground">
+              {pendingAttendanceSave
+                ? `${pendingAttendanceSave.isTask ? "سيتم تحديث حالة التنفيذ" : "سيتم تحديث الحضور"} في ${pendingAttendanceSave.courseTitle} لفرع ${pendingAttendanceSave.branchLabel}. الحاضرون/المنفذون الآن: ${pendingAttendanceSave.presentStudents.length}، والتغييرات المكتشفة: ${pendingAttendanceSave.changedCount}.`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="justify-start gap-2 px-4 py-3 sm:justify-start sm:space-x-0">
+            <AlertDialogAction className="rounded-full px-4" onClick={() => void confirmAttendanceSave()}>
+              تأكيد الحفظ
             </AlertDialogAction>
             <AlertDialogCancel className="mt-0 rounded-full px-4">إلغاء</AlertDialogCancel>
           </AlertDialogFooter>

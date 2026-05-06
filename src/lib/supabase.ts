@@ -1,6 +1,7 @@
 ﻿import { createClient } from "@supabase/supabase-js";
 import type {
   AccessSession,
+  ActivityLogRecord,
   AssessmentType,
   BranchId,
   CourseAssessmentTemplates,
@@ -99,6 +100,71 @@ const normalizeAssessmentNotificationTemplates = (input?: Partial<CourseAssessme
 const isMissingColumnError = (error: { message?: string; details?: string; hint?: string; code?: string }, columnName: string) => {
   const text = [error.message, error.details, error.hint].filter(Boolean).join(" ").toLowerCase();
   return error.code === "42703" || text.includes(columnName.toLowerCase());
+};
+
+export const loadActivityLogsFromDatabase = async (): Promise<ActivityLogRecord[]> => {
+  const response = await supabase
+    .from("activity_logs")
+    .select("id, action, target_name, status, details, actor_name, actor_role, created_at")
+    .order("created_at", { ascending: false })
+    .limit(200);
+
+  if (response.error) {
+    if (isMissingRelationError(response.error, "activity_logs")) {
+      return [];
+    }
+
+    throw response.error;
+  }
+
+  return (response.data ?? []).map((row) => ({
+    id: row.id as string,
+    action: (row.action as string) ?? "",
+    target: (row.target_name as string) ?? "",
+    status: (row.status as ActivityLogRecord["status"]) ?? "نجحت",
+    details: (row.details as string) ?? "",
+    actorName: (row.actor_name as string) ?? "",
+    actorRole: (row.actor_role as string) ?? "",
+    createdAt: (row.created_at as string) ?? new Date().toISOString(),
+  }));
+};
+
+export const addActivityLogToDatabase = async (input: Omit<ActivityLogRecord, "id" | "createdAt">): Promise<ActivityLogRecord> => {
+  const response = await supabase
+    .from("activity_logs")
+    .insert({
+      action: input.action,
+      target_name: input.target,
+      status: input.status,
+      details: input.details,
+      actor_name: input.actorName,
+      actor_role: input.actorRole,
+    })
+    .select("id, action, target_name, status, details, actor_name, actor_role, created_at")
+    .single();
+
+  if (response.error) {
+    if (isMissingRelationError(response.error, "activity_logs")) {
+      return {
+        id: crypto.randomUUID(),
+        createdAt: new Date().toISOString(),
+        ...input,
+      };
+    }
+
+    throw response.error;
+  }
+
+  return {
+    id: response.data.id as string,
+    action: (response.data.action as string) ?? input.action,
+    target: (response.data.target_name as string) ?? input.target,
+    status: (response.data.status as ActivityLogRecord["status"]) ?? input.status,
+    details: (response.data.details as string) ?? input.details,
+    actorName: (response.data.actor_name as string) ?? input.actorName,
+    actorRole: (response.data.actor_role as string) ?? input.actorRole,
+    createdAt: (response.data.created_at as string) ?? new Date().toISOString(),
+  };
 };
 
 export const resolveAccessByLoginCodeFromDatabase = async (loginCode: string): Promise<AccessSession | null> => {
@@ -273,6 +339,7 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
     attendanceResponse,
     taskTemplatesResponse,
     notificationsResponse,
+    activityLogsResponse,
     satisfactionResult,
     finalExamData,
     rolePermissions,
@@ -335,6 +402,8 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
         ? supabase.from("notifications").select("id, title, message, target_branch_code, created_at, created_by_name, created_by_role")
         : r;
     })(),
+    // activity logs
+    supabase.from("activity_logs").select("id, action, target_name, status, details, actor_name, actor_role, created_at").order("created_at", { ascending: false }).limit(200),
     // satisfaction questions + responses (responses depend on questions error check)
     (async () => {
       const qr = await supabase.from("satisfaction_questions").select("id, course_id, prompt, type, is_required, sort_order, created_at").order("sort_order");
@@ -374,6 +443,7 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
   if (attendanceResponse.error && !isMissingRelationError(attendanceResponse.error, "course_attendance")) console.error("[supabase] course_attendance query failed:", attendanceResponse.error);
   if (taskTemplatesResponse.error) console.error("[supabase] task_templates query failed:", taskTemplatesResponse.error);
   if (notificationsResponse.error && !isMissingRelationError(notificationsResponse.error, "notifications")) console.error("[supabase] notifications query failed:", notificationsResponse.error);
+  if (activityLogsResponse.error && !isMissingRelationError(activityLogsResponse.error, "activity_logs")) console.error("[supabase] activity_logs query failed:", activityLogsResponse.error);
 
   const satisfactionQuestionsResponse = satisfactionResult.questions;
   const satisfactionResponsesResponse = satisfactionResult.responses;
@@ -593,6 +663,18 @@ export const loadDashboardDataFromDatabase = async (): Promise<DashboardData> =>
     submissions: normalizedSubmissions,
     attendance: normalizedAttendance,
     notifications: normalizedNotifications,
+    activityLogs: isMissingRelationError(activityLogsResponse.error ?? { message: "" }, "activity_logs")
+      ? []
+      : (activityLogsResponse.data ?? []).map((row) => ({
+          id: row.id as string,
+          action: (row.action as string) ?? "",
+          target: (row.target_name as string) ?? "",
+          status: ((row.status as ActivityLogRecord["status"]) ?? "نجحت"),
+          details: (row.details as string) ?? "",
+          actorName: (row.actor_name as string) ?? "",
+          actorRole: (row.actor_role as string) ?? "",
+          createdAt: (row.created_at as string) ?? new Date().toISOString(),
+        })),
     satisfactionQuestions: normalizedSatisfactionQuestions,
     satisfactionResponses: normalizedSatisfactionResponses,
     finalExamQuestions: finalExamData.questions,
@@ -1246,6 +1328,13 @@ export const setManualAttendanceInDatabase = async (
 
 export const resetDashboardDataInDatabase = async () => {
   const deletionSteps = [
+    () => supabase.from("final_exam_submission_answers").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+    () => supabase.from("final_exam_submissions").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+    () => supabase.from("final_exam_questions").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+    () => supabase.from("final_exam_settings").delete().neq("branch_code", "__never__"),
+    () => supabase.from("satisfaction_responses").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+    () => supabase.from("satisfaction_questions").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+    () => supabase.from("notifications").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
     () => supabase.from("course_attendance").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
     () => supabase.from("course_submission_answers").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
     () => supabase.from("course_submissions").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
@@ -1256,6 +1345,7 @@ export const resetDashboardDataInDatabase = async () => {
     () => supabase.from("reciter_students").delete().neq("reciter_id", "00000000-0000-0000-0000-000000000000"),
     () => supabase.from("reciters").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
     () => supabase.from("students").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+    () => supabase.from("role_permissions").delete().neq("role", "__never__"),
     () => supabase.from("users").delete().eq("role", "reciter"),
   ];
 
@@ -1264,6 +1354,255 @@ export const resetDashboardDataInDatabase = async () => {
 
     if (error) {
       throw error;
+    }
+  }
+};
+
+export const restoreDashboardDataInDatabase = async (backupData: DashboardData) => {
+  await resetDashboardDataInDatabase();
+
+  const studentIdByLogin = new Map<string, string>();
+  for (const student of backupData.students ?? []) {
+    const studentId = await syncStudentToDatabase({
+      name: student.name,
+      loginId: student.loginId,
+      branchId: student.branchId,
+      note: student.note,
+      completedParts: student.completedParts ?? [],
+    });
+    studentIdByLogin.set(student.loginId, studentId);
+  }
+
+  const taskTemplateIdByOldId = new Map<string, string>();
+  for (const template of backupData.taskTemplates ?? []) {
+    const saved = await addTaskTemplateToDatabase({
+      name: template.name,
+      content: template.content,
+    });
+    taskTemplateIdByOldId.set(template.id, saved.id);
+  }
+
+  const courseIdByOldId = new Map<string, string>();
+  const courseQuestionIdByOldId = new Map<string, string>();
+  const orderedCourses = [...(backupData.courses ?? [])].sort((left, right) => left.sortOrder - right.sortOrder);
+
+  for (const course of orderedCourses) {
+    const savedCourse = await addCourseToDatabase(course.title, false, {
+      entityType: course.entityType,
+      taskMode: course.taskMode,
+      taskTemplateId: course.taskTemplateId ? (taskTemplateIdByOldId.get(course.taskTemplateId) ?? "") : "",
+      taskTemplateName: course.taskTemplateName,
+      taskTemplateContent: course.taskTemplateContent,
+      youtubeUrl: course.youtubeUrl,
+    });
+
+    courseIdByOldId.set(course.id, savedCourse.id);
+
+    await updateCourseInDatabase(savedCourse.id, {
+      title: course.title,
+      entityType: course.entityType,
+      isActive: course.isActive,
+      isPreEnabled: course.isPreEnabled,
+      isPostEnabled: course.isPostEnabled,
+      isTasksEnabled: course.isTasksEnabled,
+      branchAvailability: course.branchAvailability,
+      assessmentWindows: course.assessmentWindows,
+      assessmentNotificationTemplates: course.assessmentNotificationTemplates,
+      taskMode: course.taskMode,
+      taskTemplateId: course.taskTemplateId ? (taskTemplateIdByOldId.get(course.taskTemplateId) ?? "") : "",
+      taskTemplateName: course.taskTemplateName,
+      taskTemplateContent: course.taskTemplateContent,
+      youtubeUrl: course.youtubeUrl,
+    });
+
+    for (const [assessmentType, questions] of ([
+      ["pre", course.preQuestions],
+      ["post", course.postQuestions],
+      ["tasks", course.taskQuestions],
+    ] as const)) {
+      for (const question of [...questions].sort((left, right) => left.sortOrder - right.sortOrder)) {
+        const newQuestionId = await addQuestionToDatabase(savedCourse.id, assessmentType, question);
+        courseQuestionIdByOldId.set(question.id, newQuestionId);
+      }
+    }
+  }
+
+  await updateCoursesSortOrderInDatabase(
+    orderedCourses
+      .map((course) => courseIdByOldId.get(course.id))
+      .filter((courseId): courseId is string => Boolean(courseId)),
+  );
+
+  for (const reciter of backupData.reciters ?? []) {
+    const linkedStudents = reciter.studentIds
+      .map((studentId) => backupData.students.find((student) => student.id === studentId))
+      .filter((student): student is StudentRecord => Boolean(student))
+      .map((student) => ({
+        name: student.name,
+        loginId: student.loginId,
+        branchId: student.branchId,
+        note: student.note,
+        completedParts: student.completedParts,
+      }));
+
+    await saveReciterToDatabase({
+      name: reciter.name,
+      branchId: reciter.branchId,
+      loginCode: reciter.loginCode,
+      linkedStudents,
+    });
+  }
+
+  const groupedSubmissions = new Map<string, Array<{ studentName: string; loginId: string; answers: SubmissionAnswer[]; manualScore?: number | null }>>();
+  for (const submission of backupData.submissions ?? []) {
+    const mappedCourseId = courseIdByOldId.get(submission.courseId);
+    if (!mappedCourseId) {
+      continue;
+    }
+
+    const mappedAnswers = (submission.answers ?? []).map((answer) => ({
+      questionId: answer.questionId === "__score_override__"
+        ? answer.questionId
+        : (courseQuestionIdByOldId.get(answer.questionId) ?? answer.questionId),
+      value: answer.value,
+      fileName: answer.fileName,
+      fileType: answer.fileType,
+      fileDataUrl: answer.fileDataUrl,
+    }));
+
+    const key = `${mappedCourseId}::${submission.assessmentType}`;
+    const current = groupedSubmissions.get(key) ?? [];
+    current.push({
+      studentName: submission.studentName,
+      loginId: submission.loginId,
+      answers: mappedAnswers,
+      manualScore: submission.manualScore,
+    });
+    groupedSubmissions.set(key, current);
+  }
+
+  for (const [key, submissions] of groupedSubmissions.entries()) {
+    const [courseId, assessmentType] = key.split("::") as [string, AssessmentType];
+    await bulkUpsertSubmissionsToDatabase(courseId, assessmentType, submissions);
+  }
+
+  const attendanceByCourseId = new Map<string, Array<{ loginId: string; studentName: string; studentId: string | null }>>();
+  for (const record of backupData.attendance ?? []) {
+    const mappedCourseId = courseIdByOldId.get(record.courseId);
+    if (!mappedCourseId) {
+      continue;
+    }
+
+    const current = attendanceByCourseId.get(mappedCourseId) ?? [];
+    current.push({
+      loginId: record.loginId,
+      studentName: record.studentName,
+      studentId: studentIdByLogin.get(record.loginId) ?? null,
+    });
+    attendanceByCourseId.set(mappedCourseId, current);
+  }
+
+  for (const [courseId, presentStudents] of attendanceByCourseId.entries()) {
+    await setManualAttendanceInDatabase(courseId, presentStudents);
+  }
+
+  for (const notification of backupData.notifications ?? []) {
+    await addNotificationToDatabase({
+      title: notification.title,
+      message: notification.message,
+      targetBranchId: notification.targetBranchId,
+      targetLoginIds: notification.targetLoginIds ?? [],
+      createdByName: notification.createdByName,
+      createdByRole: notification.createdByRole,
+    });
+  }
+
+  const satisfactionQuestionIdByOldId = new Map<string, string>();
+  for (const question of [...(backupData.satisfactionQuestions ?? [])].sort((left, right) => left.sortOrder - right.sortOrder)) {
+    const mappedCourseId = courseIdByOldId.get(question.courseId);
+    if (!mappedCourseId) {
+      continue;
+    }
+
+    const saved = await addSatisfactionQuestionToDatabase({
+      courseId: mappedCourseId,
+      prompt: question.prompt,
+      type: question.type,
+      isRequired: question.isRequired,
+      sortOrder: question.sortOrder,
+    });
+    satisfactionQuestionIdByOldId.set(question.id, saved.id);
+  }
+
+  const mappedResponses = (backupData.satisfactionResponses ?? [])
+    .map((response) => ({
+      courseId: courseIdByOldId.get(response.courseId) ?? "",
+      questionId: satisfactionQuestionIdByOldId.get(response.questionId) ?? "",
+      loginCode: response.loginCode,
+      studentName: response.studentName,
+      ratingValue: response.ratingValue,
+      textValue: response.textValue,
+    }))
+    .filter((response) => response.courseId && response.questionId);
+
+  if (mappedResponses.length > 0) {
+    await submitSatisfactionResponsesToDatabase(mappedResponses);
+  }
+
+  const finalExamQuestionIdByOldId = new Map<string, string>();
+  for (const question of [...(backupData.finalExamQuestions ?? [])].sort((left, right) => left.branchCode.localeCompare(right.branchCode) || left.sortOrder - right.sortOrder)) {
+    const { data, error } = await supabase
+      .from("final_exam_questions")
+      .insert({
+        branch_code: question.branchCode,
+        question_type: question.type === "truefalse" ? "multiple" : question.type,
+        prompt: question.prompt,
+        options: question.type === "truefalse" ? ["صح", "خطأ"] : question.options,
+        allow_file: question.allowFile,
+        points: question.points,
+        correct_answer: question.correctAnswer,
+        attachment_name: question.attachmentName,
+        attachment_type: question.attachmentType,
+        attachment_data_url: question.attachmentDataUrl,
+        sort_order: question.sortOrder,
+      })
+      .select("id")
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    finalExamQuestionIdByOldId.set(question.id, data.id as string);
+  }
+
+  await toggleFinalExamEnabledInDatabase("male", backupData.finalExamSettings?.male?.isEnabled ?? false, backupData.finalExamSettings?.male?.closesAt ?? null);
+  await toggleFinalExamEnabledInDatabase("female", backupData.finalExamSettings?.female?.isEnabled ?? false, backupData.finalExamSettings?.female?.closesAt ?? null);
+
+  for (const submission of backupData.finalExamSubmissions ?? []) {
+    const inserted = await submitFinalExamToDatabase({
+      branchCode: submission.branchCode,
+      studentName: submission.studentName,
+      loginCode: submission.loginCode,
+      answers: (submission.answers ?? []).map((answer) => ({
+        questionId: answer.questionId === "__score_override__"
+          ? answer.questionId
+          : (finalExamQuestionIdByOldId.get(answer.questionId) ?? answer.questionId),
+        value: answer.value,
+        fileName: answer.fileName,
+        fileType: answer.fileType,
+        fileDataUrl: answer.fileDataUrl,
+      })),
+    });
+
+    if (submission.manualScore !== null && submission.manualScore !== undefined) {
+      await setFinalExamManualScoreInDatabase(inserted.id, submission.manualScore);
+    }
+  }
+
+  for (const [role, permissions] of Object.entries(backupData.rolePermissions ?? {})) {
+    for (const [key, isEnabled] of Object.entries(permissions ?? {})) {
+      await setRolePermissionInDatabase(role, key, Boolean(isEnabled));
     }
   }
 };
