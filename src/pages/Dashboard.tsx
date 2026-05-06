@@ -699,7 +699,6 @@ const Dashboard = () => {
   const [finalExamActivationDialogOpen, setFinalExamActivationDialogOpen] = useState(false);
   const [finalExamActivationMinutes, setFinalExamActivationMinutes] = useState("60");
   const [finalExamActivationError, setFinalExamActivationError] = useState("");
-  const [finalExamResultsBranch, setFinalExamResultsBranch] = useState<BranchId>("male");
   const [finalExamScoreEdit, setFinalExamScoreEdit] = useState<{ submissionId: string; value: string } | null>(null);
   const [courseEditForm, setCourseEditForm] = useState(emptyCourseEditForm);
   const [courseEditError, setCourseEditError] = useState("");
@@ -5738,28 +5737,12 @@ const Dashboard = () => {
             )}
 
             {isResultsFinalExamSelected && (() => {
-              const feBranch = managedBranchId ?? finalExamResultsBranch;
+              const feBranch = managedBranchId ?? (resultsBranchId === "all" ? "male" : resultsBranchId);
               const feQuestions = (data.finalExamQuestions ?? []).filter((q) => q.branchCode === feBranch);
               const feTotal = feQuestions.reduce((sum, q) => sum + q.points, 0);
               const feSubs = (data.finalExamSubmissions ?? []).filter((s) => s.branchCode === feBranch);
               return (
                 <Card className="border-primary/10 bg-white/90">
-                  <CardHeader>
-                    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-                      {!managedBranchId && (
-                        <div className="flex flex-wrap gap-2">
-                          {(["male", "female"] as BranchId[]).map((b) => (
-                            <button key={b} type="button" onClick={() => setFinalExamResultsBranch(b)}
-                              className={cn("rounded-full px-4 py-1.5 text-sm font-bold border transition-smooth",
-                                b === finalExamResultsBranch ? "bg-primary text-white border-primary" : "bg-white text-foreground border-border/60 hover:border-primary/40")}>
-                              {branchLabels[b]}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      <CardTitle className="text-xl">نتائج الاختبار النهائي</CardTitle>
-                    </div>
-                  </CardHeader>
                   <CardContent className="space-y-3">
                     {feSubs.length === 0 && <div className="rounded-3xl border border-dashed border-primary/20 p-4 text-sm text-muted-foreground">لا توجد إجابات بعد.</div>}
                     {feSubs.map((sub) => {
@@ -6726,7 +6709,7 @@ const Dashboard = () => {
               </div>
             ) : (
               <>
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-2 sm:grid-cols-3">
               <Button className="h-11 rounded-2xl" onClick={handleExportBackup} disabled={!canExportBackup}>
                 <Download className="size-4" />
                 تحميل نسخة احتياطية
@@ -6734,6 +6717,9 @@ const Dashboard = () => {
               <Button variant="outline" className="h-11 rounded-2xl" onClick={() => backupImportInputRef.current?.click()} disabled={!canImportBackup}>
                 <FileUp className="size-4" />
                 رفع نسخة احتياطية
+              </Button>
+              <Button variant="destructive" className="h-11 rounded-2xl" onClick={() => setBackupDeleteConfirmOpen(true)} disabled={!canRestoreBackup || backupDeleteRunning}>
+                حذف النسخة الحالية
               </Button>
               <input ref={backupImportInputRef} type="file" accept="application/json,.json" className="hidden" onChange={handleBackupImportSelect} />
             </div>
@@ -6795,11 +6781,6 @@ const Dashboard = () => {
             )}
           </div>
           <div className="flex justify-end gap-3 border-t border-border/60 px-3 py-2.5">
-            {!backupRestoreProgress?.isActive && (
-              <Button variant="destructive" className="rounded-full px-5" onClick={() => setBackupDeleteConfirmOpen(true)} disabled={!canRestoreBackup || backupDeleteRunning}>
-                حذف النسخة الحالية
-              </Button>
-            )}
             {!backupRestoreProgress?.isActive && importedBackupSummary && backupComparisonRows.length > 0 && (
               <Button className="rounded-full px-5" onClick={() => setBackupRestoreConfirmOpen(true)} disabled={!canRestoreBackup}>
                 استرجاع
