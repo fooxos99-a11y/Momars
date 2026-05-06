@@ -417,7 +417,6 @@ const dashboardMenu = [
   { id: "notifications", label: "الإشعارات", icon: Bell, hint: "إرسال التنبيهات" },
   { id: "indicators", label: "إحصائيات الطلاب", icon: LayoutPanelTop, hint: "إحصائيات الطلاب" },
   { id: "satisfaction", label: "استبيان الرضا", icon: ClipboardList, hint: "أسئلة الاستبيان ونتائجه" },
-  { id: "activity", label: "سجل النشاط", icon: ClipboardList, hint: "عمليات النظام الإدارية" },
 ] as const;
 
 const dashboardCardClass = "rounded-[1.5rem] border-white/80 bg-white/95 shadow-[0_18px_45px_rgba(15,23,42,0.05)]";
@@ -833,11 +832,18 @@ const Dashboard = () => {
     return rolePerms?.[key] === true;
   };
 
+  const canViewActivityLog = hasPermission("page_activity_log");
+  const canExportBackup = hasPermission("backup_export");
+  const canImportBackup = hasPermission("backup_import");
+  const canRestoreBackup = hasPermission("backup_restore");
+  const canAccessBackup = canExportBackup || canImportBackup || canRestoreBackup;
+
   const availableDashboardMenu = dashboardMenu.filter((item) => {
     if (!canManageStandaloneTasks && item.id === "tasks") return false;
     if (session.role !== "admin" && item.id === "permissions") return false;
     if (!hasPermission("page_notifications") && item.id === "notifications") return false;
     if (!hasPermission("page_results") && item.id === "results") return false;
+    if (!canViewActivityLog && item.id === "activity") return false;
     return true;
   });
   const branchStudents = effectiveSelectedBranch === "all" ? data.students : getBranchStudents(data, effectiveSelectedBranch);
@@ -1186,10 +1192,14 @@ const Dashboard = () => {
   }, [managedBranchId]);
 
   useEffect(() => {
-    if (!availableDashboardMenu.some((item) => item.id === dashboardTab)) {
+    const isCurrentTabAvailable = dashboardTab === "activity"
+      ? canViewActivityLog
+      : availableDashboardMenu.some((item) => item.id === dashboardTab);
+
+    if (!isCurrentTabAvailable) {
       setDashboardTab(availableDashboardMenu[0]?.id ?? "home");
     }
-  }, [availableDashboardMenu, dashboardTab]);
+  }, [availableDashboardMenu, canViewActivityLog, dashboardTab]);
 
   const openStudentEditor = (studentId?: string) => {
     setStudentError("");
@@ -1281,6 +1291,11 @@ const Dashboard = () => {
   };
 
   const handleExportBackup = () => {
+    if (!hasPermission("backup_export")) {
+      showErrorToast("ليست لديك صلاحية تصدير النسخة الاحتياطية.");
+      return;
+    }
+
     try {
       const exportedAt = new Date().toISOString();
       const backupPayload = {
@@ -1341,6 +1356,11 @@ const Dashboard = () => {
   };
 
   const processBackupImportFile = async (file: File) => {
+    if (!hasPermission("backup_import")) {
+      showErrorToast("ليست لديك صلاحية رفع النسخة الاحتياطية.");
+      return;
+    }
+
     try {
       const text = await file.text();
       const parsed = JSON.parse(text) as {
@@ -1418,6 +1438,11 @@ const Dashboard = () => {
       return;
     }
 
+    if (!hasPermission("backup_restore")) {
+      showErrorToast("ليست لديك صلاحية استرجاع النسخة الاحتياطية.");
+      return;
+    }
+
     setBackupRestoreRunning(true);
     try {
       await store.restoreBackupData(pendingBackupData);
@@ -1436,6 +1461,12 @@ const Dashboard = () => {
   };
 
   const handleBackupImportSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!hasPermission("backup_import")) {
+      event.target.value = "";
+      showErrorToast("ليست لديك صلاحية رفع النسخة الاحتياطية.");
+      return;
+    }
+
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) {
@@ -3365,8 +3396,33 @@ const Dashboard = () => {
             );
           })}
         </div>
-        {canCreateCourses && (
+        {(canViewActivityLog || canAccessBackup) && (
           <div className="mt-4 border-t border-border/60 pt-4 space-y-2">
+            {canViewActivityLog && (
+              <button
+                type="button"
+                onClick={() => {
+                  setDashboardTab("activity");
+                  if (isMobile) {
+                    setMobileMenuOpen(false);
+                  }
+                }}
+                className={cn(
+                  "flex w-full items-center justify-between rounded-xl px-4 py-3 text-[15px] font-medium transition-all duration-300",
+                  dashboardTab === "activity"
+                    ? "bg-primary text-white shadow-lg shadow-primary/20"
+                    : "text-foreground hover:bg-primary/5 hover:text-primary",
+                )}
+              >
+                <div className="flex items-center gap-2.5">
+                  <span>سجل النشاط</span>
+                  <ClipboardList className={cn("size-4", dashboardTab === "activity" ? "text-white" : "text-primary/70")} />
+                </div>
+                <span className={cn("h-2.5 w-2.5 rounded-full", dashboardTab === "activity" ? "bg-white" : "bg-primary/20")} />
+              </button>
+            )}
+
+            {canAccessBackup && (
             <button
               type="button"
               onClick={() => {
@@ -3383,6 +3439,7 @@ const Dashboard = () => {
               </div>
               <span className="h-2.5 w-2.5 rounded-full bg-primary/20" />
             </button>
+            )}
           </div>
         )}
       </div>
@@ -4805,6 +4862,15 @@ const Dashboard = () => {
               permissions: [
                 { key: "page_notifications", label: "صفحة الإشعارات" },
                 { key: "page_results", label: "صفحة النتائج" },
+              ],
+            },
+            {
+              label: "سجل النشاط والنسخة الاحتياطية",
+              permissions: [
+                { key: "page_activity_log", label: "صفحة سجل النشاط" },
+                { key: "backup_export", label: "تصدير نسخة احتياطية" },
+                { key: "backup_import", label: "رفع نسخة احتياطية" },
+                { key: "backup_restore", label: "استرجاع نسخة احتياطية" },
               ],
             },
           ];
@@ -6625,11 +6691,11 @@ const Dashboard = () => {
           </DialogHeader>
           <div className="space-y-3 px-3 py-3 text-right">
             <div className="grid gap-2 sm:grid-cols-2">
-              <Button className="h-11 rounded-2xl" onClick={handleExportBackup}>
+              <Button className="h-11 rounded-2xl" onClick={handleExportBackup} disabled={!canExportBackup}>
                 <Download className="size-4" />
                 تحميل نسخة احتياطية
               </Button>
-              <Button variant="outline" className="h-11 rounded-2xl" onClick={() => backupImportInputRef.current?.click()}>
+              <Button variant="outline" className="h-11 rounded-2xl" onClick={() => backupImportInputRef.current?.click()} disabled={!canImportBackup}>
                 <FileUp className="size-4" />
                 رفع نسخة احتياطية
               </Button>
@@ -6676,7 +6742,7 @@ const Dashboard = () => {
                       ))}
                     </div>
                     <div className="flex justify-end">
-                      <Button variant="destructive" className="rounded-full px-5" onClick={() => setBackupRestoreConfirmOpen(true)}>
+                      <Button variant="destructive" className="rounded-full px-5" onClick={() => setBackupRestoreConfirmOpen(true)} disabled={!canRestoreBackup}>
                         استرجاع مطابق
                       </Button>
                     </div>

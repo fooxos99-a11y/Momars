@@ -50,7 +50,8 @@ export type PermissionKey =
   | "add_student" | "delete_student" | "edit_student"
   | "edit_pre_questions" | "edit_post_questions" | "edit_tasks"
   | "open_pre_exam" | "open_post_exam"
-  | "page_notifications" | "page_results"
+  | "page_notifications" | "page_results" | "page_activity_log"
+  | "backup_export" | "backup_import" | "backup_restore"
   | "add_reciter" | "delete_reciter" | "edit_reciter" | "transfer_reciter_student";
 
 export interface CourseBranchAvailability {
