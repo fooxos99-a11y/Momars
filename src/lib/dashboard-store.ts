@@ -1216,6 +1216,10 @@ const useCreateDashboardStore = () => {
       setData(initialData);
       void resetDashboardDataInDatabase().catch(() => undefined);
     },
+    clearAllData: async () => {
+      await resetDashboardDataInDatabase();
+      setData(initialData);
+    },
     bulkImportAssessments: async (
       courseId: string,
       assessmentType: AssessmentType,

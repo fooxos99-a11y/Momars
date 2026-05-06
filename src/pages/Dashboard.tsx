@@ -116,6 +116,10 @@ type BackupRestoreProgressState = {
   updatedAt: string;
 };
 
+const formatBackupFileDate = (isoDate: string) => isoDate.slice(0, 19).replace(/[T:]/g, "-");
+
+const createBackupFileName = (isoDate: string, prefix = "نسخة_احتياطية_رخصة_ممارس") => `${prefix}_${formatBackupFileDate(isoDate)}.json`;
+
 const formatDurationMinutes = (minutes: number) => {
   if (!Number.isFinite(minutes) || minutes <= 0) {
     return "0 دقيقة";
@@ -423,11 +427,11 @@ const dashboardMenu = [
   { id: "finalexam", label: "الاختبار النهائي", icon: GraduationCap, hint: "اختبار نهائي لكل فرع" },
   { id: "reciters", label: "الإقراء", icon: BookOpen, hint: "إدارة الحسابات" },
   { id: "students", label: "المتدربين", icon: Users, hint: "إدارة الطلاب" },
-  { id: "results", label: "النتائج", icon: BarChart3, hint: "الحضور والتقييم" },
   { id: "permissions", label: "الصلاحيات", icon: ShieldCheck, hint: "صلاحيات المسؤولين" },
   { id: "notifications", label: "الإشعارات", icon: Bell, hint: "إرسال التنبيهات" },
   { id: "indicators", label: "إحصائيات الطلاب", icon: LayoutPanelTop, hint: "إحصائيات الطلاب" },
   { id: "satisfaction", label: "استبيان الرضا", icon: ClipboardList, hint: "أسئلة الاستبيان ونتائجه" },
+  { id: "results", label: "النتائج", icon: BarChart3, hint: "الحضور والتقييم" },
 ] as const;
 
 const dashboardCardClass = "rounded-[1.5rem] border-white/80 bg-white/95 shadow-[0_18px_45px_rgba(15,23,42,0.05)]";
@@ -736,6 +740,7 @@ const Dashboard = () => {
   const [courseIndicatorsBranch, setCourseIndicatorsBranch] = useState<BranchId>("male");
   const [courseIndicatorsCourseId, setCourseIndicatorsCourseId] = useState("");
   const [detailsSubmissionId, setDetailsSubmissionId] = useState<string | null>(null);
+  const [finalExamDetailsSubmissionId, setFinalExamDetailsSubmissionId] = useState<string | null>(null);
   const [importResultsOpen, setImportResultsOpen] = useState(false);
   const [manualGradesOpen, setManualGradesOpen] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<PreviewAttachment | null>(null);
@@ -743,6 +748,8 @@ const Dashboard = () => {
   const [backupDialogOpen, setBackupDialogOpen] = useState(false);
   const [backupImportConfirmOpen, setBackupImportConfirmOpen] = useState(false);
   const [backupRestoreConfirmOpen, setBackupRestoreConfirmOpen] = useState(false);
+  const [backupDeleteConfirmOpen, setBackupDeleteConfirmOpen] = useState(false);
+  const [backupDeleteRunning, setBackupDeleteRunning] = useState(false);
   const [backupRestoreRunning, setBackupRestoreRunning] = useState(false);
   const [backupRestoreProgress, setBackupRestoreProgress] = useState<BackupRestoreProgressState | null>(() => {
     if (typeof window === "undefined") {
@@ -1237,6 +1244,7 @@ const Dashboard = () => {
         ? frequentAbsentStudents
         : resultsStudents;
   const detailsSubmission = data.submissions.find((submission) => submission.id === detailsSubmissionId) ?? null;
+  const finalExamDetailsSubmission = data.finalExamSubmissions.find((submission) => submission.id === finalExamDetailsSubmissionId) ?? null;
   const isPreviewImage = previewAttachment?.type?.startsWith("image/") || previewAttachment?.dataUrl.startsWith("data:image/");
   const isPreviewPdf = previewAttachment?.type === "application/pdf" || previewAttachment?.dataUrl.startsWith("data:application/pdf");
   const isPreviewVideo = previewAttachment?.type?.startsWith("video/") || previewAttachment?.dataUrl.startsWith("data:video/");
@@ -1430,15 +1438,11 @@ const Dashboard = () => {
       const exportedAt = new Date().toISOString();
       const backupPayload = buildBackupPayload(data, exportedAt);
 
-      const fileName = `momars-backup-${exportedAt.slice(0, 19).replace(/[T:]/g, "-")}.json`;
+      const fileName = createBackupFileName(exportedAt);
       downloadBackupPayload(backupPayload, fileName);
 
       showSuccessToast("تم تصدير النسخة الاحتياطية", "تم تنزيل ملف JSON يشمل البيانات والمؤشرات الحالية.");
-      appendActivityLog({ action: "تنزيل نسخة احتياطية", target: fileName, status: "نجحت", details: "تم تنزيل نسخة احتياطية من بيانات النظام والمؤشرات الحالية." });
-    } catch {
-      showErrorToast("تعذر تصدير النسخة الاحتياطية.");
-      appendActivityLog({ action: "تنزيل نسخة احتياطية", target: "ملف النسخة", status: "فشلت", details: "فشل تنزيل ملف النسخة الاحتياطية." });
-    }
+    } catch {}
   };
 
   const processBackupImportFile = async (file: File) => {
@@ -1524,12 +1528,9 @@ const Dashboard = () => {
         hasIndicators: Boolean(parsed.indicators),
       });
       showSuccessToast("تم رفع ملف النسخة", "تمت قراءة ملف النسخة الاحتياطية وعرض ملخصه.");
-      appendActivityLog({ action: "رفع نسخة احتياطية", target: file.name, status: "نجحت", details: "تمت قراءة ملف النسخة الاحتياطية وتجهيز المقارنة قبل الاسترجاع." });
     } catch {
       setPendingBackupData(null);
       setImportedBackupSummary(null);
-      showErrorToast("ملف النسخة الاحتياطية غير صالح أو تالف.");
-      appendActivityLog({ action: "رفع نسخة احتياطية", target: file.name, status: "فشلت", details: "الملف غير صالح أو تالف ولم تتم قراءته." });
     }
   };
 
@@ -1560,7 +1561,7 @@ const Dashboard = () => {
     setBackupRestoreRunning(true);
     try {
       const rescueExportedAt = new Date().toISOString();
-      const rescueFileName = `momars-before-restore-${rescueExportedAt.slice(0, 19).replace(/[T:]/g, "-")}.json`;
+      const rescueFileName = createBackupFileName(rescueExportedAt, "نسخة_إنقاذ_رخصة_ممارس_قبل_الاسترجاع");
       downloadBackupPayload(buildBackupPayload(data, rescueExportedAt), rescueFileName);
 
       await store.restoreBackupData(pendingBackupData, (progress) => {
@@ -1579,13 +1580,37 @@ const Dashboard = () => {
       setImportedBackupSummary(null);
       setBackupRestoreProgress(null);
       showSuccessToast("تم استرجاع النسخة", `تم استبدال البيانات الحالية بالنسخة الاحتياطية بنجاح، وتم تنزيل نسخة إنقاذ مسبقة باسم ${rescueFileName}.`);
-      appendActivityLog({ action: "استرجاع نسخة احتياطية", target: importedBackupSummary.fileName, status: "نجحت", details: `تم تنفيذ استرجاع مطابق للنسخة الاحتياطية بعد تنزيل نسخة إنقاذ مسبقة باسم ${rescueFileName}.` });
     } catch {
       setBackupRestoreProgress(null);
-      showErrorToast("تعذر استرجاع النسخة الاحتياطية.");
-      appendActivityLog({ action: "استرجاع نسخة احتياطية", target: importedBackupSummary.fileName, status: "فشلت", details: "فشل الاسترجاع المطابق للنسخة الاحتياطية." });
     } finally {
       setBackupRestoreRunning(false);
+    }
+  };
+
+  const handleDeleteCurrentBackupData = async () => {
+    if (backupRestoreProgress?.isActive || backupDeleteRunning) {
+      return;
+    }
+
+    if (!hasPermission("backup_restore")) {
+      showErrorToast("ليست لديك صلاحية حذف البيانات الحالية.");
+      return;
+    }
+
+    setBackupDeleteRunning(true);
+
+    try {
+      await store.clearAllData();
+      setPendingBackupData(null);
+      setImportedBackupSummary(null);
+      setPendingBackupImportFile(null);
+      setBackupRestoreConfirmOpen(false);
+      setBackupDeleteConfirmOpen(false);
+      setBackupDialogOpen(false);
+      showSuccessToast("تم حذف البيانات الحالية", "تم حذف جميع البيانات الحالية من النظام بنجاح.");
+    } catch {
+    } finally {
+      setBackupDeleteRunning(false);
     }
   };
 
@@ -5739,12 +5764,13 @@ const Dashboard = () => {
                     {feSubs.length === 0 && <div className="rounded-3xl border border-dashed border-primary/20 p-4 text-sm text-muted-foreground">لا توجد إجابات بعد.</div>}
                     {feSubs.map((sub) => {
                       const score = typeof sub.manualScore === "number" ? sub.manualScore : null;
+                      const hasViewableAnswers = sub.answers.some((answer) => answer.questionId !== "__score_override__");
                       return (
                           <div key={sub.id} className="flex flex-col gap-3 rounded-3xl border border-primary/10 bg-white p-4 md:flex-row md:items-center md:justify-between">
-                          <div className="text-right">
+                          <button type="button" className="text-right" disabled={!hasViewableAnswers} onClick={() => hasViewableAnswers && setFinalExamDetailsSubmissionId(sub.id)}>
                             <div className="font-bold text-foreground">{sub.studentName}</div>
                             <div className="text-xs text-muted-foreground">{sub.loginCode} · {new Date(sub.submittedAt).toLocaleDateString("ar-SA")}</div>
-                          </div>
+                          </button>
                           <div className="flex w-full flex-wrap items-center justify-between gap-2 shrink-0 md:w-auto md:flex-nowrap md:justify-start">
                             {finalExamScoreEdit?.submissionId === sub.id ? (
                               <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:flex-nowrap">
@@ -5763,6 +5789,13 @@ const Dashboard = () => {
                                 <Button variant="outline" size="sm" className="rounded-xl h-8" onClick={() => setFinalExamScoreEdit({ submissionId: sub.id, value: score != null ? String(score) : "" })}>
                                   <Pencil className="size-3.5" />
                                 </Button>
+                                {hasViewableAnswers ? (
+                                  <Button variant="outline" size="icon" className="h-9 w-9 rounded-xl" onClick={() => setFinalExamDetailsSubmissionId(sub.id)} aria-label={`عرض إجابات ${sub.studentName}`}>
+                                    <Eye className="size-4" />
+                                  </Button>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">لا توجد إجابة</span>
+                                )}
                               </>
                             )}
                           </div>
@@ -5771,195 +5804,6 @@ const Dashboard = () => {
                     })}
                   </CardContent>
                 </Card>
-              );
-            })()}
-
-            {/* ─── استبيان الرضا ────────────────────────────────────────────── */}
-            {(() => {
-              const satisfactionResponses = data.satisfactionResponses ?? [];
-              const satisfactionQuestions = data.satisfactionQuestions ?? [];
-              const satisfactionResultCourses = [...data.courses]
-                .filter((course) =>
-                  satisfactionQuestions.some((q) => q.courseId === course.id) ||
-                  satisfactionResponses.some((r) => r.courseId === course.id),
-                )
-                .sort((left, right) => left.sortOrder - right.sortOrder);
-              if (satisfactionQuestions.length === 0 && satisfactionResultCourses.length === 0) return null;
-
-              const isAllSatisfactionCoursesSelected = satisfactionResultsCourseId === SATISFACTION_ALL_RESULTS_ID;
-              const selCourse = isAllSatisfactionCoursesSelected
-                ? null
-                : satisfactionResultCourses.find((c) => c.id === satisfactionResultsCourseId) ?? satisfactionResultCourses[0] ?? null;
-              const coursesToRender = isAllSatisfactionCoursesSelected
-                ? satisfactionResultCourses
-                : selCourse
-                  ? [selCourse]
-                  : [];
-              const fmtAvg = (v: number | null) => v == null ? "—" : (v === Math.floor(v) ? String(Math.round(v)) : v.toFixed(1).replace(".", ","));
-
-              const renderIndicatorCards = (courseId: string) => {
-                const allResp = satisfactionResponses.filter((r) => r.courseId === courseId);
-                const courseQuestions = satisfactionQuestions.filter((q) => q.courseId === courseId);
-                const ratingQs = courseQuestions.filter((q) => q.type === "rating");
-                const allRatingVals = allResp.filter((r) => {
-                  const q = courseQuestions.find((q) => q.id === r.questionId);
-                  return q?.type === "rating" && r.ratingValue != null;
-                }).map((r) => r.ratingValue as number);
-                const overallAvg = allRatingVals.length > 0 ? allRatingVals.reduce((a, b) => a + b, 0) / allRatingVals.length : null;
-                const qIndicators = ratingQs.map((q) => {
-                  const vals = allResp.filter((r) => r.questionId === q.id && r.ratingValue != null).map((r) => r.ratingValue as number);
-                  const avg = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
-                  return { q, avg };
-                });
-
-                if (qIndicators.length === 0 && overallAvg == null) {
-                  return (
-                    <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-white/70 p-6 text-center text-sm text-muted-foreground">
-                      لا توجد مؤشرات تقييم متاحة لهذه الدورة بعد.
-                    </div>
-                  );
-                }
-
-                return (
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-8 lg:grid-cols-3 lg:gap-x-6 lg:gap-y-10 xl:grid-cols-6">
-                    {overallAvg != null && (
-                      <ProgramIndicatorRing
-                        key={`${courseId}-overall`}
-                        label="الإجمالي من 10"
-                        helperText={`${allRatingVals.length} إجابة`}
-                        progressValue={overallAvg * 10}
-                        displayValue={overallAvg}
-                        suffix=""
-                        formatDisplay={fmtAvg}
-                      />
-                    )}
-                    {qIndicators.map(({ q, avg, }, i) => {
-                      return (
-                        <ProgramIndicatorRing
-                          key={q.id}
-                          label={q.prompt}
-                          helperText={`${allResp.filter((r) => r.questionId === q.id && r.ratingValue != null).length} إجابة`}
-                          progressValue={avg == null ? 0 : avg * 10}
-                          displayValue={avg ?? 0}
-                          suffix=""
-                          formatDisplay={fmtAvg}
-                        />
-                      );
-                    })}
-                  </div>
-                );
-              };
-
-              return (
-                <div className="space-y-4" dir="rtl">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <h3 className="text-[0.95rem] font-bold text-foreground">استبيان الرضا</h3>
-                    <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
-                      {satisfactionResultCourses.length > 0 && (
-                        <Button
-                          variant="outline"
-                          className="w-full rounded-full px-4 sm:w-auto sm:px-5"
-                          onClick={() => void handleExportSatisfactionIndicatorsPdf(isAllSatisfactionCoursesSelected ? "جميع_الدورات" : (selCourse?.title ?? "الدورة"))}
-                        >
-                          <Download className="size-4" />
-                          تصدير
-                        </Button>
-                      )}
-                      {satisfactionResultCourses.length > 0 && (
-                        <div className="w-full sm:w-56">
-                          <Select value={isAllSatisfactionCoursesSelected ? SATISFACTION_ALL_RESULTS_ID : (selCourse?.id ?? "")} onValueChange={setSatisfactionResultsCourseId}>
-                          <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={SATISFACTION_ALL_RESULTS_ID} className="justify-end pr-3 text-right">جميع الدورات</SelectItem>
-                            {satisfactionResultCourses.map((c) => <SelectItem key={c.id} value={c.id} className="justify-end pr-3 text-right">{c.title}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  {coursesToRender.length === 0 ? (
-                    <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-white/70 p-6 text-center text-sm text-muted-foreground">لا توجد استجابات بعد.</div>
-                  ) : (() => {
-                    const selectedCourseResponses = selCourse
-                      ? satisfactionResponses.filter((r) => r.courseId === selCourse.id)
-                      : [];
-                    const respondentIds = [...new Set(selectedCourseResponses.map((r) => r.loginCode))];
-                    const courseQuestions = selCourse
-                      ? satisfactionQuestions.filter((q) => q.courseId === selCourse.id)
-                      : [];
-                    return (
-                      <>
-                        <div ref={satisfactionIndicatorsExportRef} className="space-y-8">
-                          {coursesToRender.map((course) => (
-                            <div key={course.id} className="space-y-4 [break-inside:avoid-page]">
-                              <div className="text-right text-base font-extrabold text-foreground">{course.title}</div>
-                              {renderIndicatorCards(course.id)}
-                            </div>
-                          ))}
-                        </div>
-                        {!isAllSatisfactionCoursesSelected && selCourse && (
-                        <Card className="border-primary/10 bg-white/90 overflow-hidden">
-                          <CardHeader className="pb-3">
-                            <CardTitle className="text-base">استجابات الطلاب</CardTitle>
-                          </CardHeader>
-                          <CardContent className="p-0">
-                            {respondentIds.length === 0 ? (
-                              <div className="p-6 text-center text-sm text-muted-foreground">لا توجد استجابات.</div>
-                            ) : (
-                              <div className="divide-y divide-border/40">
-                                {respondentIds.map((loginCode) => {
-                                  const studentResp = selectedCourseResponses.filter((r) => r.loginCode === loginCode);
-                                  const studentName = studentResp[0]?.studentName ?? loginCode;
-                                  const ratingResps = studentResp.filter((r) => {
-                                    const q = courseQuestions.find((q) => q.id === r.questionId);
-                                    return q?.type === "rating" && r.ratingValue != null;
-                                  });
-                                  const textResps = studentResp.filter((r) => {
-                                    const q = courseQuestions.find((q) => q.id === r.questionId);
-                                    return q?.type === "text" && r.textValue;
-                                  });
-                                  return (
-                                    <div key={loginCode} className="flex items-center justify-between gap-4 px-6 py-4">
-                                      <div className="flex items-center gap-2 flex-wrap justify-end">
-                                        {textResps.map((r) => {
-                                          const q = courseQuestions.find((q) => q.id === r.questionId);
-                                          return (
-                                            <button key={r.id} type="button" title={q?.prompt}
-                                              onClick={() => setSatisfactionPreviewText(`${q?.prompt ?? ""}\n\n${r.textValue ?? ""}`)}
-                                              className="flex items-center gap-1 rounded-full border border-border/60 bg-muted/30 px-3 py-1 text-xs text-muted-foreground hover:border-primary/40 hover:text-primary transition-colors">
-                                              <Eye className="size-3" />
-                                              <span className="max-w-[8rem] truncate">{q?.prompt}</span>
-                                            </button>
-                                          );
-                                        })}
-                                        {ratingResps.map((r) => {
-                                          const q = courseQuestions.find((q) => q.id === r.questionId);
-                                          return (
-                                            <span key={r.id} title={q?.prompt}
-                                              className="flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-bold text-primary">
-                                              <span className="max-w-[6rem] truncate font-normal text-muted-foreground">{q?.prompt}</span>
-                                              <span>{r.ratingValue}</span>
-                                            </span>
-                                          );
-                                        })}
-                                      </div>
-                                      <div className="shrink-0 text-right">
-                                        <div className="text-sm font-bold text-foreground">{studentName}</div>
-                                        <div className="text-xs text-muted-foreground">{loginCode}</div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </CardContent>
-                        </Card>
-                        )}
-                      </>
-                    );
-                  })()}
-                </div>
               );
             })()}
           </div>
@@ -6603,6 +6447,102 @@ const Dashboard = () => {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={Boolean(finalExamDetailsSubmission)} onOpenChange={(open) => !open && setFinalExamDetailsSubmissionId(null)}>
+        <DialogContent className="max-h-[90vh] w-[calc(100vw-1.5rem)] max-w-4xl overflow-y-auto rounded-[2rem] p-0 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300/80 [&::-webkit-scrollbar-track]:bg-transparent [&>button]:hidden">
+          <DialogHeader className="flex flex-row items-center justify-between border-b border-border px-4 py-3 text-right">
+            <div className="flex-1">
+              <DialogTitle className="text-right text-2xl">
+                <span className="inline-flex items-center gap-2">
+                  <FileText className="size-5 text-primary" aria-hidden="true" />
+                  <span>:إجابات الاختبار النهائي</span>
+                </span>
+              </DialogTitle>
+            </div>
+          </DialogHeader>
+          <div className="space-y-3 p-4">
+            {finalExamDetailsSubmission && (() => {
+              const questions = (data.finalExamQuestions ?? [])
+                .filter((question) => question.branchCode === finalExamDetailsSubmission.branchCode)
+                .sort((left, right) => left.sortOrder - right.sortOrder);
+              const answers = new Map(finalExamDetailsSubmission.answers.map((answer) => [answer.questionId, answer]));
+
+              return questions.map((question, index) => {
+                const answer = answers.get(question.id);
+                const isCorrect = question.correctAnswer.trim() && answer
+                  ? isAnswerCorrect(question as CourseQuestion, answer.value)
+                  : false;
+
+                return (
+                  <div key={question.id} className="rounded-3xl border border-primary/10 bg-white p-4">
+                    <div className="mb-2 font-bold text-foreground">{index + 1}. {question.prompt} <span className="text-sm font-medium text-muted-foreground">• الدرجة: {question.points}</span></div>
+                    {question.correctAnswer && <div className="mb-2 text-sm font-medium text-emerald-700">الإجابة الصحيحة: {question.correctAnswer}</div>}
+                    {answer && question.correctAnswer && <div className={cn("mb-3 text-sm font-medium", isCorrect ? "text-emerald-700" : "text-rose-700")}>{isCorrect ? "صحيحة" : "غير صحيحة"}</div>}
+                    <div className="text-sm text-muted-foreground">إجابة الطالب: {answer?.value || "لا توجد إجابة"}</div>
+                    {answer?.fileName && (
+                      <div className="mt-3 rounded-2xl border border-border/60 bg-muted/10 p-3 text-xs text-muted-foreground">
+                        <div className="mb-3 font-medium text-foreground">الملف المرفق: {answer.fileName}</div>
+                        {answer.fileDataUrl ? (
+                          answer.fileType?.startsWith("image/") || answer.fileDataUrl.startsWith("data:image/") ? (
+                            <button
+                              type="button"
+                              className="group relative block w-full overflow-hidden rounded-2xl border border-border/60 bg-white text-right"
+                              onClick={() => setPreviewAttachment({
+                                name: answer.fileName ?? "مرفق",
+                                type: answer.fileType,
+                                dataUrl: answer.fileDataUrl!,
+                              })}
+                            >
+                              <img
+                                src={answer.fileDataUrl}
+                                alt={answer.fileName}
+                                className="max-h-80 w-full object-contain bg-white transition duration-200 group-hover:scale-[1.01]"
+                              />
+                              <span className="pointer-events-none absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-slate-950/80 px-3 py-1 text-xs font-semibold text-white">
+                                <Maximize2 className="size-3.5" aria-hidden="true" />
+                                تكبير
+                              </span>
+                            </button>
+                          ) : answer.fileType === "application/pdf" || answer.fileDataUrl.startsWith("data:application/pdf") ? (
+                            <button
+                              type="button"
+                              className="group relative block w-full overflow-hidden rounded-2xl border border-border/60 bg-white text-right"
+                              onClick={() => setPreviewAttachment({
+                                name: answer.fileName ?? "مرفق",
+                                type: answer.fileType,
+                                dataUrl: answer.fileDataUrl!,
+                              })}
+                            >
+                              <iframe
+                                src={`${answer.fileDataUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
+                                title={answer.fileName}
+                                className="h-96 w-full bg-white"
+                              />
+                              <span className="pointer-events-none absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-slate-950/80 px-3 py-1 text-xs font-semibold text-white">
+                                <Maximize2 className="size-3.5" aria-hidden="true" />
+                                تكبير
+                              </span>
+                            </button>
+                          ) : (
+                            <div className="rounded-2xl border border-dashed border-border/60 bg-white px-3 py-4 text-center text-muted-foreground">
+                              هذا النوع من الملفات لا يدعم المعاينة داخل النافذة.
+                            </div>
+                          )
+                        ) : (
+                          <span>{answer.fileName}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              });
+            })()}
+          </div>
+          <div className="flex justify-end border-t border-border px-4 py-3">
+            <Button variant="outline" className="rounded-full px-5" onClick={() => setFinalExamDetailsSubmissionId(null)}>إغلاق</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={Boolean(previewAttachment)} onOpenChange={(open) => !open && setPreviewAttachment(null)}>
         <DialogContent className="h-screen w-screen max-w-none translate-x-[-50%] translate-y-[-50%] rounded-none border-0 bg-slate-950 p-0 shadow-none [&>button]:hidden">
           <div className="flex h-full flex-col">
@@ -6775,16 +6715,13 @@ const Dashboard = () => {
             {backupRestoreProgress?.isActive ? (
               <div className={cn(dashboardMutedPanelClass, "space-y-4 rounded-[1.25rem] p-4")}>
                 <div className="space-y-1">
-                  <div className="text-sm font-bold text-foreground">جارٍ استرجاع النسخة الاحتياطية</div>
+                  <div className="text-sm font-bold text-foreground">الرجاء عدم الخروج من النافذة</div>
                   <div className="text-xs text-muted-foreground break-all">{backupRestoreProgress.fileName}</div>
                 </div>
                 <Progress value={backupRestoreProgress.percent} className="h-3 bg-primary/10" />
                 <div className="flex items-center justify-between gap-3 text-sm">
                   <span className="font-medium text-foreground">{backupRestoreProgress.message}</span>
                   <span className="font-bold text-primary">{backupRestoreProgress.percent}%</span>
-                </div>
-                <div className="text-xs leading-6 text-muted-foreground">
-                  سيستمر الاسترجاع داخل الجلسة الحالية حتى يكتمل. أثناء هذه الفترة ستظهر هذه النافذة بدل خيارات الرفع والتصدير.
                 </div>
               </div>
             ) : (
@@ -6858,6 +6795,11 @@ const Dashboard = () => {
             )}
           </div>
           <div className="flex justify-end gap-3 border-t border-border/60 px-3 py-2.5">
+            {!backupRestoreProgress?.isActive && (
+              <Button variant="destructive" className="rounded-full px-5" onClick={() => setBackupDeleteConfirmOpen(true)} disabled={!canRestoreBackup || backupDeleteRunning}>
+                حذف النسخة الحالية
+              </Button>
+            )}
             {!backupRestoreProgress?.isActive && importedBackupSummary && backupComparisonRows.length > 0 && (
               <Button className="rounded-full px-5" onClick={() => setBackupRestoreConfirmOpen(true)} disabled={!canRestoreBackup}>
                 استرجاع
@@ -6915,6 +6857,23 @@ const Dashboard = () => {
               {backupRestoreRunning ? "جارٍ الاسترجاع..." : "نعم، استرجع"}
             </AlertDialogAction>
             <AlertDialogCancel className="mt-0 rounded-full px-4">إلغاء</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={backupDeleteConfirmOpen} onOpenChange={setBackupDeleteConfirmOpen}>
+        <AlertDialogContent className="max-w-sm rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
+          <AlertDialogHeader className="border-b border-border/60 px-4 py-3 text-right">
+            <AlertDialogTitle className="text-right text-lg text-foreground">تأكيد حذف البيانات الحالية</AlertDialogTitle>
+            <AlertDialogDescription className="text-right text-sm leading-6 text-muted-foreground">
+              سيتم حذف جميع البيانات الحالية من النظام بالكامل، بما في ذلك الطلاب والدورات والنتائج والحضور وسجل النشاط. استخدم هذا الخيار فقط إذا كنت تريد بدء حالة فارغة.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="justify-start gap-2 px-4 py-3 sm:justify-start sm:space-x-0">
+            <AlertDialogAction className="rounded-full bg-destructive px-4 text-destructive-foreground hover:bg-destructive/90" onClick={() => void handleDeleteCurrentBackupData()}>
+              {backupDeleteRunning ? "جارٍ الحذف..." : "نعم، احذف"}
+            </AlertDialogAction>
+            <AlertDialogCancel className="mt-0 rounded-full px-4" disabled={backupDeleteRunning}>إلغاء</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
