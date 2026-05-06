@@ -3734,7 +3734,6 @@ const Dashboard = () => {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h3 className="text-[0.95rem] font-bold text-foreground">سجل النشاط</h3>
-                <p className="mt-1 text-sm text-muted-foreground">آخر العمليات الإدارية الحساسة والتنفيذية داخل النظام.</p>
               </div>
               <Button variant="outline" className="rounded-full" onClick={() => void store.reloadActivityLogs()}>
                 تحديث السجل
