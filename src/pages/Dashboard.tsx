@@ -105,6 +105,17 @@ const assessmentLabels: Record<AssessmentType, string> = {
   tasks: "التكاليف",
 };
 
+const BACKUP_RESTORE_PROGRESS_STORAGE_KEY = "momars-backup-restore-progress";
+
+type BackupRestoreProgressState = {
+  isActive: boolean;
+  percent: number;
+  message: string;
+  fileName: string;
+  startedAt: string;
+  updatedAt: string;
+};
+
 const formatDurationMinutes = (minutes: number) => {
   if (!Number.isFinite(minutes) || minutes <= 0) {
     return "0 دقيقة";
@@ -733,6 +744,31 @@ const Dashboard = () => {
   const [backupImportConfirmOpen, setBackupImportConfirmOpen] = useState(false);
   const [backupRestoreConfirmOpen, setBackupRestoreConfirmOpen] = useState(false);
   const [backupRestoreRunning, setBackupRestoreRunning] = useState(false);
+  const [backupRestoreProgress, setBackupRestoreProgress] = useState<BackupRestoreProgressState | null>(() => {
+    if (typeof window === "undefined") {
+      return null;
+    }
+
+    try {
+      const raw = window.localStorage.getItem(BACKUP_RESTORE_PROGRESS_STORAGE_KEY);
+      if (!raw) {
+        return null;
+      }
+
+      const parsed = JSON.parse(raw) as BackupRestoreProgressState;
+      const updatedAt = Date.parse(parsed.updatedAt ?? "");
+
+      if (!parsed?.isActive || Number.isNaN(updatedAt) || Date.now() - updatedAt > 15_000) {
+        window.localStorage.removeItem(BACKUP_RESTORE_PROGRESS_STORAGE_KEY);
+        return null;
+      }
+
+      return parsed;
+    } catch {
+      window.localStorage.removeItem(BACKUP_RESTORE_PROGRESS_STORAGE_KEY);
+      return null;
+    }
+  });
   const [pendingBackupImportFile, setPendingBackupImportFile] = useState<File | null>(null);
   const [pendingBackupData, setPendingBackupData] = useState<DashboardData | null>(null);
   const [importedBackupSummary, setImportedBackupSummary] = useState<{
@@ -781,6 +817,33 @@ const Dashboard = () => {
   const [adminTransferError, setAdminTransferError] = useState("");
   const [adminTransferSubmitting, setAdminTransferSubmitting] = useState(false);
   const [allStudentsReciterOrder, setAllStudentsReciterOrder] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (backupRestoreProgress?.isActive) {
+      window.localStorage.setItem(BACKUP_RESTORE_PROGRESS_STORAGE_KEY, JSON.stringify(backupRestoreProgress));
+      return;
+    }
+
+    window.localStorage.removeItem(BACKUP_RESTORE_PROGRESS_STORAGE_KEY);
+  }, [backupRestoreProgress]);
+
+  useEffect(() => {
+    if (!backupRestoreProgress?.isActive) {
+      return;
+    }
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [backupRestoreProgress]);
 
   useEffect(() => {
     if (managedBranchId) {
@@ -1290,7 +1353,74 @@ const Dashboard = () => {
     }
   };
 
+  const buildBackupPayload = (sourceData: DashboardData, exportedAt: string) => ({
+    version: 1,
+    exportedAt,
+    app: "momars",
+    type: "dashboard-backup",
+    data: {
+      roles: sourceData.roles,
+      branches: sourceData.branches,
+      students: sourceData.students,
+      reciters: sourceData.reciters,
+      courses: sourceData.courses,
+      taskTemplates: sourceData.taskTemplates,
+      attendance: sourceData.attendance,
+      notifications: sourceData.notifications,
+      submissions: sourceData.submissions,
+      satisfactionQuestions: sourceData.satisfactionQuestions ?? [],
+      satisfactionResponses: sourceData.satisfactionResponses ?? [],
+      finalExamQuestions: sourceData.finalExamQuestions,
+      finalExamSubmissions: sourceData.finalExamSubmissions,
+      finalExamSettings: sourceData.finalExamSettings,
+      rolePermissions: sourceData.rolePermissions,
+    },
+    indicators: {
+      filters: {
+        homeBranchFilter,
+        homeCourseFilter,
+        indicatorsBranchId,
+        indicatorsCourseId,
+        indicatorsSortOrder,
+        courseIndicatorsBranch,
+        courseIndicatorsCourseId,
+      },
+      home: homeMetrics,
+      students: indicatorMetrics,
+      courseIndicators: courseIndicatorsMetrics,
+    },
+  });
+
+  const downloadBackupPayload = (payload: ReturnType<typeof buildBackupPayload>, fileName: string) => {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const getBackupPrimaryRecordsCount = (backup: DashboardData) => (
+    backup.students.length
+    + backup.reciters.length
+    + backup.courses.length
+    + backup.taskTemplates.length
+    + backup.submissions.length
+    + backup.attendance.length
+    + backup.notifications.length
+    + backup.finalExamQuestions.length
+    + backup.finalExamSubmissions.length
+  );
+
   const handleExportBackup = () => {
+    if (backupRestoreProgress?.isActive) {
+      showErrorToast("الاسترجاع قيد التنفيذ حاليًا. انتظر حتى يكتمل ثم أعد المحاولة.");
+      return;
+    }
+
     if (!hasPermission("backup_export")) {
       showErrorToast("ليست لديك صلاحية تصدير النسخة الاحتياطية.");
       return;
@@ -1298,54 +1428,10 @@ const Dashboard = () => {
 
     try {
       const exportedAt = new Date().toISOString();
-      const backupPayload = {
-        version: 1,
-        exportedAt,
-        app: "momars",
-        type: "dashboard-backup",
-        data: {
-          roles: data.roles,
-          branches: data.branches,
-          students: data.students,
-          reciters: data.reciters,
-          courses: data.courses,
-          taskTemplates: data.taskTemplates,
-          attendance: data.attendance,
-          notifications: data.notifications,
-          submissions: data.submissions,
-          satisfactionQuestions: data.satisfactionQuestions ?? [],
-          satisfactionResponses: data.satisfactionResponses ?? [],
-          finalExamQuestions: data.finalExamQuestions,
-          finalExamSubmissions: data.finalExamSubmissions,
-          finalExamSettings: data.finalExamSettings,
-          rolePermissions: data.rolePermissions,
-        },
-        indicators: {
-          filters: {
-            homeBranchFilter,
-            homeCourseFilter,
-            indicatorsBranchId,
-            indicatorsCourseId,
-            indicatorsSortOrder,
-            courseIndicatorsBranch,
-            courseIndicatorsCourseId,
-          },
-          home: homeMetrics,
-          students: indicatorMetrics,
-          courseIndicators: courseIndicatorsMetrics,
-        },
-      };
+      const backupPayload = buildBackupPayload(data, exportedAt);
 
       const fileName = `momars-backup-${exportedAt.slice(0, 19).replace(/[T:]/g, "-")}.json`;
-      const blob = new Blob([JSON.stringify(backupPayload, null, 2)], { type: "application/json;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      downloadBackupPayload(backupPayload, fileName);
 
       showSuccessToast("تم تصدير النسخة الاحتياطية", "تم تنزيل ملف JSON يشمل البيانات والمؤشرات الحالية.");
       appendActivityLog({ action: "تنزيل نسخة احتياطية", target: fileName, status: "نجحت", details: "تم تنزيل نسخة احتياطية من بيانات النظام والمؤشرات الحالية." });
@@ -1356,6 +1442,11 @@ const Dashboard = () => {
   };
 
   const processBackupImportFile = async (file: File) => {
+    if (backupRestoreProgress?.isActive) {
+      showErrorToast("الاسترجاع قيد التنفيذ حاليًا. انتظر حتى يكتمل ثم أعد المحاولة.");
+      return;
+    }
+
     if (!hasPermission("backup_import")) {
       showErrorToast("ليست لديك صلاحية رفع النسخة الاحتياطية.");
       return;
@@ -1364,6 +1455,7 @@ const Dashboard = () => {
     try {
       const text = await file.text();
       const parsed = JSON.parse(text) as {
+        type?: string;
         exportedAt?: string;
         data?: {
           roles?: unknown[];
@@ -1385,6 +1477,10 @@ const Dashboard = () => {
         indicators?: unknown;
       };
 
+      if (parsed.type !== "dashboard-backup" || !parsed.data || typeof parsed.data !== "object") {
+        throw new Error("invalid-backup-structure");
+      }
+
       const normalizedBackupData: DashboardData = {
         roles: Array.isArray(parsed.data?.roles) ? parsed.data.roles as DashboardData["roles"] : data.roles,
         branches: Array.isArray(parsed.data?.branches) ? parsed.data.branches as DashboardData["branches"] : data.branches,
@@ -1402,6 +1498,10 @@ const Dashboard = () => {
         finalExamSettings: (parsed.data?.finalExamSettings as DashboardData["finalExamSettings"] | undefined) ?? { male: { isEnabled: false, closesAt: null }, female: { isEnabled: false, closesAt: null } },
         rolePermissions: (parsed.data?.rolePermissions as DashboardData["rolePermissions"] | undefined) ?? {},
       };
+
+      if (getBackupPrimaryRecordsCount(normalizedBackupData) === 0) {
+        throw new Error("empty-backup");
+      }
 
       setPendingBackupData(normalizedBackupData);
 
@@ -1438,21 +1538,50 @@ const Dashboard = () => {
       return;
     }
 
+    if (backupRestoreProgress?.isActive) {
+      setBackupDialogOpen(true);
+      return;
+    }
+
     if (!hasPermission("backup_restore")) {
       showErrorToast("ليست لديك صلاحية استرجاع النسخة الاحتياطية.");
       return;
     }
 
+    const startedAt = new Date().toISOString();
+    setBackupRestoreProgress({
+      isActive: true,
+      percent: 0,
+      message: "بدء الاسترجاع",
+      fileName: importedBackupSummary.fileName,
+      startedAt,
+      updatedAt: startedAt,
+    });
     setBackupRestoreRunning(true);
     try {
-      await store.restoreBackupData(pendingBackupData);
+      const rescueExportedAt = new Date().toISOString();
+      const rescueFileName = `momars-before-restore-${rescueExportedAt.slice(0, 19).replace(/[T:]/g, "-")}.json`;
+      downloadBackupPayload(buildBackupPayload(data, rescueExportedAt), rescueFileName);
+
+      await store.restoreBackupData(pendingBackupData, (progress) => {
+        setBackupRestoreProgress((current) => ({
+          isActive: true,
+          percent: progress.percent,
+          message: progress.message,
+          fileName: current?.fileName ?? importedBackupSummary.fileName,
+          startedAt: current?.startedAt ?? startedAt,
+          updatedAt: new Date().toISOString(),
+        }));
+      });
       setBackupRestoreConfirmOpen(false);
       setBackupDialogOpen(false);
       setPendingBackupData(null);
       setImportedBackupSummary(null);
-      showSuccessToast("تم استرجاع النسخة", "تم استبدال البيانات الحالية بالنسخة الاحتياطية بنجاح.");
-      appendActivityLog({ action: "استرجاع نسخة احتياطية", target: importedBackupSummary.fileName, status: "نجحت", details: "تم تنفيذ استرجاع مطابق للنسخة الاحتياطية وإعادة تحميل البيانات من قاعدة البيانات." });
+      setBackupRestoreProgress(null);
+      showSuccessToast("تم استرجاع النسخة", `تم استبدال البيانات الحالية بالنسخة الاحتياطية بنجاح، وتم تنزيل نسخة إنقاذ مسبقة باسم ${rescueFileName}.`);
+      appendActivityLog({ action: "استرجاع نسخة احتياطية", target: importedBackupSummary.fileName, status: "نجحت", details: `تم تنفيذ استرجاع مطابق للنسخة الاحتياطية بعد تنزيل نسخة إنقاذ مسبقة باسم ${rescueFileName}.` });
     } catch {
+      setBackupRestoreProgress(null);
       showErrorToast("تعذر استرجاع النسخة الاحتياطية.");
       appendActivityLog({ action: "استرجاع نسخة احتياطية", target: importedBackupSummary.fileName, status: "فشلت", details: "فشل الاسترجاع المطابق للنسخة الاحتياطية." });
     } finally {
@@ -6638,11 +6767,28 @@ const Dashboard = () => {
       </Dialog>
 
       <Dialog open={backupDialogOpen} onOpenChange={setBackupDialogOpen}>
-        <DialogContent className="max-w-lg rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
+        <DialogContent className="max-h-[85vh] w-[calc(100vw-1.5rem)] max-w-2xl overflow-hidden rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
           <DialogHeader className="border-b border-border/60 px-3 py-2.5 text-right">
             <DialogTitle className="text-right text-xl text-foreground">النسخة الاحتياطية</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 px-3 py-3 text-right">
+          <div className="space-y-3 overflow-y-auto px-3 py-3 text-right">
+            {backupRestoreProgress?.isActive ? (
+              <div className={cn(dashboardMutedPanelClass, "space-y-4 rounded-[1.25rem] p-4")}>
+                <div className="space-y-1">
+                  <div className="text-sm font-bold text-foreground">جارٍ استرجاع النسخة الاحتياطية</div>
+                  <div className="text-xs text-muted-foreground break-all">{backupRestoreProgress.fileName}</div>
+                </div>
+                <Progress value={backupRestoreProgress.percent} className="h-3 bg-primary/10" />
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="font-medium text-foreground">{backupRestoreProgress.message}</span>
+                  <span className="font-bold text-primary">{backupRestoreProgress.percent}%</span>
+                </div>
+                <div className="text-xs leading-6 text-muted-foreground">
+                  سيستمر الاسترجاع داخل الجلسة الحالية حتى يكتمل. أثناء هذه الفترة ستظهر هذه النافذة بدل خيارات الرفع والتصدير.
+                </div>
+              </div>
+            ) : (
+              <>
             <div className="grid gap-2 sm:grid-cols-2">
               <Button className="h-11 rounded-2xl" onClick={handleExportBackup} disabled={!canExportBackup}>
                 <Download className="size-4" />
@@ -6658,12 +6804,15 @@ const Dashboard = () => {
             {importedBackupSummary ? (
               <div className="space-y-3">
                 <div className={cn(dashboardMutedPanelClass, "space-y-2 rounded-[1.25rem] p-3") }>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-bold text-foreground">آخر ملف مرفوع</span>
-                    <span className="text-xs text-muted-foreground">{importedBackupSummary.fileName}</span>
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="pt-1 text-sm font-bold text-foreground">آخر ملف مرفوع</span>
+                    <div className="max-h-20 max-w-[70%] overflow-y-auto rounded-xl bg-white px-3 py-2 text-xs text-muted-foreground break-all">
+                      {importedBackupSummary.fileName}
+                    </div>
                   </div>
                   <div className="text-xs text-muted-foreground">تاريخ التصدير: {importedBackupSummary.exportedAt}</div>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div className="max-h-56 overflow-y-auto pr-1">
+                    <div className="grid grid-cols-2 gap-2 text-sm">
                     <div className="rounded-xl bg-white px-3 py-2">الأدوار: {importedBackupSummary.rolesCount}</div>
                     <div className="rounded-xl bg-white px-3 py-2">الفروع: {importedBackupSummary.branchesCount}</div>
                     <div className="rounded-xl bg-white px-3 py-2">طلاب: {importedBackupSummary.studentsCount}</div>
@@ -6678,13 +6827,15 @@ const Dashboard = () => {
                     <div className="rounded-xl bg-white px-3 py-2">إعدادات النهائي: {importedBackupSummary.hasFinalExamSettings ? "موجودة" : "غير موجودة"}</div>
                     <div className="rounded-xl bg-white px-3 py-2">الصلاحيات: {importedBackupSummary.hasRolePermissions ? "موجودة" : "غير موجودة"}</div>
                     <div className="rounded-xl bg-white px-3 py-2">مؤشرات: {importedBackupSummary.hasIndicators ? "موجودة" : "غير موجودة"}</div>
+                    </div>
                   </div>
                 </div>
 
                 {backupComparisonRows.length > 0 && (
                   <div className={cn(dashboardMutedPanelClass, "space-y-3 rounded-[1.25rem] p-3") }>
                     <div className="text-sm font-bold text-foreground">مقارنة قبل الاسترجاع</div>
-                    <div className="grid gap-2">
+                    <div className="max-h-72 overflow-y-auto pr-1">
+                      <div className="grid gap-2">
                       {backupComparisonRows.map((row) => (
                         <div key={row.label} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm">
                           <div className="font-medium text-foreground">{row.label}</div>
@@ -6693,11 +6844,7 @@ const Dashboard = () => {
                           <div className={cn(row.diff === 0 ? "text-muted-foreground" : row.diff > 0 ? "text-emerald-700" : "text-destructive")}>{row.diff > 0 ? `+${row.diff}` : row.diff}</div>
                         </div>
                       ))}
-                    </div>
-                    <div className="flex justify-end">
-                      <Button variant="destructive" className="rounded-full px-5" onClick={() => setBackupRestoreConfirmOpen(true)} disabled={!canRestoreBackup}>
-                        استرجاع مطابق
-                      </Button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -6707,8 +6854,15 @@ const Dashboard = () => {
                 بعد رفع ملف النسخة، سيظهر هنا ملخص سريع لمحتواه.
               </div>
             )}
+              </>
+            )}
           </div>
-          <div className="flex justify-end border-t border-border/60 px-3 py-2.5">
+          <div className="flex justify-end gap-3 border-t border-border/60 px-3 py-2.5">
+            {!backupRestoreProgress?.isActive && importedBackupSummary && backupComparisonRows.length > 0 && (
+              <Button className="rounded-full px-5" onClick={() => setBackupRestoreConfirmOpen(true)} disabled={!canRestoreBackup}>
+                استرجاع
+              </Button>
+            )}
             <Button variant="outline" className="rounded-full px-5" onClick={() => setBackupDialogOpen(false)}>إغلاق</Button>
           </div>
         </DialogContent>
@@ -6751,7 +6905,7 @@ const Dashboard = () => {
       <AlertDialog open={backupRestoreConfirmOpen} onOpenChange={setBackupRestoreConfirmOpen}>
         <AlertDialogContent className="max-w-sm rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
           <AlertDialogHeader className="border-b border-border/60 px-4 py-3 text-right">
-            <AlertDialogTitle className="text-right text-lg text-foreground">تأكيد الاسترجاع المطابق</AlertDialogTitle>
+            <AlertDialogTitle className="text-right text-lg text-foreground">تأكيد الاسترجاع</AlertDialogTitle>
             <AlertDialogDescription className="text-right text-sm leading-6 text-muted-foreground">
               سيتم استبدال البيانات الحالية في النظام بالكامل بمحتوى النسخة المرفوعة. أي عنصر غير موجود داخل النسخة سيتم حذفه من قاعدة البيانات الحالية.
             </AlertDialogDescription>

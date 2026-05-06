@@ -36,6 +36,7 @@ import {
   copyFinalExamQuestionsInDatabase,
   setFinalExamManualScoreInDatabase,
   loadRolePermissionsFromDatabase,
+  type RestoreBackupProgressCallback,
   setRolePermissionInDatabase,
   restoreDashboardDataInDatabase,
 } from "@/lib/supabase";
@@ -1607,8 +1608,8 @@ const useCreateDashboardStore = () => {
         throw error;
       }
     },
-    restoreBackupData: async (backupData: DashboardData) => {
-      await restoreDashboardDataInDatabase(backupData);
+    restoreBackupData: async (backupData: DashboardData, onProgress?: RestoreBackupProgressCallback) => {
+      await restoreDashboardDataInDatabase(backupData, onProgress);
       await hydrateFromDatabase();
     },
   };

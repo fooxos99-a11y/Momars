@@ -1358,8 +1358,59 @@ export const resetDashboardDataInDatabase = async () => {
   }
 };
 
-export const restoreDashboardDataInDatabase = async (backupData: DashboardData) => {
+export interface RestoreBackupProgress {
+  percent: number;
+  message: string;
+  completed: number;
+  total: number;
+}
+
+export type RestoreBackupProgressCallback = (progress: RestoreBackupProgress) => void;
+
+export const restoreDashboardDataInDatabase = async (backupData: DashboardData, onProgress?: RestoreBackupProgressCallback) => {
+  const estimatedSubmissionGroups = new Set((backupData.submissions ?? []).map((submission) => `${submission.courseId}::${submission.assessmentType}`)).size;
+  const estimatedAttendanceGroups = new Set((backupData.attendance ?? []).map((record) => record.courseId)).size;
+  const totalCourseQuestions = (backupData.courses ?? []).reduce(
+    (sum, course) => sum + course.preQuestions.length + course.postQuestions.length + course.taskQuestions.length,
+    0,
+  );
+  const totalRolePermissionEntries = Object.values(backupData.rolePermissions ?? {}).reduce(
+    (sum, permissions) => sum + Object.keys(permissions ?? {}).length,
+    0,
+  );
+  const totalUnits = Math.max(
+    1,
+    1
+      + (backupData.students?.length ?? 0)
+      + (backupData.taskTemplates?.length ?? 0)
+      + (backupData.courses?.length ?? 0)
+      + totalCourseQuestions
+      + 1
+      + (backupData.reciters?.length ?? 0)
+      + estimatedSubmissionGroups
+      + estimatedAttendanceGroups
+      + (backupData.notifications?.length ?? 0)
+      + (backupData.satisfactionQuestions?.length ?? 0)
+      + ((backupData.satisfactionResponses?.length ?? 0) > 0 ? 1 : 0)
+      + (backupData.finalExamQuestions?.length ?? 0)
+      + 2
+      + (backupData.finalExamSubmissions?.length ?? 0)
+      + totalRolePermissionEntries,
+  );
+  let completedUnits = 0;
+  const reportProgress = (message: string, increment = 0, forcedPercent?: number) => {
+    completedUnits = Math.min(totalUnits, completedUnits + increment);
+    onProgress?.({
+      percent: forcedPercent ?? Math.round((completedUnits / totalUnits) * 100),
+      message,
+      completed: completedUnits,
+      total: totalUnits,
+    });
+  };
+
+  reportProgress("بدء الاسترجاع", 0, 0);
   await resetDashboardDataInDatabase();
+  reportProgress("تم تجهيز قاعدة البيانات للاسترجاع", 1);
 
   const studentIdByLogin = new Map<string, string>();
   for (const student of backupData.students ?? []) {
@@ -1371,6 +1422,7 @@ export const restoreDashboardDataInDatabase = async (backupData: DashboardData) 
       completedParts: student.completedParts ?? [],
     });
     studentIdByLogin.set(student.loginId, studentId);
+    reportProgress(`جارٍ استرجاع الطلاب (${student.name})`, 1);
   }
 
   const taskTemplateIdByOldId = new Map<string, string>();
@@ -1380,6 +1432,7 @@ export const restoreDashboardDataInDatabase = async (backupData: DashboardData) 
       content: template.content,
     });
     taskTemplateIdByOldId.set(template.id, saved.id);
+    reportProgress(`جارٍ استرجاع قوالب المهام (${template.name})`, 1);
   }
 
   const courseIdByOldId = new Map<string, string>();
@@ -1397,6 +1450,7 @@ export const restoreDashboardDataInDatabase = async (backupData: DashboardData) 
     });
 
     courseIdByOldId.set(course.id, savedCourse.id);
+  reportProgress(`جارٍ استرجاع الدورات (${course.title})`, 1);
 
     await updateCourseInDatabase(savedCourse.id, {
       title: course.title,
@@ -1423,6 +1477,7 @@ export const restoreDashboardDataInDatabase = async (backupData: DashboardData) 
       for (const question of [...questions].sort((left, right) => left.sortOrder - right.sortOrder)) {
         const newQuestionId = await addQuestionToDatabase(savedCourse.id, assessmentType, question);
         courseQuestionIdByOldId.set(question.id, newQuestionId);
+        reportProgress(`جارٍ استرجاع أسئلة ${course.title}`, 1);
       }
     }
   }
@@ -1432,6 +1487,7 @@ export const restoreDashboardDataInDatabase = async (backupData: DashboardData) 
       .map((course) => courseIdByOldId.get(course.id))
       .filter((courseId): courseId is string => Boolean(courseId)),
   );
+  reportProgress("تم ترتيب الدورات بعد الاسترجاع", 1);
 
   for (const reciter of backupData.reciters ?? []) {
     const linkedStudents = reciter.studentIds
@@ -1451,6 +1507,7 @@ export const restoreDashboardDataInDatabase = async (backupData: DashboardData) 
       loginCode: reciter.loginCode,
       linkedStudents,
     });
+    reportProgress(`جارٍ استرجاع المقرئين (${reciter.name})`, 1);
   }
 
   const groupedSubmissions = new Map<string, Array<{ studentName: string; loginId: string; answers: SubmissionAnswer[]; manualScore?: number | null }>>();
@@ -1484,6 +1541,7 @@ export const restoreDashboardDataInDatabase = async (backupData: DashboardData) 
   for (const [key, submissions] of groupedSubmissions.entries()) {
     const [courseId, assessmentType] = key.split("::") as [string, AssessmentType];
     await bulkUpsertSubmissionsToDatabase(courseId, assessmentType, submissions);
+    reportProgress("جارٍ استرجاع النتائج", 1);
   }
 
   const attendanceByCourseId = new Map<string, Array<{ loginId: string; studentName: string; studentId: string | null }>>();
@@ -1504,6 +1562,7 @@ export const restoreDashboardDataInDatabase = async (backupData: DashboardData) 
 
   for (const [courseId, presentStudents] of attendanceByCourseId.entries()) {
     await setManualAttendanceInDatabase(courseId, presentStudents);
+    reportProgress("جارٍ استرجاع الحضور", 1);
   }
 
   for (const notification of backupData.notifications ?? []) {
@@ -1515,6 +1574,7 @@ export const restoreDashboardDataInDatabase = async (backupData: DashboardData) 
       createdByName: notification.createdByName,
       createdByRole: notification.createdByRole,
     });
+    reportProgress("جارٍ استرجاع الإشعارات", 1);
   }
 
   const satisfactionQuestionIdByOldId = new Map<string, string>();
@@ -1532,6 +1592,7 @@ export const restoreDashboardDataInDatabase = async (backupData: DashboardData) 
       sortOrder: question.sortOrder,
     });
     satisfactionQuestionIdByOldId.set(question.id, saved.id);
+    reportProgress("جارٍ استرجاع أسئلة الاستبيان", 1);
   }
 
   const mappedResponses = (backupData.satisfactionResponses ?? [])
@@ -1547,6 +1608,7 @@ export const restoreDashboardDataInDatabase = async (backupData: DashboardData) 
 
   if (mappedResponses.length > 0) {
     await submitSatisfactionResponsesToDatabase(mappedResponses);
+    reportProgress("جارٍ استرجاع ردود الاستبيان", 1);
   }
 
   const finalExamQuestionIdByOldId = new Map<string, string>();
@@ -1574,10 +1636,13 @@ export const restoreDashboardDataInDatabase = async (backupData: DashboardData) 
     }
 
     finalExamQuestionIdByOldId.set(question.id, data.id as string);
+    reportProgress("جارٍ استرجاع أسئلة الاختبار النهائي", 1);
   }
 
   await toggleFinalExamEnabledInDatabase("male", backupData.finalExamSettings?.male?.isEnabled ?? false, backupData.finalExamSettings?.male?.closesAt ?? null);
+  reportProgress("جارٍ استرجاع إعدادات الاختبار النهائي", 1);
   await toggleFinalExamEnabledInDatabase("female", backupData.finalExamSettings?.female?.isEnabled ?? false, backupData.finalExamSettings?.female?.closesAt ?? null);
+  reportProgress("جارٍ استرجاع إعدادات الاختبار النهائي", 1);
 
   for (const submission of backupData.finalExamSubmissions ?? []) {
     const inserted = await submitFinalExamToDatabase({
@@ -1598,13 +1663,18 @@ export const restoreDashboardDataInDatabase = async (backupData: DashboardData) 
     if (submission.manualScore !== null && submission.manualScore !== undefined) {
       await setFinalExamManualScoreInDatabase(inserted.id, submission.manualScore);
     }
+
+    reportProgress("جارٍ استرجاع نتائج الاختبار النهائي", 1);
   }
 
   for (const [role, permissions] of Object.entries(backupData.rolePermissions ?? {})) {
     for (const [key, isEnabled] of Object.entries(permissions ?? {})) {
       await setRolePermissionInDatabase(role, key, Boolean(isEnabled));
+      reportProgress("جارٍ استرجاع الصلاحيات", 1);
     }
   }
+
+  reportProgress("اكتمل الاسترجاع", 0, 100);
 };
 
 const resolveBranchId = async (branchCode: BranchId) => {
