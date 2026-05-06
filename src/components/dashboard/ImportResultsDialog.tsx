@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import * as XLSX from "xlsx";
 import { AlertCircle, CheckCircle, Loader2, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { loadSpreadsheetObjects } from "@/lib/spreadsheet";
 import { cn } from "@/lib/utils";
 import type { AssessmentType, CourseRecord, StudentRecord, SubmissionAnswer } from "@/lib/dashboard-store";
 
@@ -288,13 +288,7 @@ export const ImportResultsDialog = ({
     setImportRows([]);
 
     try {
-      const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: "array" });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
-        defval: "",
-        raw: false,
-      });
+      const rawRows = await loadSpreadsheetObjects(file);
 
       if (rawRows.length === 0) {
         setError("الملف فارغ أو لا يحتوي على بيانات.");
@@ -646,7 +640,7 @@ export const ImportResultsDialog = ({
             <input
               ref={fileInputRef}
               type="file"
-              accept=".xlsx,.xls"
+              accept=".xlsx,.csv"
               className="hidden"
               onChange={(e) => void handleFileChange(e)}
             />

@@ -4,7 +4,6 @@ import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@d
 import { CSS } from "@dnd-kit/utilities";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { AlertCircle, ArrowRightLeft, BarChart3, Bell, BookOpen, Check, ClipboardList, Copy, Database, Download, Eye, FilePen, FileText, FileUp, GraduationCap, Home, Info, LayoutPanelTop, Maximize2, Menu, Minus, MoreHorizontal, Pencil, Plus, Power, ShieldCheck, SquarePen, Trash2, TrendingDown, TrendingUp, Users, X } from "lucide-react";
-import * as XLSX from "xlsx";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -65,6 +64,7 @@ import {
   useDashboardStore,
 } from "@/lib/dashboard-store";
 import { extractQuestionsFromPdf, extractStudentsFromPdf, parseImportedQuestionsFromText } from "@/lib/question-import";
+import { loadSpreadsheetRows, loadSpreadsheetSheets } from "@/lib/spreadsheet";
 import { addDashboardAccountToDatabase, deleteDashboardAccountFromDatabase, deleteReciterFromDatabase, getDashboardAccountsFromDatabase, saveReciterToDatabase, transferStudentToReciterInDatabase, type DatabaseDashboardAccount } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
@@ -1523,55 +1523,10 @@ const Dashboard = () => {
     }
 
     try {
-      const arrayBuffer = await file.arrayBuffer();
-      let workbook: XLSX.WorkBook | null = null;
-      let lastReadError: unknown = null;
-
-      try {
-        workbook = XLSX.read(arrayBuffer, { type: "array" });
-      } catch (error) {
-        lastReadError = error;
-      }
-
-      if (!workbook) {
-        try {
-          workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: "array" });
-        } catch (error) {
-          lastReadError = error;
-        }
-      }
-
-      if (!workbook) {
-        const binary = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-          reader.onerror = () => reject(new Error("binary-read-failed"));
-          reader.readAsBinaryString(file);
-        });
-
-        if (binary) {
-          try {
-            workbook = XLSX.read(binary, { type: "binary" });
-          } catch (error) {
-            lastReadError = error;
-          }
-        }
-      }
-
-      if (!workbook) {
-        throw (lastReadError ?? new Error("excel-read-failed"));
-      }
-
-      if (workbook.SheetNames.length === 0) {
-        setStudentError("تعذر العثور على ورقة داخل ملف الإكسل.");
-        return;
-      }
-
+      const sheets = await loadSpreadsheetSheets(file);
       let parsedRows: BulkStudentRow[] = [];
 
-      for (const sheetName of workbook.SheetNames) {
-        const worksheet = workbook.Sheets[sheetName];
-        const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, blankrows: false }) as unknown[][];
+      for (const rows of sheets) {
         const candidateRows = parseBulkStudentsFromWorksheet(rows, managedBranchId ?? "male");
 
         if (candidateRows.length > 0) {
@@ -1597,10 +1552,12 @@ const Dashboard = () => {
 
       if (errorMessage.includes("password") || errorMessage.includes("encrypted")) {
         setStudentError("الملف محمي بكلمة مرور. احفظه بدون حماية ثم أعد الرفع.");
+      } else if (errorMessage.includes("legacy-xls-unsupported")) {
+        setStudentError("صيغة .xls القديمة غير مدعومة. احفظ الملف كـ .xlsx أو .csv ثم أعد الرفع.");
       } else {
         setStudentError(rawErrorMessage
-          ? `تعذر قراءة ملف الإكسل (${rawErrorMessage}). جرّب حفظه كـ Excel Workbook (.xlsx) ثم ارفعه مرة أخرى.`
-          : "تعذر قراءة ملف الإكسل. جرّب حفظه كـ Excel Workbook (.xlsx) ثم ارفعه مرة أخرى.");
+          ? `تعذر قراءة ملف الإكسل (${rawErrorMessage}). جرّب حفظه كـ .xlsx أو .csv ثم ارفعه مرة أخرى.`
+          : "تعذر قراءة ملف الإكسل. جرّب حفظه كـ .xlsx أو .csv ثم ارفعه مرة أخرى.");
       }
 
       setBulkStudents([]);
@@ -4418,23 +4375,14 @@ const Dashboard = () => {
             setAttendanceFileError("");
 
             try {
-              const arrayBuffer = await file.arrayBuffer();
-              let workbook: XLSX.WorkBook | null = null;
-              try { workbook = XLSX.read(arrayBuffer, { type: "array" }); } catch { /* try next */ }
-              if (!workbook) {
-                try { workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: "array" }); } catch { /* try next */ }
-              }
-              if (!workbook) throw new Error("excel-read-failed");
+              const rows = await loadSpreadsheetRows(file);
 
-              if (workbook.SheetNames.length === 0) {
+              if (rows.length === 0) {
                 setAttendanceFileError("تعذر العثور على ورقة داخل ملف الإكسل.");
                 return;
               }
 
               // collect all non-empty cells as candidate login IDs / names
-              const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-              const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, blankrows: false }) as unknown[][];
-
               // Detect header row
               const normalizeCell = (v: unknown) => String(v ?? "").trim().replace(/\s+/g, " ");
               const firstRow = (rows[0] ?? []).map(normalizeCell);
@@ -4506,8 +4454,13 @@ const Dashboard = () => {
                 : `تم ${isTask ? "تحديد" : "تحضير"} ${matched.size} طالب من الملف.`;
               toast({ title: "تم قراءة الملف", description: msg });
               setAttendanceFileError("");
-            } catch {
-              setAttendanceFileError("تعذر قراءة الملف. جرّب حفظه كـ Excel Workbook (.xlsx).");
+            } catch (error) {
+              const message = error instanceof Error ? error.message.toLowerCase() : "";
+              if (message.includes("legacy-xls-unsupported")) {
+                setAttendanceFileError("صيغة .xls القديمة غير مدعومة. احفظ الملف كـ .xlsx أو .csv.");
+              } else {
+                setAttendanceFileError("تعذر قراءة الملف. جرّب حفظه كـ .xlsx أو .csv.");
+              }
             }
           };
 
@@ -4523,7 +4476,7 @@ const Dashboard = () => {
               <input
                 ref={attendanceFileInputRef}
                 type="file"
-                accept=".xlsx,.xls,.csv"
+                accept=".xlsx,.csv"
                 className="hidden"
                 onChange={handleAttendanceFileSelect}
               />
@@ -6153,7 +6106,7 @@ const Dashboard = () => {
                   <label className="text-sm font-bold text-foreground">ملف الإكسل أو PDF</label>
                   <input
                     type="file"
-                    accept=".xlsx,.xls,.csv,.pdf"
+                    accept=".xlsx,.csv,.pdf"
                     onChange={handleBulkStudentFileSelect}
                     className="block w-full rounded-[0.9rem] border border-border/60 bg-white px-3 py-2 text-sm file:ml-3 file:rounded-full file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-medium file:text-white"
                   />

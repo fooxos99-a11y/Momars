@@ -1,23 +1,24 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 import "./App.css";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import CoursePage from "./pages/CoursePage.tsx";
-import FinalExamPage from "./pages/FinalExamPage.tsx";
-import AdminAssessmentPage from "./pages/AdminAssessmentPage.tsx";
-import Dashboard from "./pages/Dashboard.tsx";
-import Index from "./pages/Index.tsx";
-import NotFound from "./pages/NotFound.tsx";
-import ReciterPage from "./pages/ReciterPage.tsx";
-import StudentPage from "./pages/StudentPage.tsx";
-import TasksPage from "./pages/TasksPage.tsx";
-import TraineePage from "./pages/TraineePage.tsx";
-import { ACCESS_SESSION_SYNC_EVENT, DashboardStoreProvider, loadAccessSession, useDashboardStore } from "./lib/dashboard-store.ts";
+import { ACCESS_SESSION_SYNC_EVENT, DashboardStoreProvider, loadAccessSession } from "./lib/dashboard-store.ts";
 import { usePushNotifications } from "./hooks/use-push-notifications.tsx";
 import { Button } from "@/components/ui/button";
+
+const CoursePage = lazy(() => import("./pages/CoursePage.tsx"));
+const FinalExamPage = lazy(() => import("./pages/FinalExamPage.tsx"));
+const AdminAssessmentPage = lazy(() => import("./pages/AdminAssessmentPage.tsx"));
+const Dashboard = lazy(() => import("./pages/Dashboard.tsx"));
+const Index = lazy(() => import("./pages/Index.tsx"));
+const NotFound = lazy(() => import("./pages/NotFound.tsx"));
+const ReciterPage = lazy(() => import("./pages/ReciterPage.tsx"));
+const StudentPage = lazy(() => import("./pages/StudentPage.tsx"));
+const TasksPage = lazy(() => import("./pages/TasksPage.tsx"));
+const TraineePage = lazy(() => import("./pages/TraineePage.tsx"));
 
 const queryClient = new QueryClient();
 
@@ -59,24 +60,25 @@ const AnimatedRoutes = () => {
   const location = useLocation();
   return (
     <div key={location.pathname} className="page-transition">
-      <Routes location={location}>
-        <Route path="/" element={<Index />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/dashboard/course/pre" element={<AdminAssessmentPage assessmentType="pre" />} />
-        <Route path="/dashboard/course/post" element={<AdminAssessmentPage assessmentType="post" />} />
-        <Route path="/dashboard/course/tasks" element={<AdminAssessmentPage assessmentType="tasks" />} />
-        <Route path="/reciter" element={<ReciterPage />} />
-        <Route path="/student" element={<StudentPage />} />
-        <Route path="/tasks" element={<TasksPage />} />
-        <Route path="/trainee" element={<TraineePage />} />
-        <Route path="/course" element={<CoursePage assessmentType="pre" />} />
-        <Route path="/course/pre" element={<CoursePage assessmentType="pre" />} />
-        <Route path="/course/post" element={<CoursePage assessmentType="post" />} />
-        <Route path="/course/tasks" element={<TasksPage />} />
-        <Route path="/final-exam" element={<FinalExamPage />} />
-        {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-        <Route path="*" element={<NotFound />} />
-      </Routes>
+      <Suspense fallback={<PageLoadingScreen />}>
+        <Routes location={location}>
+          <Route path="/" element={<Index />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/dashboard/course/pre" element={<AdminAssessmentPage assessmentType="pre" />} />
+          <Route path="/dashboard/course/post" element={<AdminAssessmentPage assessmentType="post" />} />
+          <Route path="/dashboard/course/tasks" element={<AdminAssessmentPage assessmentType="tasks" />} />
+          <Route path="/reciter" element={<ReciterPage />} />
+          <Route path="/student" element={<StudentPage />} />
+          <Route path="/tasks" element={<TasksPage />} />
+          <Route path="/trainee" element={<TraineePage />} />
+          <Route path="/course" element={<CoursePage assessmentType="pre" />} />
+          <Route path="/course/pre" element={<CoursePage assessmentType="pre" />} />
+          <Route path="/course/post" element={<CoursePage assessmentType="post" />} />
+          <Route path="/course/tasks" element={<TasksPage />} />
+          <Route path="/final-exam" element={<FinalExamPage />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </Suspense>
     </div>
   );
 };
@@ -87,19 +89,6 @@ const PageLoadingScreen = () => (
   </div>
 );
 
-const AppContent = () => {
-  const { isHydrated } = useDashboardStore();
-
-  if (!isHydrated) return <PageLoadingScreen />;
-
-  return (
-    <>
-      <AnimatedRoutes />
-      <PushNotificationManager />
-    </>
-  );
-};
-
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -107,7 +96,8 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <DashboardStoreProvider>
-          <AppContent />
+          <AnimatedRoutes />
+          <PushNotificationManager />
         </DashboardStoreProvider>
       </BrowserRouter>
     </TooltipProvider>

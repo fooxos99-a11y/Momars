@@ -1,6 +1,17 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
 import webpush from "web-push";
 import { createClient } from "@supabase/supabase-js";
+
+type ApiRequest = {
+  method?: string;
+  body?: unknown;
+};
+
+type ApiResponse = {
+  setHeader: (name: string, value: string) => void;
+  status: (code: number) => ApiResponse;
+  json: (body: unknown) => ApiResponse;
+  end: () => ApiResponse;
+};
 
 const VAPID_PUBLIC_KEY = process.env.VITE_VAPID_PUBLIC_KEY ?? "";
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY ?? "";
@@ -17,12 +28,12 @@ if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 }
 
-const setNoCacheHeaders = (res: VercelResponse) => {
+const setNoCacheHeaders = (res: ApiResponse) => {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Pragma", "no-cache");
 };
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: ApiRequest, res: ApiResponse) {
   setNoCacheHeaders(res);
 
   if (req.method !== "POST") {
@@ -37,7 +48,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: "Supabase credentials are not configured." });
   }
 
-  const { title, message, loginCodes, url } = req.body as {
+  const { title, message, loginCodes, url } = (req.body ?? {}) as {
     title: string;
     message: string;
     loginCodes?: string[];

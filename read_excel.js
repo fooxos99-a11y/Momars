@@ -1,4 +1,4 @@
-import XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import path from 'path';
 import fs from 'fs';
 
@@ -14,9 +14,15 @@ try {
     process.exit(1);
   }
 
-  const workbook = XLSX.readFile(filePath);
-  const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-  const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(filePath);
+  const worksheet = workbook.worksheets[0];
+  const data = [];
+
+  worksheet.eachRow({ includeEmpty: false }, (row) => {
+    const values = Array.isArray(row.values) ? row.values.slice(1) : [];
+    data.push(values.map((value) => value ?? ''));
+  });
   
   console.log('='.repeat(120));
   console.log('Excel Data:');
