@@ -3,7 +3,7 @@ import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSe
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Link, Navigate, useNavigate } from "react-router-dom";
-import { AlertCircle, ArrowRightLeft, BarChart3, Bell, BookOpen, Check, ClipboardList, Copy, Database, Download, Eye, FilePen, FileText, FileUp, GraduationCap, Home, Info, LayoutPanelTop, Maximize2, Menu, Minus, Pencil, Plus, Power, ShieldCheck, SquarePen, Trash2, TrendingDown, TrendingUp, Users, X } from "lucide-react";
+import { AlertCircle, ArrowRightLeft, BarChart3, Bell, BookOpen, Check, ClipboardList, Copy, Database, Download, Eye, FilePen, FileText, FileUp, GraduationCap, Home, Info, LayoutPanelTop, Maximize2, Menu, Minus, MoreHorizontal, Pencil, Plus, Power, ShieldCheck, SquarePen, Trash2, TrendingDown, TrendingUp, Users, X } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -649,6 +649,7 @@ const Dashboard = () => {
   const [notificationError, setNotificationError] = useState("");
   const [notificationSubmitting, setNotificationSubmitting] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const [recitersOpen, setRecitersOpen] = useState(false);
   const [reciterBranchFilter, setReciterBranchFilter] = useState<BranchId>(managedBranchId ?? "male");
   const [selectedReciterFilter, setSelectedReciterFilter] = useState(RECITER_FILTER_ALL_STUDENTS);
@@ -707,6 +708,7 @@ const Dashboard = () => {
   const [homeBranchFilter, setHomeBranchFilter] = useState<IndicatorsBranchFilter>("all");
   const [homeCourseFilter, setHomeCourseFilter] = useState("all");
   const [indicatorsBranchId, setIndicatorsBranchId] = useState<IndicatorsBranchFilter>("all");
+  const [indicatorsSortOrder, setIndicatorsSortOrder] = useState<"alpha" | "overall-desc" | "overall-asc">("overall-desc");
   const [indicatorsCourseId, setIndicatorsCourseId] = useState("all");
   const [courseIndicatorsBranch, setCourseIndicatorsBranch] = useState<BranchId>("male");
   const [courseIndicatorsCourseId, setCourseIndicatorsCourseId] = useState("");
@@ -2763,7 +2765,17 @@ const Dashboard = () => {
           overallPercent,
         };
       })
-      .sort((left, right) => right.overallPercent - left.overallPercent || left.name.localeCompare(right.name, "ar"));
+      .sort((left, right) => {
+        if (indicatorsSortOrder === "alpha") {
+          return left.name.localeCompare(right.name, "ar");
+        }
+
+        if (indicatorsSortOrder === "overall-asc") {
+          return left.overallPercent - right.overallPercent || left.name.localeCompare(right.name, "ar");
+        }
+
+        return right.overallPercent - left.overallPercent || left.name.localeCompare(right.name, "ar");
+      });
 
     return {
       totalStudents,
@@ -2783,7 +2795,7 @@ const Dashboard = () => {
       },
       studentRows,
     };
-  }, [courseItems, data.attendance, data.courses, data.submissions, indicatorStudents, reciterByStudentId, indicatorsCourseId, indicatorsBranchId]);
+  }, [courseItems, data.attendance, data.courses, data.submissions, indicatorStudents, reciterByStudentId, indicatorsCourseId, indicatorsBranchId, indicatorsSortOrder]);
 
   const courseIndicatorsMetrics = useMemo(() => {
     if (!courseIndicatorsCourseId) return null;
@@ -3009,6 +3021,94 @@ const Dashboard = () => {
     </div>
   );
 
+  const openCourseTemplatesDialog = () => {
+    const course = activeCourse;
+    setNotifTemplatePre(course?.assessmentNotificationTemplates.pre || getDefaultAssessmentNotificationTemplate("pre"));
+    setNotifTemplatePost(course?.assessmentNotificationTemplates.post || getDefaultAssessmentNotificationTemplate("post"));
+    setNotifTemplateTasks(course?.assessmentNotificationTemplates.tasks || getDefaultAssessmentNotificationTemplate("tasks"));
+    setNotifTemplatesOpen(true);
+  };
+
+  const renderDashboardHeaderActions = (isMobile = false) => {
+    const actionClassName = isMobile
+      ? "h-12 w-full justify-between rounded-[1.1rem] border border-border/60 bg-white px-4 text-right font-bold text-foreground hover:bg-primary/5"
+      : "rounded-full px-4 sm:px-5";
+    const destructiveActionClassName = isMobile
+      ? "h-12 w-full justify-between rounded-[1.1rem] border border-destructive/25 bg-white px-4 text-right font-bold text-destructive hover:bg-destructive/10 hover:text-destructive"
+      : "rounded-full border-destructive/25 px-4 text-destructive hover:bg-destructive/10 hover:text-destructive sm:px-5";
+
+    const handleAction = (callback: () => void) => {
+      if (isMobile) {
+        setMobileActionsOpen(false);
+      }
+      callback();
+    };
+
+    return (
+      <>
+        <Button variant="outline" className={actionClassName} onClick={() => handleAction(() => setCourseLinksOpen(true))}>
+          <span>الروابط</span>
+          <Link className="pointer-events-none size-4 opacity-0" to="/" aria-hidden="true" tabIndex={-1} />
+        </Button>
+        {dashboardTab === "satisfaction" && selectedSatisfactionQuestions.length > 0 && (
+          <Button
+            variant="outline"
+            className={destructiveActionClassName}
+            onClick={() => handleAction(() => {
+              setSatisfactionDeleteQuestionId(selectedSatisfactionQuestions[0]?.id ?? "");
+              setSatisfactionDeleteDialogOpen(true);
+            })}
+          >
+            <span>حذف</span>
+            <Trash2 className="size-4" />
+          </Button>
+        )}
+        {dashboardTab === "finalexam" && canCreateCourses && (
+          <>
+            <Button variant="outline" className={actionClassName} onClick={() => handleAction(() => setFinalExamCopyOpen(true))}>
+              <span>نسخ</span>
+              <Copy className="size-4" />
+            </Button>
+            <Button
+              variant="outline"
+              className={cn(
+                actionClassName,
+                isFinalExamManageEnabled && "border-emerald-600 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+              )}
+              onClick={() => {
+                if (isMobile) {
+                  setMobileActionsOpen(false);
+                }
+                void handleToggleFinalExamAvailability();
+              }}
+            >
+              <span>{isFinalExamManageEnabled ? "إيقاف" : "تفعيل"}</span>
+              <Power className="size-4" />
+            </Button>
+          </>
+        )}
+        {canManageDashboardAccounts && (
+          <Button variant="outline" className={actionClassName} onClick={() => handleAction(() => void handleOpenAdmins())} aria-label="الإشراف" disabled={adminsLoading}>
+            <span>{adminsLoading ? "جارٍ التحميل..." : "الإشراف"}</span>
+            <ShieldCheck className="size-4" />
+          </Button>
+        )}
+        {canCreateCourses && (
+          <Button variant="outline" className={actionClassName} onClick={() => handleAction(() => setCoursesManageOpen(true))}>
+            <span>الدورات</span>
+            <BookOpen className="size-4" />
+          </Button>
+        )}
+        {dashboardTab === "courses" && (
+          <Button variant="outline" className={actionClassName} aria-label="قوالب الإشعارات" onClick={() => handleAction(openCourseTemplatesDialog)}>
+            <span>قوالب الإشعارات</span>
+            <FilePen className="size-4" />
+          </Button>
+        )}
+      </>
+    );
+  };
+
   if (!storedSession) {
     return <Navigate to="/" replace />;
   }
@@ -3035,12 +3135,43 @@ const Dashboard = () => {
                 ⚠️ تعذر الاتصال بقاعدة البيانات: {loadError}
               </div>
             )}
-            <div className="mb-6 flex w-full flex-col gap-3 rounded-[2rem] border border-white/70 bg-white/90 px-4 py-4 shadow-[0_18px_50px_rgba(15,23,42,0.06)] backdrop-blur-sm sm:px-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="mb-6 rounded-[2rem] border border-white/70 bg-white/90 px-4 py-4 shadow-[0_18px_50px_rgba(15,23,42,0.06)] backdrop-blur-sm sm:px-5">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="hidden text-right lg:block">
                 <p className="text-xs font-medium text-muted-foreground">مرحبًا</p>
                 <p className="text-sm font-bold text-foreground">{adminName}</p>
               </div>
-              <div className="flex w-full flex-wrap items-center justify-start gap-2 sm:gap-3 lg:w-auto lg:flex-nowrap lg:justify-end">
+              <div className="flex items-center justify-between gap-3 lg:hidden">
+                <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+                  <SheetTrigger asChild>
+                    <Button variant="outline" size="icon" className="rounded-full" aria-label="فتح قائمة لوحة التحكم">
+                      <Menu className="size-5" />
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent side="right" className="w-[320px] max-w-[88vw] border-l border-white/60 bg-white/95 p-0 text-right shadow-[10px_0_35px_rgba(15,23,42,0.08)] [&>button]:hidden">
+                    <SheetTitle className="sr-only">قائمة لوحة التحكم</SheetTitle>
+                    {renderDashboardNavigation(true)}
+                  </SheetContent>
+                </Sheet>
+                <div className="min-w-0 flex-1 text-right">
+                  <p className="text-xs font-medium text-muted-foreground">لوحة التحكم</p>
+                  <p className="truncate text-sm font-extrabold text-foreground">{activeMenuItem.label}</p>
+                </div>
+                <Sheet open={mobileActionsOpen} onOpenChange={setMobileActionsOpen}>
+                  <SheetTrigger asChild>
+                    <Button variant="outline" size="icon" className="rounded-full" aria-label="إجراءات الصفحة الحالية">
+                      <MoreHorizontal className="size-5" />
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent side="bottom" className="rounded-t-[2rem] border border-white/70 bg-white/95 px-4 pb-8 pt-6 text-right shadow-[0_-18px_50px_rgba(15,23,42,0.08)]">
+                    <SheetTitle className="text-right text-base font-extrabold">إجراءات {activeMenuItem.label}</SheetTitle>
+                    <div className="mt-4 space-y-3">
+                      {renderDashboardHeaderActions(true)}
+                    </div>
+                  </SheetContent>
+                </Sheet>
+              </div>
+              <div className="hidden w-full flex-wrap items-center justify-start gap-2 sm:gap-3 lg:flex lg:w-auto lg:flex-nowrap lg:justify-end">
                 <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
                   <SheetTrigger asChild>
                     <Button variant="outline" size="icon" className="rounded-full lg:hidden" aria-label="فتح قائمة لوحة التحكم">
@@ -3066,63 +3197,22 @@ const Dashboard = () => {
                     </Select>
                   </div>
                 )}
-                <Button variant="outline" className="rounded-full px-4 sm:px-5" onClick={() => setCourseLinksOpen(true)}>
-                  الروابط
-                </Button>
-                {dashboardTab === "satisfaction" && selectedSatisfactionQuestions.length > 0 && (
-                  <Button
-                    variant="outline"
-                    className="rounded-full border-destructive/25 px-4 text-destructive hover:bg-destructive/10 hover:text-destructive sm:px-5"
-                    onClick={() => {
-                      setSatisfactionDeleteQuestionId(selectedSatisfactionQuestions[0]?.id ?? "");
-                      setSatisfactionDeleteDialogOpen(true);
-                    }}
-                  >
-                    <Trash2 className="size-4" />
-                    حذف
-                  </Button>
-                )}
-                {dashboardTab === "finalexam" && canCreateCourses && (
-                  <>
-                    <Button variant="outline" className="rounded-full px-4 sm:px-5" onClick={() => setFinalExamCopyOpen(true)}>
-                      <Copy className="size-4" />
-                      نسخ
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        "rounded-full px-4 sm:px-5",
-                        isFinalExamManageEnabled && "border-emerald-600 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
-                      )}
-                      onClick={() => void handleToggleFinalExamAvailability()}
-                    >
-                      <Power className="size-4" />
-                      {isFinalExamManageEnabled ? "إيقاف" : "تفعيل"}
-                    </Button>
-                  </>
-                )}
-                {canManageDashboardAccounts && (
-                  <Button variant="outline" className="rounded-full px-4 sm:px-5" onClick={handleOpenAdmins} aria-label="الإشراف" disabled={adminsLoading}>
-                    {adminsLoading ? "جارٍ التحميل..." : "الإشراف"}
-                  </Button>
-                )}
-                {canCreateCourses && (
-                  <Button variant="outline" className="rounded-full px-4 sm:px-5" onClick={() => setCoursesManageOpen(true)}>
-                    الدورات
-                  </Button>
-                )}
-
-                {dashboardTab === "courses" && (
-                  <Button variant="outline" size="icon" className="rounded-full" aria-label="قوالب الإشعارات" onClick={() => {
-                    const course = activeCourse;
-                    setNotifTemplatePre(course?.assessmentNotificationTemplates.pre || getDefaultAssessmentNotificationTemplate("pre"));
-                    setNotifTemplatePost(course?.assessmentNotificationTemplates.post || getDefaultAssessmentNotificationTemplate("post"));
-                    setNotifTemplateTasks(course?.assessmentNotificationTemplates.tasks || getDefaultAssessmentNotificationTemplate("tasks"));
-                    setNotifTemplatesOpen(true);
-                  }}>
-                    <FilePen className="size-4" />
-                  </Button>
-                )}
+                {renderDashboardHeaderActions()}
+              </div>
+              {dashboardTab === "home" && (
+                <div className="w-full lg:hidden">
+                  <Select value={homeBranchFilter} onValueChange={(value) => setHomeBranchFilter(value as IndicatorsBranchFilter)}>
+                    <SelectTrigger className="h-11 flex-row-reverse rounded-full border-border/60 bg-white px-4 text-right [&>span]:text-right">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="text-right">
+                      <SelectItem value="all" className="justify-end pr-3 text-right">الكل</SelectItem>
+                      <SelectItem value="male" className="justify-end pr-3 text-right">المعلمون</SelectItem>
+                      <SelectItem value="female" className="justify-end pr-3 text-right">المعلمات</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               </div>
             </div>
 
@@ -4025,63 +4115,103 @@ const Dashboard = () => {
                               تحديد الكل
                             </Button>
                           </div>
-                          <div className="rounded-[1.25rem] border border-border/60 bg-white overflow-hidden">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead className="text-right">الاسم</TableHead>
-                                <TableHead className="text-right">رقم الدخول</TableHead>
-                                {isTask && <TableHead className="text-right">الحالة</TableHead>}
-                                <TableHead className="w-28 text-center">{presentLabel}</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {branchStudents.map((student) => {
-                                const checked = displayChecked.has(student.loginId);
-                                const alreadyDone = isTask && (
-                                  data.submissions.some((s) => s.courseId === selectedCourseForAttendance.id && s.assessmentType === "tasks" && s.loginId === student.loginId) ||
-                                  data.attendance.some((r) => r.courseId === selectedCourseForAttendance.id && r.loginId === student.loginId)
-                                );
-                                return (
-                                  <TableRow
-                                    key={student.id}
-                                    className="cursor-pointer hover:bg-muted/30"
-                                    onClick={() => handleToggle(student.loginId)}
-                                  >
-                                    <TableCell className="font-medium">{student.name}</TableCell>
-                                    <TableCell className="text-muted-foreground">{student.loginId}</TableCell>
-                                    {isTask && (
-                                      <TableCell className={cn("text-xs font-medium", alreadyDone ? "text-emerald-700" : "text-rose-600")}>
-                                        {alreadyDone ? "منفذ" : "غير منفذ"}
-                                      </TableCell>
-                                    )}
-                                    <TableCell className="text-center align-middle">
-                                      <button
-                                        type="button"
-                                        role="checkbox"
-                                        aria-checked={checked}
-                                        aria-label={`${presentLabel} ${student.name}`}
+                          <div className="space-y-3 md:hidden">
+                            {branchStudents.map((student) => {
+                              const checked = displayChecked.has(student.loginId);
+                              const alreadyDone = isTask && (
+                                data.submissions.some((s) => s.courseId === selectedCourseForAttendance.id && s.assessmentType === "tasks" && s.loginId === student.loginId) ||
+                                data.attendance.some((r) => r.courseId === selectedCourseForAttendance.id && r.loginId === student.loginId)
+                              );
+
+                              return (
+                                <button
+                                  key={student.id}
+                                  type="button"
+                                  className="w-full rounded-[1.25rem] border border-border/60 bg-white p-4 text-right shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition-colors hover:border-primary/30 hover:bg-primary/5"
+                                  onClick={() => handleToggle(student.loginId)}
+                                >
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="space-y-1 text-right">
+                                      <div className="font-bold text-foreground">{student.name}</div>
+                                      <div className="text-xs text-muted-foreground">رقم الدخول: {student.loginId}</div>
+                                      {isTask && (
+                                        <div className={cn("text-xs font-bold", alreadyDone ? "text-emerald-700" : "text-rose-600")}>
+                                          {alreadyDone ? "منفذ" : "غير منفذ"}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="flex flex-col items-center gap-2 shrink-0">
+                                      <span className="text-xs font-medium text-muted-foreground">{presentLabel}</span>
+                                      <span
                                         className={cn(
-                                          "inline-flex h-5 w-5 items-center justify-center rounded-full border-2 transition-colors",
+                                          "inline-flex h-6 w-6 items-center justify-center rounded-full border-2 transition-colors",
                                           checked ? "border-primary bg-primary" : "border-primary/70 bg-transparent",
                                         )}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleToggle(student.loginId);
-                                        }}
+                                        aria-hidden="true"
                                       />
-                                    </TableCell>
-                                  </TableRow>
-                                );
-                              })}
-                            </TableBody>
-                          </Table>
+                                    </div>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <div className="hidden overflow-hidden rounded-[1.25rem] border border-border/60 bg-white md:block">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="text-right">الاسم</TableHead>
+                                  <TableHead className="text-right">رقم الدخول</TableHead>
+                                  {isTask && <TableHead className="text-right">الحالة</TableHead>}
+                                  <TableHead className="w-28 text-center">{presentLabel}</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {branchStudents.map((student) => {
+                                  const checked = displayChecked.has(student.loginId);
+                                  const alreadyDone = isTask && (
+                                    data.submissions.some((s) => s.courseId === selectedCourseForAttendance.id && s.assessmentType === "tasks" && s.loginId === student.loginId) ||
+                                    data.attendance.some((r) => r.courseId === selectedCourseForAttendance.id && r.loginId === student.loginId)
+                                  );
+                                  return (
+                                    <TableRow
+                                      key={student.id}
+                                      className="cursor-pointer hover:bg-muted/30"
+                                      onClick={() => handleToggle(student.loginId)}
+                                    >
+                                      <TableCell className="font-medium">{student.name}</TableCell>
+                                      <TableCell className="text-muted-foreground">{student.loginId}</TableCell>
+                                      {isTask && (
+                                        <TableCell className={cn("text-xs font-medium", alreadyDone ? "text-emerald-700" : "text-rose-600")}>
+                                          {alreadyDone ? "منفذ" : "غير منفذ"}
+                                        </TableCell>
+                                      )}
+                                      <TableCell className="text-center align-middle">
+                                        <button
+                                          type="button"
+                                          role="checkbox"
+                                          aria-checked={checked}
+                                          aria-label={`${presentLabel} ${student.name}`}
+                                          className={cn(
+                                            "inline-flex h-5 w-5 items-center justify-center rounded-full border-2 transition-colors",
+                                            checked ? "border-primary bg-primary" : "border-primary/70 bg-transparent",
+                                          )}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleToggle(student.loginId);
+                                          }}
+                                        />
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
                           </div>
                         </div>
                       )}
 
                       <div className="flex justify-end">
-                        <Button onClick={() => void handleSave()} disabled={attendanceSaving}>
+                        <Button className="w-full sm:w-auto" onClick={() => void handleSave()} disabled={attendanceSaving}>
                           {attendanceSaving ? "جاري الحفظ..." : isTask ? "حفظ المهام" : "حفظ التحضير"}
                         </Button>
                       </div>
@@ -4101,7 +4231,7 @@ const Dashboard = () => {
               </div>
             </div>
 
-            <div className="w-full max-w-sm">
+            <div className="grid w-full gap-4 md:max-w-2xl md:grid-cols-2">
               <div className="space-y-2 text-right">
                 <div className="text-sm font-medium text-muted-foreground">الفرع</div>
                 <Select value={indicatorsBranchId} onValueChange={(value) => setIndicatorsBranchId(value as IndicatorsBranchFilter)}>
@@ -4111,6 +4241,19 @@ const Dashboard = () => {
                   <SelectContent>
                     <SelectItem value="all">جميع الفروع</SelectItem>
                     {data.branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2 text-right">
+                <div className="text-sm font-medium text-muted-foreground">الترتيب</div>
+                <Select value={indicatorsSortOrder} onValueChange={(value) => setIndicatorsSortOrder(value as "alpha" | "overall-desc" | "overall-asc") }>
+                  <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="alpha">الترتيب الأبجدي أ-ي</SelectItem>
+                    <SelectItem value="overall-desc">الأعلى فالأقل</SelectItem>
+                    <SelectItem value="overall-asc">الأقل فالأعلى</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -4864,7 +5007,7 @@ const Dashboard = () => {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-2 md:col-span-1">
                     <label className="text-sm font-bold text-foreground">الفرع</label>
                     <Select value={resultsBranchId} onValueChange={(value) => setResultsBranchId(value as IndicatorsBranchFilter)}>
                       <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue /></SelectTrigger>
@@ -4875,7 +5018,7 @@ const Dashboard = () => {
                     </Select>
                   </div>
                   {!isResultsFinalExamSelected && resultsCourse?.entityType !== "task" && (
-                  <div className="space-y-2 md:col-span-2 xl:col-span-2">
+                  <div className="space-y-2 md:col-span-1 xl:col-span-2">
                     <label className="text-sm font-bold text-foreground">نوع البيانات</label>
                     <Select value={resultsType} onValueChange={(value) => setResultsType(value as "attendance" | AssessmentType)}>
                       <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue /></SelectTrigger>
@@ -4900,7 +5043,7 @@ const Dashboard = () => {
             {resultsCourse && resultsType === "attendance" && resultsCourse.entityType !== "task" && (
               <Card className="border-primary/10 bg-white/90">
                 <CardHeader className="space-y-4">
-                  <div className="flex w-full max-w-xs items-center gap-3">
+                  <div className="flex w-full flex-col gap-3 sm:max-w-xs sm:flex-row sm:items-center">
                     <Select value={resultsAttendanceFilter} onValueChange={(value) => setResultsAttendanceFilter(value as "all" | "present" | "absent" | "frequent-absent") }>
                       <SelectTrigger className="flex-1 flex-row-reverse text-right [&>span]:text-right"><SelectValue /></SelectTrigger>
                       <SelectContent className="text-right">
@@ -4910,7 +5053,7 @@ const Dashboard = () => {
                         <SelectItem value="frequent-absent" className="justify-end pr-3 text-right">غائبين 3 مرات فأكثر</SelectItem>
                       </SelectContent>
                     </Select>
-                    <div className="shrink-0 space-y-0.5 text-left text-xs font-medium">
+                    <div className="flex items-center justify-between rounded-[1rem] border border-border/60 bg-muted/20 px-3 py-2 text-xs font-medium sm:block sm:space-y-0.5 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 sm:text-left">
                       <div className="text-emerald-700">الحاضرين: {presentStudents.length}</div>
                       <div className="text-rose-700">الغائبين: {absentStudents.length}</div>
                     </div>
@@ -4935,7 +5078,7 @@ const Dashboard = () => {
                     const isPresent = presentLoginIds.has(student.loginId);
 
                     return (
-                      <div key={student.id} className="flex items-start justify-between gap-4 border-b border-border/50 py-3 last:border-b-0">
+                      <div key={student.id} className="flex flex-col gap-2 rounded-[1rem] border border-border/60 bg-white px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:border-0 sm:bg-transparent sm:px-0 last:border-b-0">
                         <div className="text-right">
                           <div className="font-bold text-black">{student.name}</div>
                           <div className="text-xs text-muted-foreground">{student.loginId}</div>
@@ -4968,7 +5111,7 @@ const Dashboard = () => {
                         <div className="font-bold text-foreground">{row.studentName}</div>
                         <div className="text-xs text-muted-foreground">{row.loginId}</div>
                       </button>
-                      <div className="flex items-center gap-3">
+                      <div className="flex w-full flex-wrap items-center justify-between gap-3 md:w-auto md:flex-nowrap md:justify-start">
                         {isTaskResult ? (
                           <Badge
                             variant="outline"
@@ -5009,9 +5152,9 @@ const Dashboard = () => {
               return (
                 <Card className="border-primary/10 bg-white/90">
                   <CardHeader>
-                    <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                       {!managedBranchId && (
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                           {(["male", "female"] as BranchId[]).map((b) => (
                             <button key={b} type="button" onClick={() => setFinalExamResultsBranch(b)}
                               className={cn("rounded-full px-4 py-1.5 text-sm font-bold border transition-smooth",
@@ -5029,14 +5172,14 @@ const Dashboard = () => {
                     {feSubs.map((sub) => {
                       const score = typeof sub.manualScore === "number" ? sub.manualScore : null;
                       return (
-                        <div key={sub.id} className="flex flex-col gap-3 rounded-3xl border border-primary/10 bg-white p-4 md:flex-row md:items-center md:justify-between">
+                          <div key={sub.id} className="flex flex-col gap-3 rounded-3xl border border-primary/10 bg-white p-4 md:flex-row md:items-center md:justify-between">
                           <div className="text-right">
                             <div className="font-bold text-foreground">{sub.studentName}</div>
                             <div className="text-xs text-muted-foreground">{sub.loginCode} · {new Date(sub.submittedAt).toLocaleDateString("ar-SA")}</div>
                           </div>
-                          <div className="flex items-center gap-2 shrink-0">
+                          <div className="flex w-full flex-wrap items-center justify-between gap-2 shrink-0 md:w-auto md:flex-nowrap md:justify-start">
                             {finalExamScoreEdit?.submissionId === sub.id ? (
-                              <div className="flex items-center gap-2">
+                              <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:flex-nowrap">
                                 <Input className="h-8 w-20 rounded-xl text-center" value={finalExamScoreEdit.value} onChange={(e) => setFinalExamScoreEdit((c) => c ? { ...c, value: e.target.value } : null)} />
                                 <Button size="sm" className="rounded-xl h-8" onClick={async () => {
                                   if (!finalExamScoreEdit) return;
@@ -5142,13 +5285,13 @@ const Dashboard = () => {
 
               return (
                 <div className="space-y-4" dir="rtl">
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <h3 className="text-[0.95rem] font-bold text-foreground">استبيان الرضا</h3>
-                    <div className="flex items-center gap-3">
+                    <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
                       {satisfactionResultCourses.length > 0 && (
                         <Button
                           variant="outline"
-                          className="rounded-full px-4 sm:px-5"
+                          className="w-full rounded-full px-4 sm:w-auto sm:px-5"
                           onClick={() => void handleExportSatisfactionIndicatorsPdf(isAllSatisfactionCoursesSelected ? "جميع_الدورات" : (selCourse?.title ?? "الدورة"))}
                         >
                           <Download className="size-4" />
@@ -5156,7 +5299,7 @@ const Dashboard = () => {
                         </Button>
                       )}
                       {satisfactionResultCourses.length > 0 && (
-                        <div className="w-56">
+                        <div className="w-full sm:w-56">
                           <Select value={isAllSatisfactionCoursesSelected ? SATISFACTION_ALL_RESULTS_ID : (selCourse?.id ?? "")} onValueChange={setSatisfactionResultsCourseId}>
                           <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue /></SelectTrigger>
                           <SelectContent>

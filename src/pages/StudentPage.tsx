@@ -368,7 +368,8 @@ const StudentPage = () => {
 
         <main className="min-w-0 flex-1 px-4 py-4 text-right md:px-6 lg:px-8 lg:py-8">
           <div className="w-full">
-            <div className="mb-4 flex flex-wrap gap-2 lg:hidden">
+            <div className="mb-4 -mx-1 overflow-x-auto px-1 pb-1 lg:hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <div className="flex min-w-max gap-2">
               {studentMenu.map((item) => {
                 const active = studentTab === item.id;
 
@@ -378,7 +379,7 @@ const StudentPage = () => {
                     type="button"
                     onClick={() => setStudentTab(item.id)}
                     className={cn(
-                      "rounded-full border px-4 py-2 text-sm font-bold transition-smooth",
+                      "shrink-0 rounded-full border px-4 py-2 text-sm font-bold transition-smooth",
                       active
                         ? "border-primary bg-primary text-primary-foreground"
                         : "border-primary/10 bg-white text-primary hover:bg-primary/5",
@@ -388,6 +389,7 @@ const StudentPage = () => {
                   </button>
                 );
               })}
+              </div>
             </div>
 
             <div className="mb-6 flex w-full items-center justify-between rounded-[2rem] border border-white/70 bg-white/90 px-5 py-4 shadow-[0_18px_50px_rgba(15,23,42,0.06)] backdrop-blur-sm">
@@ -409,9 +411,9 @@ const StudentPage = () => {
                         <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-white/70 p-5 text-sm text-muted-foreground">لا توجد دورات.</div>
                       )}
                       {rows.map(({ course, submission, score, total }) => (
-                        <div key={course.id} className="flex items-center justify-between gap-3 rounded-[1.25rem] border border-border/60 bg-white p-4">
+                        <div key={course.id} className="flex flex-col items-start gap-3 rounded-[1.25rem] border border-border/60 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
                           <div className="font-bold text-foreground">{course.title}</div>
-                          <div className="flex items-center gap-2 shrink-0">
+                          <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-start shrink-0">
                             <Badge variant="outline" className="border-primary/20 text-primary">{score} / {total}</Badge>
                             {submission ? (
                               <Button variant="outline" size="icon" className="h-8 w-8 rounded-xl" onClick={() => setDetailsSubmissionId(submission.id)}>
@@ -436,7 +438,7 @@ const StudentPage = () => {
                       <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-white/70 p-5 text-sm text-muted-foreground">لا توجد مهام.</div>
                     )}
                     {tasksRows.map(({ task, done }) => (
-                      <div key={task.id} className="flex items-center justify-between gap-3 rounded-[1.25rem] border border-border/60 bg-white p-4">
+                      <div key={task.id} className="flex flex-col items-start gap-3 rounded-[1.25rem] border border-border/60 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
                         <div className="font-bold text-foreground">{task.title}</div>
                         <Badge className={cn("shrink-0", done ? "bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-100" : "bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-50")} variant="outline">
                           {done ? "منفذ" : "غير منفذ"}
@@ -497,7 +499,7 @@ const StudentPage = () => {
                       <div className="rounded-[1.25rem] border border-dashed border-border/70 bg-white/70 p-5 text-sm text-muted-foreground">لا توجد دورات.</div>
                     )}
                     {attendanceRows.map(({ course, present }) => (
-                      <div key={course.id} className="flex items-center justify-between gap-3 rounded-[1.25rem] border border-border/60 bg-white p-4">
+                      <div key={course.id} className="flex flex-col items-start gap-3 rounded-[1.25rem] border border-border/60 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
                         <div className="font-bold text-foreground">{course.title}</div>
                         <Badge className={cn("shrink-0", present ? "bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-100" : "bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-50")} variant="outline">
                           {present ? "حاضر" : "غائب"}
@@ -518,7 +520,8 @@ const StudentPage = () => {
                       </div>
                       <div className="rounded-[1.25rem] border border-border/60 bg-white p-4">
                         <div className="mb-4 text-sm font-bold text-foreground">المقروء</div>
-                        <div className="grid w-fit grid-cols-5 gap-2 sm:grid-cols-6">
+                        <div className="overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                        <div className="grid w-fit min-w-max grid-cols-5 gap-2 sm:grid-cols-6">
                           {parts.map((part) => {
                             const active = student.completedParts.includes(part);
 
@@ -536,6 +539,7 @@ const StudentPage = () => {
                               </div>
                             );
                           })}
+                        </div>
                         </div>
                       </div>
                     </CardContent>

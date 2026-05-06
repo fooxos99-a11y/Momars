@@ -376,9 +376,9 @@ const ReciterPage = () => {
           {selectedReciter && (
             <div className="space-y-4">
                         {reciterStudents.length > 0 && (
-                          <div className="flex items-center justify-end gap-2">
+                          <div className="flex justify-end">
                             <Select value={sortBy} onValueChange={(value) => setSortBy(value as "most-read" | "least-read")}>
-                              <SelectTrigger className="w-auto flex-row-reverse px-4 text-right [&>span]:text-right">
+                              <SelectTrigger className="w-full max-w-full flex-row-reverse px-4 text-right sm:w-auto [&>span]:text-right">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
@@ -430,7 +430,8 @@ const ReciterPage = () => {
                     <div className="space-y-3 text-right">
                       <div className="text-sm font-bold text-foreground">المقروء</div>
 
-                      <div className="grid w-fit grid-cols-5 gap-2 sm:grid-cols-6">
+                      <div className="overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                      <div className="grid w-fit min-w-max grid-cols-5 gap-2 sm:grid-cols-6">
                       {parts.map((part) => {
                         const active = student.completedParts.includes(part);
 
@@ -450,6 +451,7 @@ const ReciterPage = () => {
                           </button>
                         );
                       })}
+                      </div>
                       </div>
                     </div>
                   </CardContent>
