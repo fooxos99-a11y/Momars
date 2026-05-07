@@ -3963,22 +3963,23 @@ const Dashboard = () => {
           <div className="space-y-5" dir="rtl">
 
             {/* ─── Filters + section title ─────────────────────────────────── */}
-            <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-              <div className="text-right md:order-1">
-                <h3 className="text-[0.95rem] font-bold text-foreground">المؤشرات الإجمالية</h3>
-              </div>
-              <div className="space-y-2 md:order-2 md:w-auto md:max-w-max">
-                <div className="text-sm font-bold text-foreground">الفرع</div>
-                <Select value={homeBranchFilter} onValueChange={(value) => setHomeBranchFilter(value as IndicatorsBranchFilter)}>
-                  <SelectTrigger className="h-10 w-full min-w-[112px] flex-row-reverse justify-between gap-2 px-3 text-right md:w-auto [&>span]:text-right">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="text-right">
-                    <SelectItem value="all" className="justify-end pr-3 text-right">الكل</SelectItem>
-                    <SelectItem value="male" className="justify-end pr-3 text-right">المعلمون</SelectItem>
-                    <SelectItem value="female" className="justify-end pr-3 text-right">المعلمات</SelectItem>
-                  </SelectContent>
-                </Select>
+            <div className={cn(dashboardCardClass, "rounded-[1.75rem] px-5 py-5") }>
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div className="text-right">
+                  <h3 className="text-[0.95rem] font-bold text-foreground">المؤشرات الإجمالية</h3>
+                </div>
+                <div className="w-full md:w-auto md:min-w-[140px]">
+                  <Select value={homeBranchFilter} onValueChange={(value) => setHomeBranchFilter(value as IndicatorsBranchFilter)}>
+                    <SelectTrigger className="h-11 w-full flex-row-reverse justify-between rounded-full border-primary/30 bg-white px-4 text-right shadow-sm [&>span]:text-right">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="text-right">
+                      <SelectItem value="all" className="justify-end pr-3 text-right">الكل</SelectItem>
+                      <SelectItem value="male" className="justify-end pr-3 text-right">المعلمون</SelectItem>
+                      <SelectItem value="female" className="justify-end pr-3 text-right">المعلمات</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
 
