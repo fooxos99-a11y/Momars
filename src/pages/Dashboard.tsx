@@ -3961,6 +3961,7 @@ const Dashboard = () => {
 
         {dashboardTab === "home" && (
           <div className="space-y-5" dir="rtl">
+            <div className="mx-auto w-full max-w-[1120px] space-y-5">
 
             {/* ─── Filters + section title ─────────────────────────────────── */}
             <div className={cn(dashboardCardClass, "rounded-[1.75rem] px-5 py-5") }>
@@ -4044,6 +4045,8 @@ const Dashboard = () => {
                 </div>
               );
             })()}
+
+            </div>
 
 
           </div>
