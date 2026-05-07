@@ -25,7 +25,7 @@ import { cn } from "@/lib/utils";
 const assessmentLabels: Record<AssessmentType, string> = {
   pre: "الاختبار القبلي",
   post: "الاختبار البعدي",
-  tasks: "التكاليف",
+  tasks: "المهام الأدائية",
 };
 
 const parts = Array.from({ length: 30 }, (_, index) => index + 1);
@@ -630,7 +630,7 @@ const StudentPage = () => {
       </div>
 
       <Dialog open={Boolean(detailsSubmission)} onOpenChange={(open) => !open && setDetailsSubmissionId(null)}>
-        <DialogContent className="max-h-[90vh] w-[calc(100vw-1.5rem)] max-w-4xl overflow-y-auto rounded-[2rem] p-0 [&>button]:hidden">
+        <DialogContent className="max-h-[90vh] w-[calc(100vw-1.5rem)] max-w-4xl overflow-y-auto rounded-[1.75rem] p-0 [&>button]:hidden">
           <DialogHeader className="border-b border-border px-6 py-5 text-right">
             <DialogTitle className="text-right text-2xl">معاينة النتيجة</DialogTitle>
           </DialogHeader>

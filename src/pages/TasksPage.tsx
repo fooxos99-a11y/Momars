@@ -81,7 +81,7 @@ const TaskCountdownLabel = ({ closesAt }: { closesAt: string }) => {
   if (hours > 0) parts.push(`${hours}س`);
   if (minutes > 0 || hours > 0) parts.push(`${minutes}د`);
   parts.push(`${seconds}ث`);
-  if (remaining === 0) return <span className="text-destructive">انتهى وقت التكليف</span>;
+  if (remaining === 0) return <span className="text-destructive">انتهى وقت المهمة الأدائية</span>;
   return <span>يغلق بعد: {parts.join(" ")}</span>;
 };
 
@@ -277,13 +277,13 @@ const TasksPage = () => {
     }
 
     if (existingSubmission) {
-      setError("تم إرسال هذا التكليف مسبقًا.");
+      setError("تم إرسال هذه المهمة الأدائية مسبقًا.");
       return;
     }
 
     if (selectedTask.taskMode === "document") {
       if (!documentQuestion || !hasMeaningfulDocumentContent(answers[documentQuestion.id] ?? "")) {
-        setError("اكتب محتوى التكليف أولًا.");
+        setError("اكتب محتوى المهمة الأدائية أولًا.");
         return;
       }
     } else {
@@ -310,7 +310,7 @@ const TasksPage = () => {
 
       setError("");
     } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "تعذر إرسال التكليف.");
+      setError(submissionError instanceof Error ? submissionError.message : "تعذر إرسال المهمة الأدائية.");
     }
   };
 
@@ -328,7 +328,7 @@ const TasksPage = () => {
     return (
       <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.12),_transparent_38%),linear-gradient(180deg,#f7fcfb_0%,#eff8f7_100%)]">
         <Dialog open onOpenChange={(open) => { if (!open) navigate("/"); }}>
-          <DialogContent className="max-w-xl rounded-[2rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_24px_70px_rgba(8,65,89,0.14)] [&>button]:hidden">
+          <DialogContent className="max-w-xl rounded-[1.75rem] border-primary/20 bg-white/95 p-0 text-right shadow-[0_24px_70px_rgba(8,65,89,0.14)] [&>button]:hidden">
             <div className="space-y-4 px-4 py-5 sm:px-5">
               <div className="space-y-2 text-right">
                 <h2 className="text-3xl font-extrabold text-foreground">لا يوجد تكليف حاليًا</h2>
@@ -374,23 +374,19 @@ const TasksPage = () => {
             onOpenChange={(open) => { if (!isLocked) setLoginDialogOpen(open); }}
           >
             <DialogContent
-              className="w-[calc(100vw-1.5rem)] max-w-lg rounded-[1.75rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden"
+              className="w-[calc(100vw-2rem)] max-w-[20rem] gap-0 rounded-[1.75rem] border-2 border-primary/35 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] sm:p-0 [&>button]:hidden"
               onEscapeKeyDown={(e) => { if (isLocked) e.preventDefault(); }}
               onPointerDownOutside={(e) => { if (isLocked) e.preventDefault(); }}
               onInteractOutside={(e) => { if (isLocked) e.preventDefault(); }}
             >
-              <div className="space-y-4 px-4 py-4">
-                <div className="space-y-2 text-right">
-                  <div className="text-sm text-muted-foreground">دخول الطالب</div>
-                  <div className="text-xl font-bold text-foreground sm:text-2xl">أدخل رقم الحساب</div>
-                </div>
+              <div className="space-y-4 px-5 py-5">
                 <div className="space-y-2">
-                  <label className="text-sm font-bold text-foreground">رقم الحساب</label>
-                  <Input value={loginId} onChange={(e) => setLoginId(e.target.value)} placeholder="رقم الحساب" />
+                  <label className="text-sm font-bold text-foreground">رقم الدخول</label>
+                  <Input value={loginId} onChange={(e) => setLoginId(e.target.value)} />
                 </div>
                 {error && <p className="text-sm font-medium text-destructive">{error}</p>}
                 <div className="flex justify-end gap-3">
-                  <Button className="w-full sm:w-auto" onClick={handleLogin}>دخول الطالب</Button>
+                  <Button className="w-full sm:w-auto" onClick={handleLogin}>دخول</Button>
                 </div>
               </div>
             </DialogContent>
@@ -398,7 +394,7 @@ const TasksPage = () => {
 
           {/* Details submission dialog */}
           <Dialog open={Boolean(detailsSubmission)} onOpenChange={(open) => !open && setDetailsSubmissionId(null)}>
-            <DialogContent className="max-w-3xl rounded-[1.5rem] p-0 text-right [&>button]:hidden flex flex-col max-h-[90vh]">
+            <DialogContent className="max-w-3xl rounded-[1.75rem] p-0 text-right [&>button]:hidden flex flex-col max-h-[90vh]">
               <div className="flex items-center justify-between border-b border-border/40 px-4 pb-2.5 pt-3.5 flex-shrink-0">
                 <Button variant="ghost" size="sm" className="rounded-full px-4" onClick={() => setDetailsSubmissionId(null)}>إغلاق ✕</Button>
                 <div className="text-xl font-bold text-foreground">تفاصيل الإرسال</div>
@@ -426,7 +422,7 @@ const TasksPage = () => {
               <div className="space-y-3">
                 <div className="mx-auto h-1 w-16 rounded-full bg-white/70" />
                 <div className="inline-flex max-w-3xl rounded-full border border-white/20 bg-white/10 px-6 py-3 text-xl font-extrabold text-white backdrop-blur-md sm:px-8 sm:text-2xl md:text-3xl">
-                  {selectedTask?.title ?? "التكليف"}
+                  {selectedTask?.title ?? "المهمة الأدائية"}
                 </div>
                 {selectedTask && (
                   <div className="text-sm font-medium text-white/80">
@@ -434,7 +430,7 @@ const TasksPage = () => {
                       if (existingSubmission) return "تم الإرسال";
                       const deadline = getAssessmentAvailabilityDeadline(selectedTask, "tasks", student?.branchId ?? null);
                       if (taskIsEnabled && deadline) return <TaskCountdownLabel closesAt={deadline} />;
-                      return "يمكنك إرسال التكليف مرة واحدة";
+                      return "يمكنك إرسال المهمة الأدائية مرة واحدة";
                     })()}
                   </div>
                 )}
@@ -456,7 +452,7 @@ const TasksPage = () => {
                   {!taskIsEnabled && !existingSubmission && !student && (
                     <div className="rounded-[1.75rem] border border-amber-200 bg-amber-50 p-5 text-right">
                       <div className="text-base font-extrabold text-amber-800">غير متاح الآن</div>
-                      <div className="mt-2 text-sm text-amber-700">هذا التكليف لم يتم تفعيله من قبل المشرف حاليًا.</div>
+                      <div className="mt-2 text-sm text-amber-700">هذه المهمة الأدائية لم يتم تفعيلها من قبل المشرف حاليًا.</div>
                     </div>
                   )}
 
@@ -475,7 +471,7 @@ const TasksPage = () => {
                               className="aspect-video w-full"
                               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
                               allowFullScreen
-                              title="مقطع التكليف"
+                              title="مقطع المهمة الأدائية"
                             />
                           </div>
                         ) : null;
@@ -527,7 +523,7 @@ const TasksPage = () => {
                         onClick={() => void handleSubmit()}
                         disabled={isDisabled || !student}
                       >
-                        إرسال التكليف
+                        إرسال المهمة الأدائية
                       </Button>
                       </div>
                     </div>

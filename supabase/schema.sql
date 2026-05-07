@@ -143,10 +143,12 @@ alter table if exists public.satisfaction_responses disable row level security;
 create table if not exists public.final_exam_settings (
   branch_code text not null primary key check (branch_code in ('male', 'female')),
   is_enabled boolean not null default false,
-  closes_at timestamptz
+  closes_at timestamptz,
+  notification_template text not null default ''
 );
 alter table if exists public.final_exam_settings disable row level security;
 alter table public.final_exam_settings add column if not exists closes_at timestamptz;
+alter table public.final_exam_settings add column if not exists notification_template text not null default '';
 insert into public.final_exam_settings (branch_code, is_enabled)
 values ('male', false), ('female', false)
 on conflict (branch_code) do nothing;

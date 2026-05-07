@@ -72,15 +72,7 @@ const Footer = () => {
       <div className="container relative flex items-center justify-between border-t border-border/60 pt-6 text-xs text-muted-foreground">
         <div>© {new Date().getFullYear()} برنامج رخصة ممارس. جميع الحقوق محفوظة.</div>
         <div className="absolute left-1/2 -translate-x-1/2 text-[11px] sm:text-xs">
-          تم التطوير بواسطة{" "}
-          <a
-            href="https://wa.me/966539599222"
-            target="_blank"
-            rel="noreferrer"
-            className="font-bold text-primary transition-smooth hover:text-primary/80"
-          >
-            WJ
-          </a>
+          تم التطوير بواسطة
         </div>
       </div>
     </footer>

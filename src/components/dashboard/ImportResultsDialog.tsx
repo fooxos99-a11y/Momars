@@ -130,7 +130,7 @@ const normalizeImportedAnswerValue = (raw: string, question: CourseRecord["preQu
 const assessmentLabels: Record<AssessmentType, string> = {
   pre: "الاختبار القبلي",
   post: "الاختبار البعدي",
-  tasks: "التكاليف",
+  tasks: "المهام الأدائية",
 };
 
 const detectAssessmentTypeFromFileName = (fileName: string): AssessmentType | null => {
@@ -563,7 +563,7 @@ export const ImportResultsDialog = ({
         }
       }}
     >
-      <DialogContent className="flex w-[min(98vw,1100px)] max-h-[92vh] flex-col rounded-[1.5rem] p-0 text-right [&>button]:hidden">
+      <DialogContent className="flex w-[min(98vw,1100px)] max-h-[92vh] flex-col rounded-[1.75rem] p-0 text-right [&>button]:hidden">
         {/* Header */}
         <DialogHeader className="flex-shrink-0 border-b border-border/60 px-6 py-4">
           <div className="flex items-center justify-between">

@@ -258,11 +258,11 @@ const AdminFinalExamTab = ({ canEdit = true, managedBranchId = null, selectedBra
     <div className="space-y-6">
       {/* Add Questions Dialog */}
       <Dialog open={addDialogOpen} onOpenChange={(open) => { setAddDialogOpen(open); if (!open) resetForms(); }}>
-        <DialogContent className="flex h-[90vh] w-[min(94vw,720px)] flex-col rounded-[1.5rem] border-white/80 bg-white p-0 text-right shadow-[0_24px_70px_rgba(15,23,42,0.14)] [&>button]:hidden">
+        <DialogContent className="flex h-[90vh] w-[min(94vw,720px)] flex-col rounded-[1.75rem] border-primary/20 bg-white p-0 text-right shadow-[0_24px_70px_rgba(15,23,42,0.14)] [&>button]:hidden">
           <div className="shrink-0 border-b border-border/60 px-4 py-4 sm:px-5">
-            <div className="flex items-center justify-end gap-2 text-right">
-              <span className="text-lg font-bold text-foreground">إضافة أسئلة - {branchLabels[effectiveBranch]}</span>
+            <div className="flex flex-row-reverse items-center justify-end gap-2 text-right">
               <FileText className="size-5 text-primary" />
+              <span className="text-lg font-bold text-foreground">إضافة أسئلة - {branchLabels[effectiveBranch]}</span>
             </div>
           </div>
           <div className="shrink-0 border-b border-border/60 px-4 py-3 sm:px-5">
@@ -299,7 +299,7 @@ const AdminFinalExamTab = ({ canEdit = true, managedBranchId = null, selectedBra
       {canEdit && (
         <Card className="rounded-[1.5rem] border-white/80 bg-white/95 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
           <CardHeader className="text-right">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-end justify-between gap-3">
               {!managedBranchId ? (
                 <div className="w-full max-w-[220px] space-y-2 text-right">
                   <div className="text-sm font-medium text-muted-foreground">الفرع</div>
@@ -318,17 +318,11 @@ const AdminFinalExamTab = ({ canEdit = true, managedBranchId = null, selectedBra
                   {branchLabels[managedBranchId]}
                 </div>
               )}
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4 text-right">
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[1.25rem] border border-border/60 bg-muted/20 px-4 py-3">
-              {isEnabled && closesAtLabel ? <div className="text-sm text-muted-foreground">{`مفتوح حتى ${closesAtLabel}`}</div> : <div />}
-              <Button onClick={() => setAddDialogOpen(true)} className="rounded-full px-5">
-              <Plus className="size-4" />
-              إضافة سؤال
+              <Button onClick={() => setAddDialogOpen(true)} size="icon" className="rounded-full">
+                <Plus className="size-4" />
               </Button>
             </div>
-          </CardContent>
+          </CardHeader>
         </Card>
       )}
 

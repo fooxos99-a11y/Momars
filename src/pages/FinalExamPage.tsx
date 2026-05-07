@@ -192,7 +192,7 @@ const FinalExamPage = () => {
 
           {/* Attachment preview dialog */}
           <Dialog open={Boolean(previewAttachment)} onOpenChange={(open) => !open && setPreviewAttachment(null)}>
-            <DialogContent className="max-h-[85vh] w-[calc(100vw-1.5rem)] max-w-4xl overflow-y-auto rounded-[1.75rem] border-white/80 bg-white/95 p-4 text-right [&>button]:hidden sm:p-6">
+            <DialogContent className="max-h-[85vh] w-[calc(100vw-1.5rem)] max-w-4xl overflow-y-auto rounded-[1.75rem] border-primary/20 bg-white/95 p-4 text-right [&>button]:hidden sm:p-6">
               <div className="space-y-4">
                 <div className="text-xl font-bold text-foreground">معاينة المرفق</div>
                 {previewAttachment && isPreviewImage && <div className="overflow-hidden rounded-[1.25rem] border border-primary/10 bg-muted/20 p-2"><img src={previewAttachment.dataUrl} alt="مرفق" className="max-h-[60vh] w-full rounded-[1rem] object-contain" /></div>}
@@ -206,21 +206,17 @@ const FinalExamPage = () => {
           {/* Login dialog */}
           <Dialog open={loginDialogOpen && isLocked} onOpenChange={(open) => { if (!isLocked) setLoginDialogOpen(open); }}>
             <DialogContent
-              className="w-[calc(100vw-1.5rem)] max-w-lg rounded-[1.75rem] border-white/80 bg-white/95 p-0 text-right [&>button]:hidden"
+              className="w-[calc(100vw-2rem)] max-w-[20rem] gap-0 rounded-[1.75rem] border-2 border-primary/35 bg-white/95 p-0 text-right sm:p-0 [&>button]:hidden"
               onEscapeKeyDown={(e) => { if (isLocked) e.preventDefault(); }}
               onPointerDownOutside={(e) => { if (isLocked) e.preventDefault(); }}
             >
-              <div className="space-y-4 px-4 py-4">
-                <div className="space-y-2 text-right">
-                  <div className="text-sm text-muted-foreground">دخول الطالب</div>
-                  <div className="text-xl font-bold text-foreground sm:text-2xl">أدخل رقم الحساب</div>
-                </div>
+              <div className="space-y-4 px-5 py-5">
                 <div className="space-y-2">
-                  <label className="text-sm font-bold text-foreground">رقم الحساب</label>
-                  <Input value={loginId} onChange={(e) => setLoginId(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleLogin()} placeholder="رقم الحساب" />
+                  <label className="text-sm font-bold text-foreground">رقم الدخول</label>
+                  <Input value={loginId} onChange={(e) => setLoginId(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleLogin()} />
                 </div>
                 {error && <p className="text-sm font-medium text-destructive">{error}</p>}
-                <Button className="w-full" onClick={handleLogin}>دخول الطالب</Button>
+                <Button className="w-full" onClick={handleLogin}>دخول</Button>
               </div>
             </DialogContent>
           </Dialog>

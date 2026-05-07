@@ -464,7 +464,7 @@ const ReciterPage = () => {
       </div>
 
       <Dialog open={Boolean(pendingTransferStudent)} onOpenChange={(open) => !open && resetTransferState()}>
-        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-md rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
+        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-md rounded-[1.75rem] border-primary/20 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
           <DialogHeader className="border-b border-border/60 px-6 py-5 text-right">
             <DialogTitle className="text-right text-xl text-foreground">نقل الطالب</DialogTitle>
             <DialogDescription className="text-right">
@@ -498,7 +498,7 @@ const ReciterPage = () => {
       </Dialog>
 
       <Dialog open={assignStudentOpen} onOpenChange={(open) => !open && resetAssignState()}>
-        <DialogContent className="max-w-md rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
+        <DialogContent className="max-w-md rounded-[1.75rem] border-primary/20 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
           <DialogHeader className="border-b border-border/60 px-6 py-5 text-right">
             <DialogTitle className="text-right text-xl text-foreground">إضافة طالب للمقرئ</DialogTitle>
             <DialogDescription className="text-right">

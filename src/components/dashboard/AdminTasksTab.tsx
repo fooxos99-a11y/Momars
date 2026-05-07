@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import DocumentEditor from "@/components/editor/DocumentEditor";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
@@ -19,6 +20,7 @@ import { getDocumentPreviewText, hasMeaningfulDocumentContent } from "@/lib/docu
 import { parseImportedQuestionsFromText, type ImportedQuestionDraft } from "@/lib/question-import";
 
 const branchLabels: Record<BranchId, string> = { male: "معلمين", female: "معلمات" };
+type TaskOpenBranch = BranchId | "all";
 
 const formatDurationMinutes = (minutes: number) => {
   if (!Number.isFinite(minutes) || minutes <= 0) {
@@ -61,7 +63,7 @@ const TaskCountdownLabel = ({ closesAt }: { closesAt: string }) => {
 };
 
 const hiddenDocumentQuestion = {
-  prompt: "محتوى التكليف",
+  prompt: "محتوى المهمة الأدائية",
   type: "text" as const,
   options: [],
   allowFile: false,
@@ -140,15 +142,21 @@ const AdminTasksTab = ({ canEdit = true, managedBranchId = null }: AdminTasksTab
   const { data } = store;
   const navigate = useNavigate();
   const tasks = useMemo(() => [...getTasks(data)].sort((a, b) => a.sortOrder - b.sortOrder), [data]);
+  const [pendingDeleteTask, setPendingDeleteTask] = useState<{ id: string; title: string } | null>(null);
+  const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
+  const visibleTasks = useMemo(() => tasks.filter((task) => task.id !== deletingTaskId), [tasks, deletingTaskId]);
   const [taskPickerCourseId, setTaskPickerCourseId] = useState<string | null>(null);
-  const [taskPickerStep, setTaskPickerStep] = useState<"pick" | "timer">("pick");
   const [taskDurationMinutes, setTaskDurationMinutes] = useState("30");
-  const [taskTimerBranch, setTaskTimerBranch] = useState<BranchId | null>(managedBranchId);
+  const [taskTimerBranch, setTaskTimerBranch] = useState<TaskOpenBranch | null>(managedBranchId ?? "all");
+  const [taskSkipBranchConflict, setTaskSkipBranchConflict] = useState(false);
   const [taskTimerError, setTaskTimerError] = useState("");
+  const [taskSubmitting, setTaskSubmitting] = useState(false);
   const [taskBranchConflict, setTaskBranchConflict] = useState<{ activeBranch: BranchId; pendingBranch: BranchId } | null>(null);
-  const [taskDeactivateDialog, setTaskDeactivateDialog] = useState<{ taskId: string; activeBranch: BranchId; inactiveBranch: BranchId } | null>(null);
+  const [taskManageDialog, setTaskManageDialog] = useState<{ taskId: string } | null>(null);
+  const [taskManageChoice, setTaskManageChoice] = useState("");
+  const [taskManageSubmitting, setTaskManageSubmitting] = useState(false);
   const [taskTitle, setTaskTitle] = useState("");
-  const [taskMode, setTaskMode] = useState<TaskMode>("questions");
+  const [taskMode, setTaskMode] = useState<TaskMode | null>(null);
   const [taskPoints, setTaskPoints] = useState("0");
   const [documentSubMode, setDocumentSubMode] = useState<"template" | "task">("task");
   const [selectedTemplateId, setSelectedTemplateId] = useState("new");
@@ -172,12 +180,29 @@ const AdminTasksTab = ({ canEdit = true, managedBranchId = null }: AdminTasksTab
   const handleTaskDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const ids = tasks.map((t) => t.id);
+    const ids = visibleTasks.map((t) => t.id);
     const oldIdx = ids.indexOf(String(active.id));
     const newIdx = ids.indexOf(String(over.id));
     if (oldIdx === -1 || newIdx === -1) return;
     store.reorderCourses(arrayMove(ids, oldIdx, newIdx));
-  }, [tasks, store]);
+  }, [visibleTasks, store]);
+
+  const handleConfirmDeleteTask = useCallback(async () => {
+    if (!pendingDeleteTask) return;
+
+    const { id } = pendingDeleteTask;
+    setDeletingTaskId(id);
+    setPendingDeleteTask(null);
+    setError("");
+
+    try {
+      await store.deleteCourse(id);
+      setDeletingTaskId((current) => (current === id ? null : current));
+    } catch (deleteError) {
+      setDeletingTaskId(null);
+      setError(deleteError instanceof Error ? deleteError.message : "تعذر حذف المهمة الأدائية.");
+    }
+  }, [pendingDeleteTask, store]);
 
   const selectedTemplate = data.taskTemplates.find((template) => template.id === selectedTemplateId) ?? null;
 
@@ -361,6 +386,7 @@ const AdminTasksTab = ({ canEdit = true, managedBranchId = null }: AdminTasksTab
     setSelectedTemplateId(value);
 
     if (value === "new") {
+      setTaskDocumentContent("");
       return;
     }
 
@@ -375,41 +401,95 @@ const AdminTasksTab = ({ canEdit = true, managedBranchId = null }: AdminTasksTab
 
   const handleOpenTaskPicker = (taskId: string) => {
     setTaskPickerCourseId(taskId);
-    setTaskPickerStep("pick");
     setTaskDurationMinutes("30");
-    setTaskTimerBranch(managedBranchId ?? "male");
+    setTaskTimerBranch(managedBranchId ?? "all");
+    setTaskSkipBranchConflict(false);
     setTaskTimerError("");
   };
 
-  const handleConfirmTaskTimer = async (skipBranchConflictCheck = false) => {
-    if (!taskPickerCourseId) return;
+  const getTaskManageOptions = (task: ReturnType<typeof getTasks>[number]) => {
+    const maleActive = isAssessmentEnabledForCourse(task, "tasks", "male");
+    const femaleActive = isAssessmentEnabledForCourse(task, "tasks", "female");
+
+    if (managedBranchId) {
+      return maleActive || femaleActive
+        ? [{ value: `close_${managedBranchId}`, label: `إغلاق ${branchLabels[managedBranchId]}` }]
+        : [];
+    }
+
+    if (maleActive && femaleActive) {
+      return [
+        { value: "close_all", label: "إغلاق الكل" },
+        { value: "close_male", label: "إغلاق معلمين" },
+        { value: "close_female", label: "إغلاق معلمات" },
+      ];
+    }
+
+    if (maleActive) {
+      return [
+        { value: "close_male", label: "إغلاق معلمين" },
+        { value: "open_female", label: "بدء معلمات" },
+        { value: "open_all", label: "بدء الكل" },
+      ];
+    }
+
+    if (femaleActive) {
+      return [
+        { value: "close_female", label: "إغلاق معلمات" },
+        { value: "open_male", label: "بدء معلمين" },
+        { value: "open_all", label: "بدء الكل" },
+      ];
+    }
+
+    return [
+      { value: "open_all", label: "بدء الكل" },
+      { value: "open_male", label: "بدء معلمين" },
+      { value: "open_female", label: "بدء معلمات" },
+    ];
+  };
+
+  const handleOpenTaskManageDialog = (taskId: string) => {
+    const task = tasks.find((item) => item.id === taskId);
+    if (!task) return;
+
+    const options = getTaskManageOptions(task);
+    setTaskManageChoice(options[0]?.value ?? "");
+    setTaskManageDialog({ taskId });
+  };
+
+  const handleConfirmTaskTimer = async (skipBranchConflictCheck = false): Promise<boolean> => {
+    if (!taskPickerCourseId) return false;
     const course = data.courses.find((c) => c.id === taskPickerCourseId);
-    if (!course) return;
+    if (!course) return false;
+
+    const shouldBypassBranchConflict = skipBranchConflictCheck || taskSkipBranchConflict;
 
     const duration = Number(taskDurationMinutes);
     if (!Number.isFinite(duration) || duration <= 0) {
       setTaskTimerError("أدخل مدة صحيحة بالدقائق.");
-      return;
+      return false;
     }
 
-    const branch = taskTimerBranch;
-    if (!branch) {
+    const targetBranch = taskTimerBranch;
+    if (!targetBranch) {
       setTaskTimerError("اختر فرعًا.");
-      return;
+      return false;
     }
 
-    // Check if the other branch is already active for this task
-    // Skip conflict check when admin manages a specific branch (they can't touch the other branch)
-    const otherBranch = branch === "male" ? "female" : "male";
-    const otherBranchActive = course.isTasksEnabled && isAssessmentEnabledForCourse(course, "tasks", otherBranch);
-    if (otherBranchActive && !skipBranchConflictCheck && !managedBranchId) {
-      setTaskBranchConflict({ activeBranch: otherBranch, pendingBranch: branch });
-      return;
+    if (targetBranch !== "all") {
+      const otherBranch = targetBranch === "male" ? "female" : "male";
+      const otherBranchActive = course.isTasksEnabled && isAssessmentEnabledForCourse(course, "tasks", otherBranch);
+      if (otherBranchActive && !shouldBypassBranchConflict && !managedBranchId) {
+        setTaskBranchConflict({ activeBranch: otherBranch, pendingBranch: targetBranch });
+        return false;
+      }
     }
     setTaskBranchConflict(null);
 
-    // Close the dialog immediately
-    setTaskPickerCourseId(null);
+    const targetBranches: BranchId[] = targetBranch === "all" ? ["male", "female"] : [targetBranch];
+    const otherBranches = (["male", "female"] as BranchId[]).filter((branchId) => !targetBranches.includes(branchId));
+
+    setTaskSubmitting(true);
 
     const closesAt = new Date(Date.now() + duration * 60 * 1000).toISOString();
 
@@ -425,52 +505,77 @@ const AdminTasksTab = ({ canEdit = true, managedBranchId = null }: AdminTasksTab
     const nextGlobalTaskWindow = !existingGlobalTaskWindow || new Date(existingGlobalTaskWindow) < new Date(closesAt)
       ? closesAt
       : existingGlobalTaskWindow;
-    const keepOtherBranchActive = otherBranchActive && skipBranchConflictCheck;
-    await store.updateCourse(course.id, {
-      isTasksEnabled: true,
-      branchAvailability: {
-        ...course.branchAvailability,
-        [branch]: { ...course.branchAvailability[branch], tasks: true },
-        [otherBranch]: { ...course.branchAvailability[otherBranch], tasks: keepOtherBranchActive },
-      },
-      assessmentWindows: {
-        ...course.assessmentWindows,
-        global: { ...course.assessmentWindows.global, tasks: nextGlobalTaskWindow },
-        [branch]: { ...course.assessmentWindows[branch], tasks: closesAt },
-        [otherBranch]: {
-          ...course.assessmentWindows[otherBranch],
-          tasks: keepOtherBranchActive ? course.assessmentWindows[otherBranch].tasks : undefined,
-        },
-      },
-    } as never);
+    const branchAvailabilityUpdate = { ...course.branchAvailability };
+    const assessmentWindowsUpdate = {
+      ...course.assessmentWindows,
+      global: { ...course.assessmentWindows.global, tasks: nextGlobalTaskWindow },
+    };
 
-    // Deactivate any other currently active tasks AFTER activation is committed.
-    // Their previousCourses snapshot now includes the activated task, so any
-    // rollback on failure will not undo the activation above.
-    void Promise.all(
-      otherActiveTasks.map((t) =>
-        store.updateCourse(t.id, {
-          isTasksEnabled: false,
-          assessmentWindows: {
-            ...t.assessmentWindows,
-            global: { ...t.assessmentWindows.global, tasks: undefined },
-            male: { ...t.assessmentWindows.male, tasks: undefined },
-            female: { ...t.assessmentWindows.female, tasks: undefined },
-          },
-        } as never).catch(() => undefined),
-      ),
-    );
+    targetBranches.forEach((branchId) => {
+      branchAvailabilityUpdate[branchId] = { ...course.branchAvailability[branchId], tasks: true };
+      assessmentWindowsUpdate[branchId] = { ...course.assessmentWindows[branchId], tasks: closesAt };
+    });
+    otherBranches.forEach((branchId) => {
+      assessmentWindowsUpdate[branchId] = {
+        ...course.assessmentWindows[branchId],
+        tasks: targetBranch === "all"
+          ? closesAt
+          : (skipBranchConflictCheck && isAssessmentEnabledForCourse(course, "tasks", branchId)
+            ? course.assessmentWindows[branchId].tasks
+            : undefined),
+      };
+      if (targetBranch === "all") {
+        branchAvailabilityUpdate[branchId] = { ...course.branchAvailability[branchId], tasks: true };
+      } else if (!(skipBranchConflictCheck && isAssessmentEnabledForCourse(course, "tasks", branchId))) {
+        branchAvailabilityUpdate[branchId] = { ...course.branchAvailability[branchId], tasks: false };
+      }
+    });
 
-    const targetLoginCodes = data.students.filter((student) => student.branchId === branch).map((student) => student.loginId);
-    const branchLabel = branchLabels[branch];
-    const template = course.assessmentNotificationTemplates.tasks || getDefaultAssessmentNotificationTemplate("tasks");
-    const message = template
-      .replaceAll("{courseTitle}", course.title)
-      .replaceAll("{assessmentLabel}", "التكليف")
-      .replaceAll("{branchLabel}", branchLabel)
-      .replaceAll("{durationMinutes}", String(duration))
-      .replaceAll("{durationLabel}", formatDurationMinutes(duration));
-    sendPushNotification(`التكليف - ${course.title}`, message, targetLoginCodes, "/tasks");
+    try {
+      await store.updateCourse(course.id, {
+        isTasksEnabled: true,
+        branchAvailability: branchAvailabilityUpdate,
+        assessmentWindows: assessmentWindowsUpdate,
+      } as never);
+
+      // Deactivate any other currently active tasks AFTER activation is committed.
+      // Their previousCourses snapshot now includes the activated task, so any
+      // rollback on failure will not undo the activation above.
+      void Promise.all(
+        otherActiveTasks.map((t) =>
+          store.updateCourse(t.id, {
+            isTasksEnabled: false,
+            assessmentWindows: {
+              ...t.assessmentWindows,
+              global: { ...t.assessmentWindows.global, tasks: undefined },
+              male: { ...t.assessmentWindows.male, tasks: undefined },
+              female: { ...t.assessmentWindows.female, tasks: undefined },
+            },
+          } as never).catch(() => undefined),
+        ),
+      );
+
+      const targetLoginCodes = data.students
+        .filter((student) => targetBranch === "all" || student.branchId === targetBranch)
+        .map((student) => student.loginId);
+      const branchLabel = targetBranch === "all" ? "جميع الفروع" : branchLabels[targetBranch];
+      const template = course.assessmentNotificationTemplates.tasks || getDefaultAssessmentNotificationTemplate("tasks");
+      const message = template
+        .replaceAll("{courseTitle}", course.title)
+        .replaceAll("{assessmentLabel}", "المهمة الأدائية")
+        .replaceAll("{branchLabel}", branchLabel)
+        .replaceAll("{durationMinutes}", String(duration))
+        .replaceAll("{durationLabel}", formatDurationMinutes(duration));
+      sendPushNotification(`المهمة الأدائية - ${course.title}`, message, targetLoginCodes, "/tasks");
+      setTaskPickerCourseId(null);
+      return true;
+    } catch (error) {
+      setTaskTimerError(error instanceof Error ? error.message : "تعذر فتح المهمة الأدائية.");
+      return false;
+    } finally {
+      setTaskSkipBranchConflict(false);
+      setTaskSubmitting(false);
+    }
   };
 
   const handleDeactivateTask = async (taskId: string, branchId?: BranchId) => {
@@ -511,7 +616,7 @@ const AdminTasksTab = ({ canEdit = true, managedBranchId = null }: AdminTasksTab
 
   const resetForm = () => {
     setTaskTitle("");
-    setTaskMode("questions");
+    setTaskMode(null);
     setTaskPoints("0");
     setDocumentSubMode("task");
     setSelectedTemplateId("new");
@@ -552,34 +657,57 @@ const AdminTasksTab = ({ canEdit = true, managedBranchId = null }: AdminTasksTab
     }
   };
 
+  const handleSelectTaskCreationMode = (mode: TaskMode) => {
+    setTaskMode(mode);
+    setError("");
+
+    if (mode === "questions") {
+      handleCreateQuestionDialogChange(true);
+      return;
+    }
+
+    setDocumentSubMode("task");
+    setSelectedTemplateId("new");
+    setTemplateName("");
+    setTemplateContent("");
+    setTaskDocumentContent("");
+    setYoutubeUrl("");
+    handleCreateQuestionDialogChange(false);
+  };
+
   const handleCreateTask = async () => {
     const title = taskTitle.trim();
 
     if (!title) {
-      setError("أدخل اسم التكليف.");
+      setError("أدخل اسم المهمة الأدائية.");
+      return;
+    }
+
+    if (!taskMode) {
+      setError("اختر طريقة إنشاء المهمة الأدائية من زر الإضافة.");
       return;
     }
 
     if (taskMode === "questions" && draftQuestions.length === 0) {
-      setError("أضف سؤالًا واحدًا على الأقل قبل حفظ التكليف.");
+      setError("أضف سؤالًا واحدًا على الأقل قبل حفظ المهمة الأدائية.");
       return;
     }
 
-    if (taskMode === "document" && documentSubMode === "task" && !selectedTemplate) {
-      setError("اختر قالبًا من القوالب المحفوظة.");
+    if (taskMode === "document" && documentSubMode === "task" && !hasMeaningfulDocumentContent(taskDocumentContent)) {
+      setError("أدخل محتوى المهمة الأدائية أولًا.");
       return;
     }
 
     setSubmitting(true);
 
-    const resolvedTemplateName = selectedTemplate?.name ?? templateName.trim();
-    const resolvedTemplateContent = documentSubMode === "task" ? taskDocumentContent : (selectedTemplate?.content ?? templateContent);
+    const resolvedTemplateName = documentSubMode === "task" ? (selectedTemplate?.name ?? "") : templateName.trim();
+    const resolvedTemplateContent = documentSubMode === "task" ? taskDocumentContent : templateContent;
 
     try {
       const taskId = await store.addCourse(title, {
         entityType: "task",
         taskMode,
-        taskTemplateId: selectedTemplate?.id ?? "",
+        taskTemplateId: documentSubMode === "task" ? (selectedTemplate?.id ?? "") : "",
         taskTemplateName: resolvedTemplateName,
         taskTemplateContent: resolvedTemplateContent,
         youtubeUrl: taskMode === "document" ? youtubeUrl.trim() : "",
@@ -597,7 +725,7 @@ const AdminTasksTab = ({ canEdit = true, managedBranchId = null }: AdminTasksTab
       resetForm();
       navigate("/dashboard");
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "تعذر إنشاء التكليف.");
+      setError(createError instanceof Error ? createError.message : "تعذر إنشاء المهمة الأدائية.");
     } finally {
       setSubmitting(false);
     }
@@ -728,9 +856,9 @@ const AdminTasksTab = ({ canEdit = true, managedBranchId = null }: AdminTasksTab
 
     return (
       <Dialog open={isCreateQuestionDialogOpen} onOpenChange={handleCreateQuestionDialogChange}>
-        <DialogContent className="flex h-[90vh] w-[min(95vw,780px)] flex-col rounded-[1.5rem] border-white/80 bg-white p-0 text-right shadow-[0_24px_70px_rgba(15,23,42,0.14)] [&>button]:hidden">
+        <DialogContent className="flex h-[90vh] w-[min(95vw,780px)] flex-col rounded-[1.75rem] border-primary/20 bg-white p-0 text-right shadow-[0_24px_70px_rgba(15,23,42,0.14)] [&>button]:hidden">
           <div className="shrink-0 border-b border-border/60 px-4 py-3">
-            <div className="flex items-center justify-end gap-2 text-right">
+            <div className="flex flex-row-reverse items-center justify-end gap-2 text-right">
               <Plus className="size-4 text-primary" strokeWidth={2.5} />
               <span className="text-base font-bold text-foreground">إضافة أسئلة</span>
             </div>
@@ -836,146 +964,104 @@ const AdminTasksTab = ({ canEdit = true, managedBranchId = null }: AdminTasksTab
     <div className="space-y-6">
       {canEdit && renderCreateQuestionDialog()}
 
-      {/* Task Picker Dialog - two steps like pre/post assessment */}
-      <Dialog open={Boolean(taskPickerCourseId)} onOpenChange={(open) => { if (!open) { setTaskPickerCourseId(null); setTaskPickerStep("pick"); setTaskTimerError(""); } }}>
+      <Dialog open={Boolean(taskPickerCourseId)} onOpenChange={(open) => { if (!open) { setTaskPickerCourseId(null); setTaskTimerError(""); } }}>
         <DialogContent className="max-w-sm rounded-[1.75rem] p-0 text-right [&>button]:hidden">
-          {taskPickerStep === "pick" && (
-            <>
-              <DialogHeader className="border-b border-border/60 px-6 py-5 text-right">
-                <DialogTitle className="text-right text-xl">التكليف</DialogTitle>
-              </DialogHeader>
-              <div className="grid grid-cols-2 gap-3 p-6">
-                <button
-                  type="button"
-                  className="flex flex-col items-center gap-3 rounded-[1.25rem] border border-border/70 bg-muted/20 p-5 text-center transition-colors hover:border-primary/40 hover:bg-primary/5"
-                  onClick={() => setTaskPickerStep("timer")}
-                >
-                  <div className="text-2xl">⏱</div>
-                  <div className="text-sm font-bold text-foreground">بدء التكليف</div>
-                </button>
-                {canEdit && taskPickerCourseId && data.courses.find((c) => c.id === taskPickerCourseId)?.taskMode === "questions" && (
-                  <button
-                    type="button"
-                    className="flex flex-col items-center gap-3 rounded-[1.25rem] border border-border/70 bg-muted/20 p-5 text-center transition-colors hover:border-primary/40 hover:bg-primary/5"
-                    onClick={() => {
-                      if (!taskPickerCourseId) return;
-                      setTaskPickerCourseId(null);
-                      navigate(`/dashboard/course/tasks?courseId=${taskPickerCourseId}`);
-                    }}
-                  >
-                    <div className="text-2xl">📋</div>
-                    <div className="text-sm font-bold text-foreground">عرض الأسئلة</div>
-                  </button>
-                )}
-                {canEdit && taskPickerCourseId && data.courses.find((c) => c.id === taskPickerCourseId)?.taskMode === "document" && (
-                  <button
-                    type="button"
-                    className="flex flex-col items-center gap-3 rounded-[1.25rem] border border-border/70 bg-muted/20 p-5 text-center transition-colors hover:border-primary/40 hover:bg-primary/5"
-                    onClick={() => {
-                      if (!taskPickerCourseId) return;
-                      const id = taskPickerCourseId;
-                      setTaskPickerCourseId(null);
-                      navigate(`/dashboard/course/tasks?courseId=${id}`);
-                    }}
-                  >
-                    <div className="text-2xl">📄</div>
-                    <div className="text-sm font-bold text-foreground">عرض التكليف</div>
-                  </button>
-                )}
-              </div>
-              <div className="flex justify-end border-t border-border/60 px-6 py-4">
-                <Button variant="outline" className="rounded-full px-5" onClick={() => setTaskPickerCourseId(null)}>إلغاء</Button>
-              </div>
-            </>
-          )}
-          {taskPickerStep === "timer" && (
-            <>
-              <DialogHeader className="border-b border-border/60 px-6 py-5 text-right">
-                <DialogTitle className="text-right text-xl">مؤقت فتح التكليف</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 p-6">
-                {!managedBranchId && (
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-foreground">الفرع</label>
-                    <Select value={taskTimerBranch ?? "male"} onValueChange={(v) => setTaskTimerBranch(v as BranchId)}>
-                      <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="male" className="justify-end pr-3 text-right">معلمين</SelectItem>
-                        <SelectItem value="female" className="justify-end pr-3 text-right">معلمات</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
+          <>
+            <DialogHeader className="border-b border-border/60 px-6 py-5 text-right">
+              <DialogTitle className="text-right text-xl">مؤقت فتح المهمة الأدائية</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 p-6">
+              {!managedBranchId && (
                 <div className="space-y-2">
-                  <label className="text-sm font-bold text-foreground">المدة بالدقائق</label>
-                  <Input value={taskDurationMinutes} onChange={(e) => setTaskDurationMinutes(e.target.value)} placeholder="مثال: 30" />
+                  <label className="text-sm font-bold text-foreground">الفرع</label>
+                  <Select value={taskTimerBranch ?? "all"} onValueChange={(v) => setTaskTimerBranch(v as TaskOpenBranch)}>
+                    <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all" className="justify-end pr-3 text-right">الكل</SelectItem>
+                      <SelectItem value="male" className="justify-end pr-3 text-right">معلمين</SelectItem>
+                      <SelectItem value="female" className="justify-end pr-3 text-right">معلمات</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-                {taskTimerError && <p className="text-sm font-medium text-destructive">{taskTimerError}</p>}
-                <div className="flex justify-end gap-3">
-                  <Button variant="outline" onClick={() => setTaskPickerStep("pick")}>رجوع</Button>
-                  <Button onClick={() => void handleConfirmTaskTimer()}>فتح</Button>
-                </div>
+              )}
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-foreground">المدة بالدقائق</label>
+                <Input value={taskDurationMinutes} onChange={(e) => setTaskDurationMinutes(e.target.value)} placeholder="مثال: 30" />
               </div>
-            </>
-          )}
+              {taskTimerError && <p className="text-sm font-medium text-destructive">{taskTimerError}</p>}
+              <div className="flex justify-end gap-3">
+                <Button variant="outline" disabled={taskSubmitting} onClick={() => setTaskPickerCourseId(null)}>إلغاء</Button>
+                <Button disabled={taskSubmitting} onClick={() => void handleConfirmTaskTimer()}>
+                  {taskSubmitting ? "جارٍ الفتح..." : "فتح"}
+                </Button>
+              </div>
+            </div>
+          </>
         </DialogContent>
       </Dialog>
 
       {canEdit && <Card className="rounded-[1.5rem] border-white/80 bg-white/95 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
         <CardHeader className="text-right">
-          <CardTitle className="text-xl">إدارة التكاليف</CardTitle>
+          <CardTitle className="text-xl">إدارة المهام الأدائية</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 text-right">
-          <div className="grid gap-4 xl:grid-cols-2">
+          <div className="space-y-4">
+            <div className="flex flex-col gap-4 xl:flex-row-reverse xl:items-end">
+              <div className="flex shrink-0 xl:self-end">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      size="icon"
+                      className="group relative overflow-visible rounded-full"
+                      aria-label="إضافة"
+                    >
+                      <Plus className="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="min-w-[10rem] rounded-2xl bg-white text-right">
+                    <DropdownMenuItem className="justify-end text-right" onSelect={() => handleSelectTaskCreationMode("questions")}>أسئلة</DropdownMenuItem>
+                    <DropdownMenuItem className="justify-end text-right" onSelect={() => handleSelectTaskCreationMode("document")}>وورد</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              <div className={cn(
+              "grid gap-4 xl:flex-1",
+              taskMode === "document"
+                ? "xl:grid-cols-[minmax(0,1.55fr)_minmax(0,0.9fr)_minmax(0,1.05fr)_130px]"
+                : taskMode === "questions"
+                  ? "xl:grid-cols-[minmax(0,1.55fr)_130px]"
+                  : "xl:grid-cols-[minmax(0,1.55fr)]",
+            )}>
             <div className="space-y-2">
               <label className="text-sm font-bold text-foreground">
-                {taskMode === "document" && documentSubMode === "template" ? "اسم القالب" : "اسم التكليف"}
+                {taskMode === "document" && documentSubMode === "template" ? "اسم القالب" : "اسم المهمة الأدائية"}
               </label>
               <Input value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} className="bg-white text-right" />
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-bold text-foreground">نوع التكليف</label>
-              <div className="flex items-center gap-2">
-                <Select value={taskMode} onValueChange={(value) => setTaskMode(value as TaskMode)}>
-                  <SelectTrigger className="flex-1 flex-row-reverse bg-white text-right [&>span]:text-right">
+            {taskMode === "questions" && (
+              <div className="space-y-2 xl:max-w-[130px]">
+                <label className="block text-sm font-bold text-foreground">الدرجة</label>
+                <Input type="number" min="0" step="1" value={taskPoints} onChange={(e) => setTaskPoints(e.target.value)} placeholder="الدرجة" className="bg-white text-right" />
+              </div>
+            )}
+            {taskMode === "document" && (
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-foreground">الوضع الحالي</label>
+                <Select value={documentSubMode} onValueChange={(v) => setDocumentSubMode(v as "template" | "task")}>
+                  <SelectTrigger className="flex-row-reverse bg-white text-right [&>span]:text-right">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="questions" className="justify-end pr-3 text-right">نموذج أسئلة</SelectItem>
-                    <SelectItem value="document" className="justify-end pr-3 text-right">وورد</SelectItem>
+                    <SelectItem value="template" className="justify-end pr-3 text-right">إنشاء قالب</SelectItem>
+                    <SelectItem value="task" className="justify-end pr-3 text-right">إنشاء مهمة أدائية</SelectItem>
                   </SelectContent>
                 </Select>
-                {taskMode === "questions" && (
-                  <Button type="button" size="sm" className="shrink-0" onClick={() => handleCreateQuestionDialogChange(true)}>
-                    <Plus className="size-3.5" />
-                    إضافة سؤال
-                  </Button>
-                )}
-                {taskMode === "document" && (
-                  <Select value={documentSubMode} onValueChange={(v) => setDocumentSubMode(v as "template" | "task")}>
-                    <SelectTrigger className="flex-1 flex-row-reverse bg-white text-right [&>span]:text-right">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="task" className="justify-end pr-3 text-right">إنشاء تكليف</SelectItem>
-                      <SelectItem value="template" className="justify-end pr-3 text-right">إنشاء قالب</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
               </div>
-            </div>
-          </div>
-
-          {taskMode === "document" && documentSubMode === "template" && (
-            <div className="space-y-4 rounded-[1.4rem] border border-border/60 bg-slate-50/80 p-4 md:p-5">
-              <DocumentEditor value={templateContent} onChange={setTemplateContent} />
-            </div>
-          )}
-
-          {taskMode === "document" && documentSubMode === "task" && (
-            <div className="space-y-4 rounded-[1.4rem] border border-border/60 bg-slate-50/80 p-4 md:p-5">
-              <div className="space-y-2">
+            )}
+            {taskMode === "document" && (
+              <div className={cn("space-y-2", documentSubMode !== "task" && "opacity-0 pointer-events-none")}>
                 <label className="text-sm font-bold text-foreground">اختر قالبًا</label>
                 <div className="flex items-center gap-2">
                   <Select value={selectedTemplateId} onValueChange={handleTemplateSelect}>
@@ -991,7 +1077,7 @@ const AdminTasksTab = ({ canEdit = true, managedBranchId = null }: AdminTasksTab
                       ))}
                     </SelectContent>
                   </Select>
-                  {selectedTemplate && (
+                  {selectedTemplate && documentSubMode === "task" && (
                     <Button
                       type="button"
                       variant="ghost"
@@ -1011,32 +1097,40 @@ const AdminTasksTab = ({ canEdit = true, managedBranchId = null }: AdminTasksTab
                   )}
                 </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-bold text-foreground">الدرجة</label>
-                <Input type="number" min="0" step="1" value={taskPoints} onChange={(e) => setTaskPoints(e.target.value)} placeholder="اختر الدرجة" className="bg-white text-right" />
+            )}
+            {taskMode === "document" && (
+              <div className={cn("space-y-2 xl:max-w-[130px]", documentSubMode !== "task" && "opacity-0 pointer-events-none")}>
+                <label className="block text-sm font-bold text-foreground">الدرجة</label>
+                <Input type="number" min="0" step="1" value={taskPoints} onChange={(e) => setTaskPoints(e.target.value)} placeholder="الدرجة" className="bg-white text-right" />
               </div>
+            )}
+              </div>
+            </div>
+          </div>
+
+          {taskMode === "document" && documentSubMode === "template" && (
+            <div className="space-y-4 rounded-[1.4rem] border border-border/60 bg-slate-50/80 p-4 md:p-5">
+              <DocumentEditor value={templateContent} onChange={setTemplateContent} />
+            </div>
+          )}
+
+          {taskMode === "document" && documentSubMode === "task" && (
+            <div className="space-y-4 rounded-[1.4rem] border border-border/60 bg-slate-50/80 p-4 md:p-5">
               <div className="space-y-2">
                 <label className="text-sm font-bold text-foreground">رابط مقطع يوتيوب (اختياري)</label>
                 <Input
                   value={youtubeUrl}
                   onChange={(e) => setYoutubeUrl(e.target.value)}
                   placeholder="https://www.youtube.com/watch?v=..."
-                  className="bg-white text-left"
-                  dir="ltr"
+                  className="bg-white text-right placeholder:text-right"
                 />
               </div>
-              {selectedTemplate && (
-                <DocumentEditor value={taskDocumentContent} onChange={setTaskDocumentContent} />
-              )}
+              <DocumentEditor value={taskDocumentContent} onChange={setTaskDocumentContent} />
             </div>
           )}
 
           {taskMode === "questions" && (
             <div className="space-y-3 rounded-[1.4rem] border border-border/60 bg-slate-50/80 p-4 md:p-5">
-              <div className="space-y-2">
-                <label className="text-sm font-bold text-foreground">الدرجة</label>
-                <Input type="number" min="0" step="1" value={taskPoints} onChange={(e) => setTaskPoints(e.target.value)} placeholder="اختر الدرجة" className="bg-white text-right" />
-              </div>
               {renderDraftQuestionsList()}
             </div>
           )}
@@ -1056,24 +1150,24 @@ const AdminTasksTab = ({ canEdit = true, managedBranchId = null }: AdminTasksTab
                 </Button>
               )}
             </div>
-          ) : (
+          ) : taskMode === "questions" ? (
             <Button onClick={() => void handleCreateTask()} disabled={submitting} className="rounded-full px-5">
               حفظ
             </Button>
-          )}
+          ) : null}
         </CardContent>
       </Card>}
 
       <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleTaskDragEnd}>
-        <SortableContext items={tasks.map((t) => t.id)} strategy={rectSortingStrategy}>
+        <SortableContext items={visibleTasks.map((t) => t.id)} strategy={rectSortingStrategy}>
           <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            {tasks.length === 0 && (
+            {visibleTasks.length === 0 && (
               <Card className="rounded-[1.5rem] border-dashed border-border/70 bg-white/80 md:col-span-2 xl:col-span-3">
-                <CardContent className="p-6 text-right text-sm text-muted-foreground">لا توجد تكاليف بعد.</CardContent>
+                <CardContent className="p-6 text-right text-sm text-muted-foreground">لا توجد مهام أدائية بعد.</CardContent>
               </Card>
             )}
 
-            {tasks.map((task) => {
+            {visibleTasks.map((task) => {
               const isActive = isAssessmentEnabledForCourse(task, "tasks", managedBranchId);
               const deadline = getAssessmentAvailabilityDeadline(task, "tasks", managedBranchId);
 
@@ -1085,61 +1179,51 @@ const AdminTasksTab = ({ canEdit = true, managedBranchId = null }: AdminTasksTab
                     <div className="text-right">
                       <CardTitle className="min-h-[4rem] text-lg leading-8">{task.title}</CardTitle>
                     </div>
+                    <div className="flex justify-start gap-1.5">
+                      {canEdit && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-10 w-10 rounded-xl text-destructive"
+                          disabled={deletingTaskId === task.id}
+                          onClick={() => setPendingDeleteTask({ id: task.id, title: task.title })}
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (isActive) {
-                        if (managedBranchId) {
-                          const activeBranch: BranchId = managedBranchId;
-                          const inactiveBranch: BranchId = managedBranchId === "male" ? "female" : "male";
-                          setTaskDeactivateDialog({ taskId: task.id, activeBranch, inactiveBranch });
-                          return;
-                        }
-                        const maleActive = isAssessmentEnabledForCourse(task, "tasks", "male");
-                        const femaleActive = isAssessmentEnabledForCourse(task, "tasks", "female");
-                        if (maleActive && femaleActive) {
-                          void handleDeactivateTask(task.id);
-                        } else if (maleActive || femaleActive) {
-                          const activeBranch: BranchId = maleActive ? "male" : "female";
-                          const inactiveBranch: BranchId = maleActive ? "female" : "male";
-                          setTaskDeactivateDialog({ taskId: task.id, activeBranch, inactiveBranch });
+                  <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isActive) {
+                          handleOpenTaskManageDialog(task.id);
                         } else {
-                          void handleDeactivateTask(task.id);
+                          handleOpenTaskPicker(task.id);
                         }
-                      } else {
-                        handleOpenTaskPicker(task.id);
-                      }
-                    }}
-                    className={cn(
-                      "w-full rounded-[1rem] border p-3 text-center text-sm font-bold transition-smooth",
-                      isActive
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
-                        : "border-border/70 bg-muted/30 text-muted-foreground hover:border-primary/25 hover:text-primary",
-                    )}
-                  >
-                    <div>تفعيل</div>
-                    {isActive && deadline && (
-                      <div className="mt-1 text-[11px] font-medium"><TaskCountdownLabel closesAt={deadline} /></div>
-                    )}
-                  </button>
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex justify-start gap-2">
-                      {canEdit && (
-                        <>
-                          {task.taskMode === "questions" && (
-                            <Button variant="outline" size="icon" className="h-10 w-10 rounded-xl" onClick={() => navigate(`/dashboard/course/tasks?courseId=${task.id}`)}>
-                              <ListChecks className="size-4" />
-                            </Button>
-                          )}
-                          <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-destructive" onClick={() => void store.deleteCourse(task.id)}>
-                            <Trash2 className="size-4" />
-                          </Button>
-                        </>
+                      }}
+                      className={cn(
+                        "rounded-[1rem] border p-3 text-center text-sm font-bold transition-smooth",
+                        isActive
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                          : "border-border/70 bg-muted/30 text-muted-foreground hover:border-primary/25 hover:text-primary",
                       )}
-                    </div>
+                    >
+                      <div>بدء</div>
+                      {isActive && deadline && (
+                        <div className="mt-1 text-[11px] font-medium"><TaskCountdownLabel closesAt={deadline} /></div>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/dashboard/course/tasks?courseId=${task.id}`)}
+                      className="rounded-[1rem] border border-border/70 bg-muted/30 p-3 text-center text-sm font-bold text-muted-foreground transition-smooth hover:border-primary/25 hover:text-primary"
+                    >
+                      <div>عرض المهمة</div>
+                    </button>
                   </div>
                 </CardContent>
               </Card>
@@ -1150,47 +1234,85 @@ const AdminTasksTab = ({ canEdit = true, managedBranchId = null }: AdminTasksTab
         </SortableContext>
       </DndContext>
 
-      <AlertDialog open={Boolean(taskDeactivateDialog)} onOpenChange={(open) => { if (!open) setTaskDeactivateDialog(null); }}>
-        <AlertDialogContent className="rounded-[1.5rem] text-right">
+      <Dialog open={Boolean(taskManageDialog)} onOpenChange={(open) => { if (!open) { setTaskManageDialog(null); setTaskManageChoice(""); } }}>
+        <DialogContent className="max-w-sm rounded-[1.75rem] p-0 text-right [&>button]:hidden">
+          <DialogHeader className="border-b border-border/60 px-6 py-5 text-right">
+            <DialogTitle className="text-right text-xl">إدارة حالة المهمة الأدائية</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 p-6">
+            <div className="space-y-2">
+              <label className="text-sm font-bold text-foreground">الإجراء</label>
+              <Select value={taskManageChoice} onValueChange={setTaskManageChoice}>
+                <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {(() => {
+                    if (!taskManageDialog) return null;
+                    const task = tasks.find((item) => item.id === taskManageDialog.taskId);
+                    if (!task) return null;
+
+                    return getTaskManageOptions(task).map((option) => (
+                      <SelectItem key={option.value} value={option.value} className="justify-end pr-3 text-right">{option.label}</SelectItem>
+                    ));
+                  })()}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button variant="outline" disabled={taskManageSubmitting} onClick={() => setTaskManageDialog(null)}>إلغاء</Button>
+              <Button
+                disabled={!taskManageChoice || taskManageSubmitting}
+                onClick={async () => {
+                  if (!taskManageDialog || !taskManageChoice) return;
+
+                  if (taskManageChoice.startsWith("close_")) {
+                    const branch = taskManageChoice === "close_all"
+                      ? undefined
+                      : (taskManageChoice.replace("close_", "") as BranchId);
+                    setTaskManageSubmitting(true);
+                    try {
+                      await handleDeactivateTask(taskManageDialog.taskId, branch);
+                      setTaskManageDialog(null);
+                    } finally {
+                      setTaskManageSubmitting(false);
+                    }
+                    return;
+                  }
+
+                  const branch = taskManageChoice === "open_all"
+                    ? "all"
+                    : (taskManageChoice.replace("open_", "") as TaskOpenBranch);
+                  handleOpenTaskPicker(taskManageDialog.taskId);
+                  setTaskTimerBranch(branch);
+                  setTaskSkipBranchConflict(true);
+                  setTaskManageDialog(null);
+                }}
+              >
+                {taskManageSubmitting ? "جارٍ التنفيذ..." : "متابعة"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={Boolean(pendingDeleteTask)} onOpenChange={(open) => { if (!open) setPendingDeleteTask(null); }}>
+        <AlertDialogContent className="rounded-[1.75rem] text-right">
           <AlertDialogHeader className="text-right">
-            <AlertDialogTitle className="text-right">الفرع {taskDeactivateDialog ? branchLabels[taskDeactivateDialog.activeBranch] : ""} نشط</AlertDialogTitle>
+            <AlertDialogTitle className="text-right">تأكيد حذف المهمة الأدائية</AlertDialogTitle>
             <AlertDialogDescription className="text-right">
-              {taskDeactivateDialog && (
-                <>الفرع <span className="font-bold text-foreground">{branchLabels[taskDeactivateDialog.activeBranch]}</span> مفعّل حاليًا. ماذا تريد؟</>
-              )}
+              {pendingDeleteTask ? <>سيتم حذف <span className="font-bold text-foreground">{pendingDeleteTask.title}</span> نهائيًا.</> : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter className="flex-row-reverse gap-2 flex-wrap">
-            <AlertDialogAction
-              className="bg-primary"
-              onClick={() => {
-                if (!taskDeactivateDialog) return;
-                const { taskId, inactiveBranch } = taskDeactivateDialog;
-                setTaskDeactivateDialog(null);
-                handleOpenTaskPicker(taskId);
-                setTaskTimerBranch(inactiveBranch);
-                setTaskPickerStep("timer");
-              }}
-            >
-              تفعيل {taskDeactivateDialog ? `الفرع ${branchLabels[taskDeactivateDialog.inactiveBranch]}` : ""}
+          <AlertDialogFooter className="flex-row-reverse gap-2">
+            <AlertDialogAction className="bg-destructive hover:bg-destructive/90" onClick={() => void handleConfirmDeleteTask()}>
+              حذف
             </AlertDialogAction>
-            <AlertDialogAction
-              className="bg-destructive hover:bg-destructive/90"
-              onClick={() => {
-                if (!taskDeactivateDialog) return;
-                void handleDeactivateTask(taskDeactivateDialog.taskId, taskDeactivateDialog.activeBranch);
-                setTaskDeactivateDialog(null);
-              }}
-            >
-              إيقاف {taskDeactivateDialog ? `الفرع ${branchLabels[taskDeactivateDialog.activeBranch]}` : ""}
-            </AlertDialogAction>
-            <AlertDialogCancel onClick={() => setTaskDeactivateDialog(null)}>إلغاء</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setPendingDeleteTask(null)}>إلغاء</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
       <AlertDialog open={Boolean(taskBranchConflict)} onOpenChange={(open) => { if (!open) setTaskBranchConflict(null); }}>
-        <AlertDialogContent className="rounded-[1.5rem] text-right">
+        <AlertDialogContent className="rounded-[1.75rem] text-right">
           <AlertDialogHeader className="text-right">
             <AlertDialogTitle className="text-right">تنبيه: فرع نشط</AlertDialogTitle>
             <AlertDialogDescription className="text-right">

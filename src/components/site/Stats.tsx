@@ -159,7 +159,7 @@ const INDICATORS = [
   },
   {
     key: "tasks",
-    label: "التكاليف",
+    label: "المهام الأدائية",
   },
   {
     key: "completed30",

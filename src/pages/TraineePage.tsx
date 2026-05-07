@@ -12,7 +12,7 @@ const TraineePage = () => {
             <Badge className="w-fit bg-primary/10 text-primary hover:bg-primary/10">حساب المتدرب</Badge>
             <CardTitle className="text-2xl md:text-4xl">لوحة المتدرب</CardTitle>
             <CardDescription>
-              تم التعرف على نوع الحساب كمتدرب. يمكنك الانتقال مباشرة إلى الاختبارات أو صفحة التكاليف المستقلة.
+              تم التعرف على نوع الحساب كمتدرب. يمكنك الانتقال مباشرة إلى الاختبارات أو صفحة المهام الأدائية المستقلة.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-3">
@@ -23,7 +23,7 @@ const TraineePage = () => {
               <Link to="/course/post">الاختبار البعدي</Link>
             </Button>
             <Button asChild variant="outline">
-              <Link to="/tasks">التكاليف</Link>
+              <Link to="/tasks">المهام الأدائية</Link>
             </Button>
           </CardContent>
         </Card>

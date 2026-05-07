@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowRight, Check, Plus, Trash2 } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -28,7 +28,7 @@ import { toast } from "sonner";
 const assessmentLabels: Record<AssessmentType, string> = {
   pre: "الاختبار القبلي",
   post: "الاختبار البعدي",
-  tasks: "التكاليف",
+  tasks: "المهام الأدائية",
 };
 
 const stripQuestionOptionLabel = (value: string) => value
@@ -75,6 +75,171 @@ const emptyQuestionForm = {
 const dashboardCardClass = "rounded-[1.5rem] border-white/80 bg-white/95 shadow-[0_18px_45px_rgba(15,23,42,0.05)]";
 const dashboardPlainPanelClass = "rounded-[1.25rem] border border-border/60 bg-white";
 const dashboardEmptyStateClass = "rounded-[1.25rem] border border-dashed border-border/70 bg-white/70";
+const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
+
+const normalizeAnswer = (value: string) => value
+  .trim()
+  .toLowerCase()
+  .replace(/[\u064B-\u065F\u0670]/g, "")
+  .replace(/[أإآ]/g, "ا")
+  .replace(/ة/g, "ه")
+  .replace(/ى/g, "ي")
+  .replace(/[.،,؛;!?؟:]+$/g, "")
+  .replace(/^[أ-ي]\s*[).\-:]\s*/i, "")
+  .trim();
+
+const TEXT_ANSWER_SIMILARITY_THRESHOLD = 0.6;
+
+const normalizeTextForSimilarity = (value: string) =>
+  normalizeAnswer(value)
+    .replace(/[\u064B-\u065F\u0670]/g, "")
+    .replace(/[.,!?;:()\[\]{}\"'`~@#$%^&*_+=<>\\/\-|،؛؟]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const levenshteinDistance = (left: string, right: string) => {
+  if (left === right) return 0;
+  if (!left.length) return right.length;
+  if (!right.length) return left.length;
+
+  const prev = new Array<number>(right.length + 1);
+  const curr = new Array<number>(right.length + 1);
+
+  for (let j = 0; j <= right.length; j += 1) prev[j] = j;
+
+  for (let i = 1; i <= left.length; i += 1) {
+    curr[0] = i;
+    for (let j = 1; j <= right.length; j += 1) {
+      const substitutionCost = left[i - 1] === right[j - 1] ? 0 : 1;
+      curr[j] = Math.min(
+        prev[j] + 1,
+        curr[j - 1] + 1,
+        prev[j - 1] + substitutionCost,
+      );
+    }
+    for (let j = 0; j <= right.length; j += 1) prev[j] = curr[j];
+  }
+
+  return prev[right.length];
+};
+
+const calculateTextSimilarity = (leftRaw: string, rightRaw: string) => {
+  const left = normalizeTextForSimilarity(leftRaw);
+  const right = normalizeTextForSimilarity(rightRaw);
+
+  if (!left || !right) return 0;
+  if (left === right) return 1;
+
+  const maxLen = Math.max(left.length, right.length);
+  const editSimilarity = maxLen > 0 ? 1 - (levenshteinDistance(left, right) / maxLen) : 0;
+
+  const leftWords = new Set(left.split(" ").filter(Boolean));
+  const rightWords = new Set(right.split(" ").filter(Boolean));
+  const intersectionSize = [...leftWords].filter((word) => rightWords.has(word)).length;
+  const unionSize = new Set([...leftWords, ...rightWords]).size;
+  const jaccardSimilarity = unionSize > 0 ? intersectionSize / unionSize : 0;
+
+  const containmentSimilarity = left.includes(right) || right.includes(left)
+    ? Math.min(left.length, right.length) / Math.max(left.length, right.length)
+    : 0;
+
+  return Math.max(editSimilarity, jaccardSimilarity, containmentSimilarity);
+};
+
+const isAnswerCorrect = (question: CourseQuestion, answerValue: string) => {
+  if (!question.correctAnswer.trim()) return false;
+
+  if (question.type === "text") {
+    return calculateTextSimilarity(answerValue, question.correctAnswer) >= TEXT_ANSWER_SIMILARITY_THRESHOLD;
+  }
+
+  return normalizeAnswer(answerValue) === normalizeAnswer(question.correctAnswer);
+};
+
+const ProgramIndicatorRing = ({
+  label,
+  helperText,
+  progressValue,
+  displayValue,
+}: {
+  label: string;
+  helperText?: string;
+  progressValue: number;
+  displayValue: number;
+}) => {
+  const gradientId = useId();
+  const [animatedProgress, setAnimatedProgress] = useState(0);
+  const [animatedDisplay, setAnimatedDisplay] = useState(0);
+  const safeProgress = clampPercent(progressValue);
+  const safeDisplay = Math.max(0, displayValue);
+  const radius = 54;
+  const circumference = 2 * Math.PI * radius;
+
+  useEffect(() => {
+    let frameId = 0;
+    const startedAt = performance.now();
+    const duration = 2200;
+
+    const tick = (now: number) => {
+      const elapsed = Math.min((now - startedAt) / duration, 1);
+      const eased = 1 - Math.pow(1 - elapsed, 3);
+      setAnimatedProgress(safeProgress * eased);
+      setAnimatedDisplay(safeDisplay * eased);
+
+      if (elapsed < 1) {
+        frameId = requestAnimationFrame(tick);
+      }
+    };
+
+    setAnimatedProgress(0);
+    setAnimatedDisplay(0);
+    frameId = requestAnimationFrame(tick);
+
+    return () => cancelAnimationFrame(frameId);
+  }, [safeDisplay, safeProgress]);
+
+  const dashOffset = circumference * (1 - animatedProgress / 100);
+
+  return (
+    <div className="flex flex-col items-center gap-3 text-center">
+      <div className="relative flex h-40 w-40 items-center justify-center sm:h-44 sm:w-44">
+        <div className="absolute inset-2 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.34)_0%,_rgba(64,181,208,0.22)_18%,_rgba(11,103,126,0.22)_38%,_rgba(8,65,89,0.1)_58%,_transparent_76%)] blur-2xl" />
+        <svg viewBox="0 0 140 140" className="relative h-full w-full -rotate-90 overflow-visible">
+          <defs>
+            <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="hsl(191 72% 34%)" />
+              <stop offset="55%" stopColor="hsl(192 75% 28%)" />
+              <stop offset="100%" stopColor="hsl(193 78% 22%)" />
+            </linearGradient>
+          </defs>
+          <circle cx="70" cy="70" r={radius} fill="none" stroke="rgba(184, 205, 214, 0.42)" strokeWidth="13" />
+          <circle cx="70" cy="70" r={radius} fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="16" opacity="0.42" />
+          <circle
+            cx="70"
+            cy="70"
+            r={radius}
+            fill="none"
+            stroke={`url(#${gradientId})`}
+            strokeWidth="13"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={dashOffset}
+            className="drop-shadow-[0_0_14px_rgba(93,205,227,0.35)]"
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="flex h-[66%] w-[66%] items-center justify-center rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.96)_0%,_rgba(244,251,253,0.88)_56%,_rgba(233,245,249,0.28)_100%)] shadow-[inset_0_1px_14px_rgba(255,255,255,0.92)] backdrop-blur-sm">
+            <span className="text-[2rem] font-black leading-none tracking-[-0.04em] text-[#0a4c61] sm:text-[2.15rem]">
+              {`${Math.round(animatedDisplay)}%`}
+            </span>
+          </div>
+        </div>
+      </div>
+      <div className="max-w-[11rem] text-sm font-extrabold leading-7 text-[#08384a] sm:text-[0.95rem]">{label}</div>
+      {helperText ? <div className="text-[0.72rem] font-medium text-muted-foreground sm:text-xs">{helperText}</div> : null}
+    </div>
+  );
+};
 
 interface AdminAssessmentPageProps {
   assessmentType: AssessmentType;
@@ -156,6 +321,97 @@ const AdminAssessmentPage = ({ assessmentType }: AdminAssessmentPageProps) => {
 
     return selectedCourse.taskQuestions;
   }, [assessmentType, selectedCourse]);
+
+  const assessmentIndicators = useMemo(() => {
+    if (!selectedCourse) {
+      return {
+        pre: { average: 0, count: 0 },
+        post: { average: 0, count: 0 },
+      };
+    }
+
+    const getAssessmentQuestionsForCourse = (type: AssessmentType) => {
+      if (type === "pre") {
+        return selectedCourse.preQuestions;
+      }
+
+      if (type === "post") {
+        return selectedCourse.postQuestions;
+      }
+
+      return selectedCourse.taskQuestions;
+    };
+
+    const getSubmissionGrade = (type: AssessmentType, submissionId: string) => {
+      const submission = data.submissions.find((item) => item.id === submissionId);
+      const assessmentQuestions = getAssessmentQuestionsForCourse(type);
+      const questionTotal = assessmentQuestions.reduce((sum, question) => sum + question.points, 0);
+
+      if (!submission) {
+        return { score: 0, total: questionTotal };
+      }
+
+      const answersByQuestionId = new Map(submission.answers.map((answer) => [answer.questionId, answer]));
+
+      if (typeof submission.manualScore === "number" && Number.isFinite(submission.manualScore) && submission.manualScore >= 0) {
+        return { score: submission.manualScore, total: Math.max(questionTotal, submission.manualScore) };
+      }
+
+      const scoreOverride = answersByQuestionId.get("__score_override__")?.value;
+      if (scoreOverride !== undefined) {
+        const numericScore = Number(scoreOverride);
+        if (Number.isFinite(numericScore) && numericScore >= 0) {
+          return { score: numericScore, total: Math.max(questionTotal, numericScore) };
+        }
+      }
+
+      const score = assessmentQuestions.reduce((sum, question) => {
+        const answer = answersByQuestionId.get(question.id);
+
+        if (!answer || !question.correctAnswer.trim()) {
+          return sum;
+        }
+
+        return isAnswerCorrect(question, answer.value) ? sum + question.points : sum;
+      }, 0);
+
+      return { score, total: questionTotal };
+    };
+
+    const getAverage = (type: Extract<AssessmentType, "pre" | "post">) => {
+      const latestByLoginId = new Map<string, (typeof data.submissions)[number]>();
+
+      data.submissions
+        .filter((submission) => submission.courseId === selectedCourse.id && submission.assessmentType === type)
+        .slice()
+        .sort((left, right) => new Date(right.submittedAt).getTime() - new Date(left.submittedAt).getTime())
+        .forEach((submission) => {
+          if (!latestByLoginId.has(submission.loginId)) {
+            latestByLoginId.set(submission.loginId, submission);
+          }
+        });
+
+      const submissions = [...latestByLoginId.values()];
+      if (submissions.length === 0) {
+        return { average: 0, count: 0 };
+      }
+
+      const totalPercent = submissions.reduce((sum, submission) => {
+        const grade = getSubmissionGrade(type, submission.id);
+        return sum + (grade.total > 0 ? (grade.score / grade.total) * 100 : 0);
+      }, 0);
+
+      return {
+        average: clampPercent(totalPercent / submissions.length),
+        count: submissions.length,
+      };
+    };
+
+    return {
+      pre: getAverage("pre"),
+      post: getAverage("post"),
+    };
+  }, [data.submissions, selectedCourse]);
 
   const resetQuestionForm = () => {
     setQuestionForms([emptyQuestionForm]);
@@ -471,11 +727,11 @@ const AdminAssessmentPage = ({ assessmentType }: AdminAssessmentPageProps) => {
   const renderCreateQuestionDialog = () => (
     <>
     <Dialog open={isCreateDialogOpen} onOpenChange={handleCreateDialogChange}>
-      <DialogContent className="flex h-[90vh] w-[min(95vw,780px)] flex-col rounded-[1.5rem] border-white/80 bg-white p-0 text-right shadow-[0_24px_70px_rgba(15,23,42,0.14)] [&>button]:hidden">
+      <DialogContent className="flex h-[90vh] w-[min(95vw,780px)] flex-col rounded-[1.75rem] border-primary/20 bg-white p-0 text-right shadow-[0_24px_70px_rgba(15,23,42,0.14)] [&>button]:hidden">
 
         {/* Header */}
         <div className="shrink-0 border-b border-border/60 px-4 py-3">
-          <div className="flex items-center justify-end gap-2 text-right">
+          <div className="flex flex-row-reverse items-center justify-end gap-2 text-right">
             <Plus className="size-4 text-primary" strokeWidth={2.5} />
             <span className="text-base font-bold text-foreground">إضافة أسئلة</span>
           </div>
@@ -625,20 +881,23 @@ const AdminAssessmentPage = ({ assessmentType }: AdminAssessmentPageProps) => {
         </div>
 
         {assessmentType !== "tasks" && (
-          <div className="mb-6 flex flex-wrap gap-3">
-            {(["pre", "post"] as AssessmentType[]).map((type) => (
-              <Button
-                key={type}
-                asChild
-                variant={type === assessmentType ? "default" : "outline"}
-                className={type === assessmentType ? "!text-white hover:!text-white focus:!text-white active:!text-white visited:!text-white" : "text-foreground hover:text-foreground"}
-                style={type === assessmentType ? { color: "#ffffff", WebkitTextFillColor: "#ffffff" } : undefined}
-              >
-                <Link to={`/dashboard/course/${type}?courseId=${selectedCourse.id}`} style={type === assessmentType ? { color: "#ffffff", WebkitTextFillColor: "#ffffff" } : undefined}>
-                  <span style={type === assessmentType ? { color: "#ffffff", WebkitTextFillColor: "#ffffff" } : undefined}>{assessmentLabels[type]}</span>
-                </Link>
-              </Button>
-            ))}
+          <div className="mb-6 space-y-6">
+            <div className="flex flex-wrap gap-3">
+              {(["pre", "post"] as AssessmentType[]).map((type) => (
+                <Button
+                  key={type}
+                  asChild
+                  variant={type === assessmentType ? "default" : "outline"}
+                  className={type === assessmentType ? "!text-white hover:!text-white focus:!text-white active:!text-white visited:!text-white" : "text-foreground hover:text-foreground"}
+                  style={type === assessmentType ? { color: "#ffffff", WebkitTextFillColor: "#ffffff" } : undefined}
+                >
+                  <Link to={`/dashboard/course/${type}?courseId=${selectedCourse.id}`} style={type === assessmentType ? { color: "#ffffff", WebkitTextFillColor: "#ffffff" } : undefined}>
+                    <span style={type === assessmentType ? { color: "#ffffff", WebkitTextFillColor: "#ffffff" } : undefined}>{assessmentLabels[type]}</span>
+                  </Link>
+                </Button>
+              ))}
+            </div>
+
           </div>
         )}
 
@@ -670,7 +929,7 @@ const AdminAssessmentPage = ({ assessmentType }: AdminAssessmentPageProps) => {
                     </Button>
                   )}
                   <div className="sm:order-1">
-                    <CardTitle className="text-xl">محتوى نموذج التكليف</CardTitle>
+                    <CardTitle className="text-xl">محتوى نموذج المهمة الأدائية</CardTitle>
                   </div>
                 </div>
               </CardHeader>
@@ -689,9 +948,8 @@ const AdminAssessmentPage = ({ assessmentType }: AdminAssessmentPageProps) => {
               <CardHeader className="text-right">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   {canEditQuestions ? (
-                    <Button className="sm:order-2" onClick={() => setIsCreateDialogOpen(true)}>
+                    <Button size="icon" className="rounded-full sm:order-2 sm:translate-x-2" onClick={() => setIsCreateDialogOpen(true)}>
                       <Plus className="size-4" />
-                      إضافة سؤال
                     </Button>
                   ) : null}
                   <div className="sm:order-1">

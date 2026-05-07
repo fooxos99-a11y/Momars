@@ -24,7 +24,7 @@ const MAX_STUDENT_ATTACHMENT_SIZE = 5 * 1024 * 1024;
 const assessmentLabels: Record<AssessmentType, string> = {
   pre: "الاختبار القبلي",
   post: "الاختبار البعدي",
-  tasks: "التكاليف",
+  tasks: "المهام الأدائية",
 };
 
 interface CoursePageProps {
@@ -321,7 +321,7 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
             navigate("/");
           }
         }}>
-          <DialogContent className="max-w-xl rounded-[2rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_24px_70px_rgba(8,65,89,0.14)] [&>button]:hidden">
+          <DialogContent className="max-w-xl rounded-[1.75rem] border-primary/20 bg-white/95 p-0 text-right shadow-[0_24px_70px_rgba(8,65,89,0.14)] [&>button]:hidden">
             <div className="space-y-4 px-4 py-5 sm:px-5">
               <div className="space-y-2 text-right">
                 <h2 className="text-3xl font-extrabold text-foreground">لا يوجد بيانات حاليًا</h2>
@@ -380,7 +380,7 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
           </div>
 
           <Dialog open={Boolean(previewAttachment)} onOpenChange={(open) => !open && setPreviewAttachment(null)}>
-            <DialogContent className="max-h-[85vh] w-[calc(100vw-1.5rem)] max-w-4xl overflow-y-auto rounded-[1.75rem] border-white/80 bg-white/95 p-4 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden sm:p-6">
+            <DialogContent className="max-h-[85vh] w-[calc(100vw-1.5rem)] max-w-4xl overflow-y-auto rounded-[1.75rem] border-primary/20 bg-white/95 p-4 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden sm:p-6">
               <div className="space-y-4">
                 <div className="text-xl font-bold text-foreground">معاينة المرفق</div>
 
@@ -430,7 +430,7 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
             }}
           >
             <DialogContent
-              className="w-[calc(100vw-1.5rem)] max-w-lg rounded-[1.75rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden"
+              className="w-[calc(100vw-2rem)] max-w-[20rem] gap-0 rounded-[1.75rem] border-2 border-primary/35 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] sm:p-0 [&>button]:hidden"
               onEscapeKeyDown={(event) => {
                 if (isLocked) {
                   event.preventDefault();
@@ -447,18 +447,14 @@ const CoursePage = ({ assessmentType }: CoursePageProps) => {
                 }
               }}
             >
-              <div className="space-y-4 px-4 py-4">
-                <div className="space-y-2 text-right">
-                  <div className="text-sm text-muted-foreground">دخول الطالب</div>
-                  <div className="text-xl font-bold text-foreground sm:text-2xl">أدخل رقم الحساب</div>
-                </div>
+              <div className="space-y-4 px-5 py-5">
                 <div className="space-y-2">
-                  <label className="text-sm font-bold text-foreground">رقم الحساب</label>
-                  <Input value={loginId} onChange={(event) => setLoginId(event.target.value)} placeholder="رقم الحساب" />
+                  <label className="text-sm font-bold text-foreground">رقم الدخول</label>
+                  <Input value={loginId} onChange={(event) => setLoginId(event.target.value)} />
                 </div>
                 {error && <p className="text-sm font-medium text-destructive">{error}</p>}
                 <div className="flex justify-end gap-3">
-                  <Button className="w-full sm:w-auto" onClick={handleLogin}>دخول الطالب</Button>
+                  <Button className="w-full sm:w-auto" onClick={handleLogin}>دخول</Button>
                 </div>
               </div>
             </DialogContent>

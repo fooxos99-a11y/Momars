@@ -199,7 +199,7 @@ const Header = () => {
   const studentAssessmentItems: Array<{ type: StudentAssessmentMenuType; label: string }> = [
     { type: "pre", label: "الاختبار القبلي" },
     { type: "post", label: "الاختبار البعدي" },
-    { type: "tasks", label: "التكليف" },
+    { type: "tasks", label: "المهام الأدائية" },
     { type: "finalexam", label: "الاختبار النهائي" },
   ];
 
@@ -332,7 +332,7 @@ const Header = () => {
       )}
 
       <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
-        <DialogContent className="max-w-md overflow-hidden rounded-[2rem] border border-primary/15 bg-white/95 p-0 text-right shadow-[0_28px_80px_rgba(8,65,89,0.18)] backdrop-blur-sm [&>button]:hidden">
+        <DialogContent className="max-w-md overflow-hidden rounded-[1.75rem] border border-primary/20 bg-white/95 p-0 text-right shadow-[0_28px_80px_rgba(8,65,89,0.18)] backdrop-blur-sm [&>button]:hidden">
           <div className="relative">
             <div className="pointer-events-none absolute inset-0">
               <div className="absolute inset-x-5 top-4 h-px bg-[linear-gradient(90deg,transparent,rgba(16,118,153,0.7),transparent)]" />
@@ -375,11 +375,11 @@ const Header = () => {
       </Dialog>
 
       <Dialog open={loginOpen} onOpenChange={setLoginOpen}>
-        <DialogContent className="max-w-md rounded-[1.75rem] bg-white p-0 [&>button]:hidden">
-          <DialogHeader className="border-b border-border px-4 pb-2.5 pt-4 text-right">
-            <DialogTitle className="text-right text-2xl">تسجيل الدخول</DialogTitle>
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-[26rem] gap-0 rounded-[1.75rem] border-2 border-primary/35 bg-white p-0 sm:p-0 [&>button]:hidden">
+          <DialogHeader className="sr-only">
+            <DialogTitle>تسجيل الدخول</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 px-4 pb-4 pt-2.5">
+          <div className="space-y-5 px-6 py-6 sm:px-7 sm:py-7">
             <div className="space-y-2">
               <label className="text-sm font-bold text-foreground">رقم الدخول</label>
               <Input

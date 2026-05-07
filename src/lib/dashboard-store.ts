@@ -28,10 +28,12 @@ import {
   addSatisfactionQuestionToDatabase,
   addSatisfactionQuestionsToDatabase,
   deleteSatisfactionQuestionFromDatabase,
+  deleteSatisfactionQuestionsFromDatabase,
   submitSatisfactionResponsesToDatabase,
   addFinalExamQuestionToDatabase,
   deleteFinalExamQuestionFromDatabase,
   toggleFinalExamEnabledInDatabase,
+  updateFinalExamNotificationTemplateInDatabase,
   submitFinalExamToDatabase,
   copyFinalExamQuestionsInDatabase,
   setFinalExamManualScoreInDatabase,
@@ -261,7 +263,10 @@ export interface FinalExamSubmission {
 export interface FinalExamBranchSetting {
   isEnabled: boolean;
   closesAt: string | null;
+  notificationTemplate: string;
 }
+
+export const getDefaultFinalExamNotificationTemplate = () => "تم فتح الاختبار النهائي لفرع {branchLabel} لمدة {durationMinutes} دقيقة.";
 
 export const isFinalExamAvailable = (setting: FinalExamBranchSetting, now = Date.now()) => {
   if (!setting.isEnabled) return false;
@@ -371,8 +376,8 @@ const buildSatisfactionQuestionsForCourse = (
 const initialData: DashboardData = {
   roles: [
     { id: "admin", label: "مدير عام" },
-    { id: "male_manager", label: "مسؤول الرجال" },
-    { id: "female_manager", label: "مسؤول النساء" },
+    { id: "male_manager", label: "مشرف" },
+    { id: "female_manager", label: "مشرفة" },
     { id: "student", label: "طالب" },
     { id: "reciter", label: "مقرئ" },
     { id: "trainee", label: "متدرب (معلم)" },
@@ -394,8 +399,8 @@ const initialData: DashboardData = {
   finalExamQuestions: [],
   finalExamSubmissions: [],
   finalExamSettings: {
-    male: { isEnabled: false, closesAt: null },
-    female: { isEnabled: false, closesAt: null },
+    male: { isEnabled: false, closesAt: null, notificationTemplate: getDefaultFinalExamNotificationTemplate() },
+    female: { isEnabled: false, closesAt: null, notificationTemplate: getDefaultFinalExamNotificationTemplate() },
   },
   rolePermissions: { male_manager: {}, female_manager: {} },
 };
@@ -597,10 +602,16 @@ const normalizeData = (input?: Partial<DashboardData>): DashboardData => {
           male: {
             isEnabled: Boolean(typeof input.finalExamSettings.male === "boolean" ? input.finalExamSettings.male : input.finalExamSettings.male?.isEnabled),
             closesAt: typeof input.finalExamSettings.male === "object" && input.finalExamSettings.male ? input.finalExamSettings.male.closesAt ?? null : null,
+            notificationTemplate: typeof input.finalExamSettings.male === "object" && input.finalExamSettings.male
+              ? input.finalExamSettings.male.notificationTemplate ?? getDefaultFinalExamNotificationTemplate()
+              : getDefaultFinalExamNotificationTemplate(),
           },
           female: {
             isEnabled: Boolean(typeof input.finalExamSettings.female === "boolean" ? input.finalExamSettings.female : input.finalExamSettings.female?.isEnabled),
             closesAt: typeof input.finalExamSettings.female === "object" && input.finalExamSettings.female ? input.finalExamSettings.female.closesAt ?? null : null,
+            notificationTemplate: typeof input.finalExamSettings.female === "object" && input.finalExamSettings.female
+              ? input.finalExamSettings.female.notificationTemplate ?? getDefaultFinalExamNotificationTemplate()
+              : getDefaultFinalExamNotificationTemplate(),
           },
         }
       : initialData.finalExamSettings,
@@ -618,7 +629,7 @@ const useCreateDashboardStore = () => {
 
     const hydrateFromDatabase = async (markHydrated = false) => {
       try {
-        const nextData = await loadDashboardDataFromDatabase();
+        const nextData = normalizeData(await loadDashboardDataFromDatabase());
 
         if (!cancelled) {
           setData(nextData);
@@ -1477,6 +1488,24 @@ const useCreateDashboardStore = () => {
         throw error;
       }
     },
+    deleteSatisfactionQuestions: async (questionIds: string[]) => {
+      if (questionIds.length === 0) {
+        return;
+      }
+
+      const questionIdsSet = new Set(questionIds);
+      const previousQuestions = data.satisfactionQuestions;
+      const previousResponses = data.satisfactionResponses;
+      setSatisfactionQuestions((questions) => questions.filter((q) => !questionIdsSet.has(q.id)));
+      setSatisfactionResponses((responses) => responses.filter((r) => !questionIdsSet.has(r.questionId)));
+      try {
+        await deleteSatisfactionQuestionsFromDatabase(questionIds);
+      } catch (error) {
+        setSatisfactionQuestions(() => previousQuestions);
+        setSatisfactionResponses(() => previousResponses);
+        throw error;
+      }
+    },
     submitSatisfactionResponses: async (responses: Array<{ courseId: string; questionId: string; loginCode: string; studentName: string; ratingValue: number | null; textValue: string }>) => {
       const now = new Date().toISOString();
       const tempResponses: SatisfactionResponse[] = responses.map((r) => ({
@@ -1536,12 +1565,29 @@ const useCreateDashboardStore = () => {
       setFinalExamSettings((s) => ({
         ...s,
         [branchCode]: {
+          ...s[branchCode],
           isEnabled: newVal,
           closesAt: newVal ? closesAt : null,
         },
       }));
       try {
         await toggleFinalExamEnabledInDatabase(branchCode, newVal, newVal ? closesAt : null);
+      } catch (error) {
+        setFinalExamSettings(() => prevSettings);
+        throw error;
+      }
+    },
+    updateFinalExamNotificationTemplate: async (branchCode: BranchId, notificationTemplate: string) => {
+      const prevSettings = data.finalExamSettings;
+      setFinalExamSettings((settings) => ({
+        ...settings,
+        [branchCode]: {
+          ...settings[branchCode],
+          notificationTemplate,
+        },
+      }));
+      try {
+        await updateFinalExamNotificationTemplateInDatabase(branchCode, notificationTemplate);
       } catch (error) {
         setFinalExamSettings(() => prevSettings);
         throw error;

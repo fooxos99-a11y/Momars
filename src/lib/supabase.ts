@@ -252,8 +252,8 @@ export interface DatabaseDashboardAccount {
 
 const dashboardRoles = [
   { id: "admin" as const, label: "مدير عام" },
-  { id: "male_manager" as const, label: "مسؤول الرجال" },
-  { id: "female_manager" as const, label: "مسؤول النساء" },
+  { id: "male_manager" as const, label: "مشرف" },
+  { id: "female_manager" as const, label: "مشرفة" },
   { id: "student" as const, label: "طالب" },
   { id: "reciter" as const, label: "مقرئ" },
   { id: "trainee" as const, label: "متدرب (معلم)" },
@@ -1639,9 +1639,9 @@ export const restoreDashboardDataInDatabase = async (backupData: DashboardData, 
     reportProgress("جارٍ استرجاع أسئلة الاختبار النهائي", 1);
   }
 
-  await toggleFinalExamEnabledInDatabase("male", backupData.finalExamSettings?.male?.isEnabled ?? false, backupData.finalExamSettings?.male?.closesAt ?? null);
+  await toggleFinalExamEnabledInDatabase("male", backupData.finalExamSettings?.male?.isEnabled ?? false, backupData.finalExamSettings?.male?.closesAt ?? null, backupData.finalExamSettings?.male?.notificationTemplate ?? undefined);
   reportProgress("جارٍ استرجاع إعدادات الاختبار النهائي", 1);
-  await toggleFinalExamEnabledInDatabase("female", backupData.finalExamSettings?.female?.isEnabled ?? false, backupData.finalExamSettings?.female?.closesAt ?? null);
+  await toggleFinalExamEnabledInDatabase("female", backupData.finalExamSettings?.female?.isEnabled ?? false, backupData.finalExamSettings?.female?.closesAt ?? null, backupData.finalExamSettings?.female?.notificationTemplate ?? undefined);
   reportProgress("جارٍ استرجاع إعدادات الاختبار النهائي", 1);
 
   for (const submission of backupData.finalExamSubmissions ?? []) {
@@ -2243,12 +2243,20 @@ export const addSatisfactionQuestionsToDatabase = async (inputs: Array<{ courseI
   }));
 };
 
-export const deleteSatisfactionQuestionFromDatabase = async (questionId: string) => {
-  const { error } = await supabase.from("satisfaction_questions").delete().eq("id", questionId);
+export const deleteSatisfactionQuestionsFromDatabase = async (questionIds: string[]) => {
+  if (questionIds.length === 0) {
+    return;
+  }
+
+  const { error } = await supabase.from("satisfaction_questions").delete().in("id", questionIds);
 
   if (error) {
     throw error;
   }
+};
+
+export const deleteSatisfactionQuestionFromDatabase = async (questionId: string) => {
+  await deleteSatisfactionQuestionsFromDatabase([questionId]);
 };
 
 export const submitSatisfactionResponsesToDatabase = async (responses: Array<{ courseId: string; questionId: string; loginCode: string; studentName: string; ratingValue: number | null; textValue: string }>) => {
@@ -2283,18 +2291,18 @@ export const submitSatisfactionResponsesToDatabase = async (responses: Array<{ c
 export const loadFinalExamDataFromDatabase = async (): Promise<{
   questions: FinalExamQuestion[];
   submissions: FinalExamSubmission[];
-  settings: { male: { isEnabled: boolean; closesAt: string | null }; female: { isEnabled: boolean; closesAt: string | null } };
+  settings: { male: { isEnabled: boolean; closesAt: string | null; notificationTemplate: string }; female: { isEnabled: boolean; closesAt: string | null; notificationTemplate: string } };
 }> => {
   const [settingsRes, questionsRes, submissionsRes, answersRes] = await Promise.all([
-    supabase.from("final_exam_settings").select("branch_code, is_enabled, closes_at"),
+    supabase.from("final_exam_settings").select("branch_code, is_enabled, closes_at, notification_template"),
     supabase.from("final_exam_questions").select("id, branch_code, question_type, prompt, options, allow_file, points, correct_answer, attachment_name, attachment_type, attachment_data_url, sort_order, created_at").order("sort_order"),
     supabase.from("final_exam_submissions").select("id, branch_code, student_name, login_code, manual_score, submitted_at"),
     supabase.from("final_exam_submission_answers").select("id, submission_id, question_id, answer_text, file_name, file_type, file_data_url"),
   ]);
 
   const settings = {
-    male: { isEnabled: false, closesAt: null as string | null },
-    female: { isEnabled: false, closesAt: null as string | null },
+    male: { isEnabled: false, closesAt: null as string | null, notificationTemplate: "" },
+    female: { isEnabled: false, closesAt: null as string | null, notificationTemplate: "" },
   };
   for (const row of settingsRes.data ?? []) {
     const code = row.branch_code as string;
@@ -2302,6 +2310,7 @@ export const loadFinalExamDataFromDatabase = async (): Promise<{
       settings[code] = {
         isEnabled: Boolean(row.is_enabled),
         closesAt: (row.closes_at as string | null) ?? null,
+        notificationTemplate: (row.notification_template as string | null) ?? "",
       };
     }
   }
@@ -2374,10 +2383,17 @@ export const deleteFinalExamQuestionFromDatabase = async (id: string) => {
   if (error) throw error;
 };
 
-export const toggleFinalExamEnabledInDatabase = async (branchCode: BranchId, isEnabled: boolean, closesAt: string | null) => {
+export const toggleFinalExamEnabledInDatabase = async (branchCode: BranchId, isEnabled: boolean, closesAt: string | null, notificationTemplate?: string) => {
   const { error } = await supabase
     .from("final_exam_settings")
-    .upsert({ branch_code: branchCode, is_enabled: isEnabled, closes_at: closesAt }, { onConflict: "branch_code" });
+    .upsert({ branch_code: branchCode, is_enabled: isEnabled, closes_at: closesAt, ...(notificationTemplate !== undefined ? { notification_template: notificationTemplate } : {}) }, { onConflict: "branch_code" });
+  if (error) throw error;
+};
+
+export const updateFinalExamNotificationTemplateInDatabase = async (branchCode: BranchId, notificationTemplate: string) => {
+  const { error } = await supabase
+    .from("final_exam_settings")
+    .upsert({ branch_code: branchCode, notification_template: notificationTemplate }, { onConflict: "branch_code" });
   if (error) throw error;
 };
 

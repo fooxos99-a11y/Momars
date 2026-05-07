@@ -1,7 +1,6 @@
 ﻿import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import Dashboard from "@/pages/Dashboard";
 import ReciterPage from "@/pages/ReciterPage";
 import type { DashboardData } from "@/lib/dashboard-store";
 
@@ -105,28 +104,6 @@ describe("reciter transfer ui", () => {
         branchId: null,
       }),
     );
-  });
-
-  it("opens the transfer dialog from the dashboard reciters tab", async () => {
-    render(
-      <MemoryRouter initialEntries={["/dashboard"]}>
-        <Routes>
-          <Route path="/dashboard" element={<Dashboard />} />
-        </Routes>
-      </MemoryRouter>,
-    );
-
-    fireEvent.click(await screen.findByRole("button", { name: /الإقراء/i }));
-
-    await waitFor(() => {
-      expect(screen.getAllByRole("button", { name: /طالب منقول/i }).length).toBeGreaterThan(0);
-    });
-
-    fireEvent.click(screen.getAllByRole("button", { name: /طالب منقول/i })[0]);
-
-    await waitFor(() => {
-      expect(screen.getByText("نقل الطالب")).toBeInTheDocument();
-    });
   });
 
   it("shows a transfer button in the reciter page and opens the transfer dialog", async () => {

@@ -2,8 +2,8 @@
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Link, Navigate, useNavigate } from "react-router-dom";
-import { AlertCircle, ArrowRightLeft, BarChart3, Bell, BookOpen, Check, ClipboardList, Copy, Database, Download, Eye, FilePen, FileText, FileUp, GraduationCap, Home, Info, LayoutPanelTop, Maximize2, Menu, Minus, MoreHorizontal, Pencil, Plus, Power, ShieldCheck, SquarePen, Trash2, TrendingDown, TrendingUp, Users, X } from "lucide-react";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
+import { AlertCircle, ArrowRightLeft, BarChart3, Bell, BookOpen, Check, ClipboardList, Copy, Database, Download, Eye, FilePen, FileText, FileUp, GraduationCap, Info, LayoutPanelTop, Link2, Maximize2, Menu, Minus, MoreHorizontal, Pencil, Plus, Power, ShieldCheck, SquarePen, Trash2, TrendingDown, TrendingUp, Users, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
@@ -45,6 +46,7 @@ import {
   type StudentRecord,
   getAssessmentAvailabilityDeadline,
   getDefaultAssessmentNotificationTemplate,
+  getDefaultFinalExamNotificationTemplate,
   getManagedBranchId,
   getActiveCourse,
   getAssignedStudents,
@@ -98,11 +100,12 @@ const branchLabels: Record<BranchId, string> = {
 };
 
 type IndicatorsBranchFilter = BranchId | "all";
+type AssessmentOpenBranch = BranchId | "all";
 
 const assessmentLabels: Record<AssessmentType, string> = {
   pre: "الاختبار القبلي",
   post: "الاختبار البعدي",
-  tasks: "التكاليف",
+  tasks: "المهام الأدائية",
 };
 
 const BACKUP_RESTORE_PROGRESS_STORAGE_KEY = "momars-backup-restore-progress";
@@ -133,11 +136,6 @@ const formatDurationMinutes = (minutes: number) => {
   return `${minutes} دقيقة`;
 };
 
-const courseStatusHints = [
-  "يشير ظهور الحالة باللون الأخضر إلى أنها مفعلة.",
-  "يشير ظهور الحالة باللون الأبيض إلى أنها غير مفعلة.",
-];
-
 const emptyStudentForm = {
   name: "",
   loginId: "",
@@ -162,6 +160,7 @@ const emptyQuestionForm = {
 };
 
 const emptyQuestionImportMessages = { pre: "", post: "", tasks: "" };
+const ALL_COURSE_INDICATORS_ID = "all";
 
 const stripQuestionOptionLabel = (value: string) => value
   .trim()
@@ -231,6 +230,8 @@ type PreviewAttachment = {
 const RECITER_FILTER_ALL_STUDENTS = "all-students";
 const RECITER_FILTER_ALL_RECITERS = "all-reciters";
 const RECITER_FILTER_CERTIFIED = "certified";
+const ALL_SATISFACTION_DELETE_COURSES = "__all_satisfaction_courses__";
+const getSatisfactionDeleteQuestionKey = (prompt: string, type: "rating" | "text") => `${type}::${prompt.trim()}`;
 
 const normalizeAnswer = (value: string) => value
   .trim()
@@ -420,19 +421,21 @@ const parseBulkStudentsFromWorksheet = (rows: unknown[][], defaultBranchId: Bran
 };
 
 const dashboardMenu = [
-  { id: "home", label: "الرئيسية", icon: Home, hint: "نظرة عامة شاملة" },
   { id: "attendance", label: "التحضير", icon: Users, hint: "تحضير الطلاب" },
   { id: "courses", label: "الاختبارات", icon: Database, hint: "المحتوى والروابط" },
   { id: "tasks", label: "المهام الأدائية", icon: Copy, hint: "تكاليف مستقلة" },
   { id: "finalexam", label: "الاختبار النهائي", icon: GraduationCap, hint: "اختبار نهائي لكل فرع" },
-  { id: "reciters", label: "الإقراء", icon: BookOpen, hint: "إدارة الحسابات" },
-  { id: "students", label: "المتدربين", icon: Users, hint: "إدارة الطلاب" },
   { id: "permissions", label: "الصلاحيات", icon: ShieldCheck, hint: "صلاحيات المسؤولين" },
   { id: "notifications", label: "الإشعارات", icon: Bell, hint: "إرسال التنبيهات" },
-  { id: "indicators", label: "إحصائيات الطلاب", icon: LayoutPanelTop, hint: "إحصائيات الطلاب" },
+  { id: "indicators", label: "المستخدمين", icon: LayoutPanelTop, hint: "إدارة المستخدمين" },
   { id: "satisfaction", label: "استبيان الرضا", icon: ClipboardList, hint: "أسئلة الاستبيان ونتائجه" },
   { id: "results", label: "النتائج", icon: BarChart3, hint: "الحضور والتقييم" },
 ] as const;
+
+type DashboardMenuTab = typeof dashboardMenu[number]["id"];
+type DashboardTab = DashboardMenuTab | "home" | "activity";
+const dashboardMenuIds = dashboardMenu.map((item) => item.id) as DashboardMenuTab[];
+const isDashboardMenuTab = (value: string): value is DashboardMenuTab => dashboardMenuIds.includes(value as DashboardMenuTab);
 
 const dashboardCardClass = "rounded-[1.5rem] border-white/80 bg-white/95 shadow-[0_18px_45px_rgba(15,23,42,0.05)]";
 const dashboardMutedPanelClass = "rounded-[1.25rem] border border-border/60 bg-muted/20";
@@ -607,6 +610,7 @@ const SortableCourseCard = ({ id, children }: { id: string; children: React.Reac
 const Dashboard = () => {
   const storedSession = loadAccessSession();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const store = useDashboardStore();
   const { data, loadError, isHydrated } = store;
@@ -644,7 +648,33 @@ const Dashboard = () => {
   const canCreateCourses = session.role === "admin";
   const canEditCourseModels = session.role === "admin";
   const canManageStandaloneTasks = session.role === "admin" || session.role === "male_manager" || session.role === "female_manager";
-  const [dashboardTab, setDashboardTab] = useState<"home" | "students" | "reciters" | "reader" | "courses" | "tasks" | "attendance" | "notifications" | "indicators" | "results" | "statistics" | "activity">("home");
+  const requestedDashboardTab = searchParams.get("tab");
+  const dashboardTab: DashboardTab = useMemo(() => {
+    if (!requestedDashboardTab || requestedDashboardTab === "home") {
+      return "home";
+    }
+
+    if (requestedDashboardTab === "activity") {
+      return "activity";
+    }
+
+    return isDashboardMenuTab(requestedDashboardTab) ? requestedDashboardTab : "home";
+  }, [requestedDashboardTab]);
+  const setDashboardTab = useCallback((tab: DashboardTab, options?: { replace?: boolean }) => {
+    const nextParams = new URLSearchParams(searchParams);
+
+    if (tab === "home") {
+      nextParams.delete("tab");
+    } else {
+      nextParams.set("tab", tab);
+    }
+
+    if (nextParams.toString() === searchParams.toString()) {
+      return;
+    }
+
+    setSearchParams(nextParams, options);
+  }, [searchParams, setSearchParams]);
   const [studentsOpen, setStudentsOpen] = useState(false);
   const [studentEntryMode, setStudentEntryMode] = useState<"single" | "bulk">("single");
   const [selectedBranch, setSelectedBranch] = useState<IndicatorsBranchFilter>(managedBranchId ?? "male");
@@ -652,7 +682,15 @@ const Dashboard = () => {
   const [bulkStudents, setBulkStudents] = useState<BulkStudentRow[]>([]);
   const [bulkStudentFileName, setBulkStudentFileName] = useState("");
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
+  const [studentManagerMode, setStudentManagerMode] = useState(false);
+  const [studentManagerEntityType, setStudentManagerEntityType] = useState<"student" | "reciter">("student");
+  const [studentPickerBranchId, setStudentPickerBranchId] = useState<BranchId>("male");
+  const [studentPickerStudentId, setStudentPickerStudentId] = useState("");
+  const [studentPickerReciterId, setStudentPickerReciterId] = useState("");
+  const [studentTransferTargetReciterId, setStudentTransferTargetReciterId] = useState("");
+  const [partsDialogStudentId, setPartsDialogStudentId] = useState<string | null>(null);
   const [studentError, setStudentError] = useState("");
+  const bulkStudentFileInputRef = useRef<HTMLInputElement | null>(null);
   const [adminsOpen, setAdminsOpen] = useState(false);
   const [adminForm, setAdminForm] = useState(emptyAdminForm);
   const [adminError, setAdminError] = useState("");
@@ -685,7 +723,8 @@ const Dashboard = () => {
   const [satisfactionCourseId, setSatisfactionCourseId] = useState("");
   const [satisfactionAddDialogOpen, setSatisfactionAddDialogOpen] = useState(false);
   const [satisfactionDeleteDialogOpen, setSatisfactionDeleteDialogOpen] = useState(false);
-  const [satisfactionDeleteQuestionId, setSatisfactionDeleteQuestionId] = useState("");
+  const [satisfactionDeleteQuestionKey, setSatisfactionDeleteQuestionKey] = useState("");
+  const [satisfactionDeleteCourseId, setSatisfactionDeleteCourseId] = useState(ALL_SATISFACTION_DELETE_COURSES);
   const [satisfactionResultsCourseId, setSatisfactionResultsCourseId] = useState("");
   const [satisfactionPreviewText, setSatisfactionPreviewText] = useState<string | null>(null);
   const satisfactionIndicatorsExportRef = useRef<HTMLDivElement | null>(null);
@@ -736,7 +775,7 @@ const Dashboard = () => {
   const [indicatorsBranchId, setIndicatorsBranchId] = useState<IndicatorsBranchFilter>("all");
   const [indicatorsSortOrder, setIndicatorsSortOrder] = useState<"alpha" | "overall-desc" | "overall-asc">("overall-desc");
   const [indicatorsCourseId, setIndicatorsCourseId] = useState("all");
-  const [courseIndicatorsBranch, setCourseIndicatorsBranch] = useState<BranchId>("male");
+  const [courseIndicatorsBranch, setCourseIndicatorsBranch] = useState<IndicatorsBranchFilter>(managedBranchId ?? "all");
   const [courseIndicatorsCourseId, setCourseIndicatorsCourseId] = useState("");
   const [detailsSubmissionId, setDetailsSubmissionId] = useState<string | null>(null);
   const [finalExamDetailsSubmissionId, setFinalExamDetailsSubmissionId] = useState<string | null>(null);
@@ -800,6 +839,7 @@ const Dashboard = () => {
   const [notifTemplatePre, setNotifTemplatePre] = useState("");
   const [notifTemplatePost, setNotifTemplatePost] = useState("");
   const [notifTemplateTasks, setNotifTemplateTasks] = useState("");
+  const [notifTemplateFinalExam, setNotifTemplateFinalExam] = useState("");
   const [notifTemplateSaving, setNotifTemplateSaving] = useState(false);
   const [assessmentActionPicker, setAssessmentActionPicker] = useState<{ courseId: string; assessmentType: AssessmentType } | null>(null);
   const [assessmentPickerStep, setAssessmentPickerStep] = useState<"pick" | "timer">("pick");
@@ -807,13 +847,16 @@ const Dashboard = () => {
   const [assessmentDurationMinutes, setAssessmentDurationMinutes] = useState("30");
   const [assessmentNoTimeLimit, setAssessmentNoTimeLimit] = useState(false);
   const [assessmentTemplateDraft, setAssessmentTemplateDraft] = useState("");
-  const [assessmentTargetBranch, setAssessmentTargetBranch] = useState<BranchId | null>(null);
+  const [assessmentTargetBranch, setAssessmentTargetBranch] = useState<AssessmentOpenBranch | null>(null);
   const [assessmentBlockedBranch, setAssessmentBlockedBranch] = useState<BranchId | null>(null);
   const [assessmentRestrictToBranchOnly, setAssessmentRestrictToBranchOnly] = useState(false);
   const [assessmentAvailabilityError, setAssessmentAvailabilityError] = useState("");
   const [assessmentTemplateOpen, setAssessmentTemplateOpen] = useState(false);
+  const [assessmentSubmitting, setAssessmentSubmitting] = useState(false);
   const [crossCourseConflict, setCrossCourseConflict] = useState<{ conflictingCourseId: string; conflictingCourseTitle: string; pendingCourseId: string; pendingType: AssessmentType } | null>(null);
-  const [branchConflictDialog, setBranchConflictDialog] = useState<{ courseId: string; assessmentType: AssessmentType; activeBranch: BranchId; inactiveBranch: BranchId } | null>(null);
+  const [assessmentManageDialog, setAssessmentManageDialog] = useState<{ courseId: string; assessmentType: AssessmentType } | null>(null);
+  const [assessmentManageChoice, setAssessmentManageChoice] = useState<string>("");
+  const [assessmentManageSubmitting, setAssessmentManageSubmitting] = useState(false);
   const [pendingDeleteStudent, setPendingDeleteStudent] = useState<{ id: string; name: string } | null>(null);
   const [pendingDeleteReciter, setPendingDeleteReciter] = useState<{ id: string; name: string } | null>(null);
   const [pendingDeleteCourse, setPendingDeleteCourse] = useState<{ id: string; name: string } | null>(null);
@@ -890,6 +933,17 @@ const Dashboard = () => {
     const closesAt = new Date(Date.now() + minutes * 60 * 1000).toISOString();
     setFinalExamActivationError("");
     await store.toggleFinalExamEnabled(effectiveFinalExamManageBranch, closesAt);
+    const finalExamTemplate = data.finalExamSettings[effectiveFinalExamManageBranch]?.notificationTemplate?.trim() || getDefaultFinalExamNotificationTemplate();
+    const finalExamMessage = finalExamTemplate
+      .split("{courseTitle}").join("الاختبار النهائي")
+      .split("{assessmentLabel}").join("الاختبار النهائي")
+      .split("{branchLabel}").join(branchLabels[effectiveFinalExamManageBranch])
+      .split("{durationMinutes}").join(String(minutes))
+      .split("{durationLabel}").join(formatDurationMinutes(minutes));
+    const pushStudents = getBranchStudents(data, effectiveFinalExamManageBranch);
+    if (pushStudents.length > 0) {
+      sendPushNotification("الاختبار النهائي", finalExamMessage, pushStudents.map((student) => student.loginId), "/final-exam");
+    }
     setFinalExamActivationDialogOpen(false);
   };
   const effectiveSelectedBranch = managedBranchId ?? selectedBranch;
@@ -915,11 +969,44 @@ const Dashboard = () => {
     if (!canViewActivityLog && item.id === "activity") return false;
     return true;
   });
+  const secondaryDashboardMenu = availableDashboardMenu.filter((item) => item.id === "permissions" || item.id === "notifications");
+  const primaryDashboardMenu = availableDashboardMenu.filter((item) => item.id !== "permissions" && item.id !== "notifications");
   const branchStudents = effectiveSelectedBranch === "all" ? data.students : getBranchStudents(data, effectiveSelectedBranch);
+  const studentManagerBranch = managedBranchId ?? studentPickerBranchId;
+  const studentManagerStudents = useMemo(
+    () => data.students.filter((student) => student.branchId === studentManagerBranch),
+    [data.students, studentManagerBranch],
+  );
+  const studentManagerReciters = useMemo(
+    () => data.reciters.filter((reciter) => reciter.branchId === studentManagerBranch),
+    [data.reciters, studentManagerBranch],
+  );
   const branchReciters = useMemo(
     () => data.reciters.filter((reciter) => reciter.branchId === effectiveReciterBranchFilter),
     [data.reciters, effectiveReciterBranchFilter],
   );
+  const indicatorReciters = useMemo(
+    () => indicatorsBranchId === "all" ? [] : data.reciters.filter((reciter) => reciter.branchId === indicatorsBranchId),
+    [data.reciters, indicatorsBranchId],
+  );
+  const selectedManagerStudent = editingStudentId
+    ? data.students.find((student) => student.id === editingStudentId) ?? null
+    : null;
+  const selectedManagerStudentReciter = selectedManagerStudent
+    ? data.reciters.find((reciter) => reciter.studentIds.includes(selectedManagerStudent.id)) ?? null
+    : null;
+  const availableStudentTransferReciters = useMemo(() => {
+    if (!selectedManagerStudent) {
+      return [] as typeof data.reciters;
+    }
+
+    return data.reciters.filter(
+      (reciter) => reciter.branchId === selectedManagerStudent.branchId && reciter.id !== selectedManagerStudentReciter?.id,
+    );
+  }, [data.reciters, selectedManagerStudent, selectedManagerStudentReciter]);
+  const partsDialogStudent = partsDialogStudentId
+    ? data.students.find((student) => student.id === partsDialogStudentId) ?? null
+    : null;
   const isAllStudentsReciterView = selectedReciterFilter === RECITER_FILTER_ALL_STUDENTS || selectedReciterFilter === RECITER_FILTER_CERTIFIED;
   const isCertifiedReciterView = selectedReciterFilter === RECITER_FILTER_CERTIFIED;
   const isSpecificReciterView = (
@@ -1102,6 +1189,45 @@ const Dashboard = () => {
         .filter((question) => question.courseId === selectedSatisfactionCourse.id)
         .sort((left, right) => left.sortOrder - right.sortOrder)
     : [];
+  const satisfactionDeleteQuestionOptions = useMemo(() => {
+    const seenKeys = new Set<string>();
+
+    return [...(data.satisfactionQuestions ?? [])]
+      .sort((left, right) => left.prompt.localeCompare(right.prompt, "ar") || left.createdAt.localeCompare(right.createdAt))
+      .filter((question) => {
+        const key = getSatisfactionDeleteQuestionKey(question.prompt, question.type);
+
+        if (seenKeys.has(key)) {
+          return false;
+        }
+
+        seenKeys.add(key);
+        return true;
+      })
+      .map((question) => ({
+        key: getSatisfactionDeleteQuestionKey(question.prompt, question.type),
+        prompt: question.prompt,
+      }));
+  }, [data.satisfactionQuestions]);
+  const satisfactionDeleteMatchingQuestions = useMemo(
+    () => (data.satisfactionQuestions ?? []).filter((question) => getSatisfactionDeleteQuestionKey(question.prompt, question.type) === satisfactionDeleteQuestionKey),
+    [data.satisfactionQuestions, satisfactionDeleteQuestionKey],
+  );
+  const satisfactionDeleteCourseOptions = useMemo(() => {
+    const seenCourseIds = new Set<string>();
+
+    return satisfactionDeleteMatchingQuestions
+      .map((question) => satisfactionCourseItems.find((course) => course.id === question.courseId) ?? null)
+      .filter((course): course is NonNullable<typeof course> => Boolean(course))
+      .filter((course) => {
+        if (seenCourseIds.has(course.id)) {
+          return false;
+        }
+
+        seenCourseIds.add(course.id);
+        return true;
+      });
+  }, [satisfactionCourseItems, satisfactionDeleteMatchingQuestions]);
   const pendingDeleteStudentRecord = pendingDeleteStudent
     ? data.students.find((item) => item.id === pendingDeleteStudent.id) ?? null
     : null;
@@ -1109,29 +1235,57 @@ const Dashboard = () => {
     ? data.reciters.filter((reciter) => reciter.studentIds.includes(pendingDeleteStudentRecord.id))
     : [];
   const handleDeleteSelectedSatisfactionQuestion = useCallback(async () => {
-    if (!satisfactionDeleteQuestionId) {
+    if (!satisfactionDeleteQuestionKey) {
       return;
     }
 
-    const question = data.satisfactionQuestions.find((item) => item.id === satisfactionDeleteQuestionId) ?? null;
-    const removedResponsesCount = (data.satisfactionResponses ?? []).filter((item) => item.questionId === satisfactionDeleteQuestionId).length;
+    const questionsToDelete = satisfactionDeleteMatchingQuestions.filter((question) => (
+      satisfactionDeleteCourseId === ALL_SATISFACTION_DELETE_COURSES || question.courseId === satisfactionDeleteCourseId
+    ));
+
+    if (questionsToDelete.length === 0) {
+      return;
+    }
+
+    const questionIds = questionsToDelete.map((question) => question.id);
+    const removedResponsesCount = (data.satisfactionResponses ?? []).filter((item) => questionIds.includes(item.questionId)).length;
+    const primaryQuestion = questionsToDelete[0] ?? null;
+    const deletedCoursesCount = new Set(questionsToDelete.map((question) => question.courseId)).size;
 
     try {
-      await store.deleteSatisfactionQuestion(satisfactionDeleteQuestionId);
+      await store.deleteSatisfactionQuestions(questionIds);
       setSatisfactionDeleteDialogOpen(false);
-      setSatisfactionDeleteQuestionId("");
+      setSatisfactionDeleteQuestionKey("");
+      setSatisfactionDeleteCourseId(ALL_SATISFACTION_DELETE_COURSES);
       showSuccessToast(
         "تم حذف السؤال",
-        question
-          ? `تم حذف السؤال "${question.prompt}"${removedResponsesCount > 0 ? ` مع إزالة ${removedResponsesCount} استجابة مرتبطة.` : "."}`
+        primaryQuestion
+          ? `تم حذف السؤال "${primaryQuestion.prompt}" من ${deletedCoursesCount === 1 ? "دورة واحدة" : `${deletedCoursesCount} دورات`}${removedResponsesCount > 0 ? ` مع إزالة ${removedResponsesCount} استجابة مرتبطة.` : "."}`
           : "تم حذف السؤال بنجاح.",
       );
-      appendActivityLog({ action: "حذف سؤال الاستبيان", target: question?.prompt ?? "سؤال استبيان", status: "نجحت", details: removedResponsesCount > 0 ? `تم حذف السؤال مع إزالة ${removedResponsesCount} استجابة مرتبطة.` : "تم حذف السؤال بدون استجابات مرتبطة." });
+      appendActivityLog({ action: "حذف سؤال الاستبيان", target: primaryQuestion?.prompt ?? "سؤال استبيان", status: "نجحت", details: removedResponsesCount > 0 ? `تم حذف السؤال من ${deletedCoursesCount} دورات مع إزالة ${removedResponsesCount} استجابة مرتبطة.` : `تم حذف السؤال من ${deletedCoursesCount} دورات بدون استجابات مرتبطة.` });
     } catch {
       showErrorToast("تعذر حذف سؤال الاستبيان.");
-      appendActivityLog({ action: "حذف سؤال الاستبيان", target: question?.prompt ?? "سؤال استبيان", status: "فشلت", details: "فشل حذف سؤال الاستبيان." });
+      appendActivityLog({ action: "حذف سؤال الاستبيان", target: primaryQuestion?.prompt ?? "سؤال استبيان", status: "فشلت", details: "فشل حذف سؤال الاستبيان." });
     }
-  }, [data.satisfactionQuestions, data.satisfactionResponses, satisfactionDeleteQuestionId, store]);
+  }, [data.satisfactionResponses, satisfactionDeleteCourseId, satisfactionDeleteMatchingQuestions, satisfactionDeleteQuestionKey, store]);
+
+  useEffect(() => {
+    if (!satisfactionDeleteQuestionKey) {
+      if (satisfactionDeleteCourseId !== ALL_SATISFACTION_DELETE_COURSES) {
+        setSatisfactionDeleteCourseId(ALL_SATISFACTION_DELETE_COURSES);
+      }
+      return;
+    }
+
+    if (satisfactionDeleteCourseId === ALL_SATISFACTION_DELETE_COURSES) {
+      return;
+    }
+
+    if (!satisfactionDeleteCourseOptions.some((course) => course.id === satisfactionDeleteCourseId)) {
+      setSatisfactionDeleteCourseId(satisfactionDeleteCourseOptions[0]?.id ?? ALL_SATISFACTION_DELETE_COURSES);
+    }
+  }, [satisfactionDeleteCourseId, satisfactionDeleteCourseOptions, satisfactionDeleteQuestionKey]);
   const activeCourse = getActiveCourse(data);
   const indicatorStudents = indicatorsBranchId === "all" ? data.students : getBranchStudents(data, indicatorsBranchId);
   const selectedIndicatorsCourse = indicatorsCourseId === "all"
@@ -1163,6 +1317,73 @@ const Dashboard = () => {
   const resultsCourse = isResultsFinalExamSelected
     ? null
     : [...courseItems, ...getTasks(data).sort((a, b) => a.sortOrder - b.sortOrder)].find((course) => course.id === resultsCourseId) ?? courseItems[0] ?? null;
+  const getAssessmentQuestionsForCourse = (courseId: string, assessmentType: AssessmentType) => {
+    const course = data.courses.find((item) => item.id === courseId);
+
+    if (!course) {
+      return [] as CourseQuestion[];
+    }
+
+    if (assessmentType === "pre") {
+      return course.preQuestions;
+    }
+
+    if (assessmentType === "post") {
+      return course.postQuestions;
+    }
+
+    return course.taskQuestions;
+  };
+  const getLatestSubmissionByLoginId = (courseId: string, assessmentType: AssessmentType) => {
+    const latestByLoginId = new Map<string, typeof data.submissions[number]>();
+
+    data.submissions
+      .filter((submission) => submission.courseId === courseId && submission.assessmentType === assessmentType)
+      .slice()
+      .sort((left, right) => new Date(right.submittedAt).getTime() - new Date(left.submittedAt).getTime())
+      .forEach((submission) => {
+        if (!latestByLoginId.has(submission.loginId)) {
+          latestByLoginId.set(submission.loginId, submission);
+        }
+      });
+
+    return latestByLoginId;
+  };
+  const getSubmissionGrade = (courseId: string, assessmentType: AssessmentType, submissionId: string) => {
+    const submission = data.submissions.find((item) => item.id === submissionId);
+    const assessmentQuestions = getAssessmentQuestionsForCourse(courseId, assessmentType);
+    const questionTotal = assessmentQuestions.reduce((sum, question) => sum + question.points, 0);
+
+    if (!submission) {
+      return { score: 0, total: questionTotal };
+    }
+
+    const answersByQuestionId = new Map((submission.answers ?? []).map((answer) => [answer.questionId, answer]));
+
+    if (typeof submission.manualScore === "number" && Number.isFinite(submission.manualScore) && submission.manualScore >= 0) {
+      return { score: submission.manualScore, total: Math.max(questionTotal, submission.manualScore) };
+    }
+
+    const scoreOverride = answersByQuestionId.get("__score_override__")?.value;
+    if (scoreOverride !== undefined) {
+      const numericScore = Number(scoreOverride);
+      if (Number.isFinite(numericScore) && numericScore >= 0) {
+        return { score: numericScore, total: Math.max(questionTotal, numericScore) };
+      }
+    }
+
+    const score = assessmentQuestions.reduce((sum, question) => {
+      const answer = answersByQuestionId.get(question.id);
+
+      if (!answer || !question.correctAnswer.trim()) {
+        return sum;
+      }
+
+      return isAnswerCorrect(question, answer.value) ? sum + question.points : sum;
+    }, 0);
+
+    return { score, total: questionTotal };
+  };
   const resultsStudents = resultsCourse
     ? (resultsBranchId === "all" ? data.students : getBranchStudents(data, resultsBranchId))
     : [];
@@ -1262,17 +1483,55 @@ const Dashboard = () => {
   }, [managedBranchId]);
 
   useEffect(() => {
-    const isCurrentTabAvailable = dashboardTab === "activity"
+    const isCurrentTabAvailable = dashboardTab === "home"
+      ? true
+      : dashboardTab === "activity"
       ? canViewActivityLog
       : availableDashboardMenu.some((item) => item.id === dashboardTab);
 
     if (!isCurrentTabAvailable) {
-      setDashboardTab(availableDashboardMenu[0]?.id ?? "home");
+      setDashboardTab(availableDashboardMenu[0]?.id ?? "home", { replace: true });
     }
-  }, [availableDashboardMenu, canViewActivityLog, dashboardTab]);
+  }, [availableDashboardMenu, canViewActivityLog, dashboardTab, setDashboardTab]);
+
+  useEffect(() => {
+    if (courseItems.length === 0) {
+      if (courseIndicatorsCourseId) {
+        setCourseIndicatorsCourseId("");
+      }
+      return;
+    }
+
+    if (courseIndicatorsCourseId !== ALL_COURSE_INDICATORS_ID && !courseItems.some((course) => course.id === courseIndicatorsCourseId)) {
+      setCourseIndicatorsCourseId(courseItems[0].id);
+    }
+  }, [courseIndicatorsCourseId, courseItems]);
+
+  const loadStudentIntoForm = (studentId: string) => {
+    const student = data.students.find((item) => item.id === studentId);
+
+    if (!student) {
+      return false;
+    }
+
+    if (managedBranchId && student.branchId !== managedBranchId) {
+      return false;
+    }
+
+    setEditingStudentId(student.id);
+    setStudentForm({
+      name: student.name,
+      loginId: student.loginId,
+      branchId: student.branchId,
+      note: student.note,
+    });
+    return true;
+  };
 
   const openStudentEditor = (studentId?: string) => {
     setStudentError("");
+    setStudentManagerMode(false);
+    setStudentManagerEntityType("student");
     setStudentsOpen(true);
 
     if (!studentId) {
@@ -1284,38 +1543,119 @@ const Dashboard = () => {
       return;
     }
 
-    const student = data.students.find((item) => item.id === studentId);
+    loadStudentIntoForm(studentId);
+  };
 
-    if (!student) {
-      return;
+  const openStudentManager = () => {
+    const initialBranch = managedBranchId ?? (indicatorsBranchId !== "all" ? indicatorsBranchId : "male");
+    setStudentError("");
+    setStudentManagerMode(true);
+    setStudentManagerEntityType("student");
+    setStudentsOpen(true);
+    setStudentEntryMode("single");
+    setBulkStudents([]);
+    setBulkStudentFileName("");
+    setEditingStudentId(null);
+    setEditingReciterId(null);
+    setStudentPickerBranchId(initialBranch as BranchId);
+    setStudentPickerStudentId("");
+    setStudentPickerReciterId("");
+    setStudentTransferTargetReciterId("");
+    setStudentForm({ ...emptyStudentForm, branchId: initialBranch as BranchId });
+  };
+
+  const loadReciterIntoForm = (reciterId: string) => {
+    const reciter = data.reciters.find((item) => item.id === reciterId);
+
+    if (!reciter) {
+      return false;
     }
 
-    if (managedBranchId && student.branchId !== managedBranchId) {
-      return;
+    if (managedBranchId && reciter.branchId !== managedBranchId) {
+      return false;
     }
 
-    setEditingStudentId(student.id);
-    setStudentForm({
-      name: student.name,
-      loginId: student.loginId,
-      branchId: student.branchId,
-      note: student.note,
+    setEditingReciterId(reciter.id);
+    setReciterForm({
+      name: reciter.name,
+      branchId: reciter.branchId,
+      studentIds: [...reciter.studentIds],
+      loginCode: reciter.loginCode,
     });
+    return true;
+  };
+
+  const openEntityManager = (entityType: "student" | "reciter", entityId?: string) => {
+    const initialBranch = managedBranchId ?? (indicatorsBranchId !== "all" ? indicatorsBranchId : "male");
+    setStudentError("");
+    setStudentManagerMode(true);
+    setStudentManagerEntityType(entityType);
+    setStudentsOpen(true);
+    setStudentEntryMode("single");
+    setBulkStudents([]);
+    setBulkStudentFileName("");
+    setEditingStudentId(null);
+    setEditingReciterId(null);
+    setStudentPickerBranchId(initialBranch as BranchId);
+    setStudentPickerStudentId("");
+    setStudentPickerReciterId("");
+    setStudentTransferTargetReciterId("");
+    setStudentForm({ ...emptyStudentForm, branchId: initialBranch as BranchId });
+    setReciterForm({ ...emptyReciterForm, branchId: initialBranch as BranchId });
+
+    if (!entityId) {
+      return;
+    }
+
+    if (entityType === "student") {
+      setStudentPickerStudentId(entityId);
+      loadStudentIntoForm(entityId);
+      return;
+    }
+
+    setStudentPickerReciterId(entityId);
+    loadReciterIntoForm(entityId);
+  };
+
+  const openUnifiedCreateDialog = (entityType: "student" | "reciter") => {
+    const initialBranch = managedBranchId ?? (indicatorsBranchId !== "all" ? indicatorsBranchId : "male");
+    setStudentError("");
+    setStudentManagerMode(false);
+    setStudentManagerEntityType(entityType);
+    setStudentsOpen(true);
+    setStudentEntryMode("single");
+    setBulkStudents([]);
+    setBulkStudentFileName("");
+    setEditingStudentId(null);
+    setEditingReciterId(null);
+    setStudentPickerBranchId(initialBranch as BranchId);
+    setStudentPickerStudentId("");
+    setStudentPickerReciterId("");
+    setStudentTransferTargetReciterId("");
+    setStudentForm({ ...emptyStudentForm, branchId: initialBranch as BranchId });
+    setReciterForm({ ...emptyReciterForm, branchId: initialBranch as BranchId });
   };
 
   const resetStudentForm = () => {
     setEditingStudentId(null);
+    setEditingReciterId(null);
     setStudentEntryMode("single");
     setBulkStudents([]);
     setBulkStudentFileName("");
+    setStudentManagerMode(false);
+    setStudentManagerEntityType("student");
+    setStudentPickerStudentId("");
+    setStudentPickerReciterId("");
+    setStudentTransferTargetReciterId("");
     setStudentError("");
     setStudentForm({ ...emptyStudentForm, branchId: managedBranchId ?? emptyStudentForm.branchId });
+    setReciterForm({ ...emptyReciterForm, branchId: managedBranchId ?? effectiveReciterBranchFilter });
   };
 
   const downloadSubmissionAsPdf = async (submission: typeof detailsSubmission, course: typeof data.courses[0] | null) => {
     if (!submission || !course) return;
     
-    const htmlContent = submission.answers[0]?.value || "<p>لا يوجد محتوى</p>";
+    const htmlContent = submission.answers?.[0]?.value || "<p>لا يوجد محتوى</p>";
     const fileName = `${submission.studentName}/${course.title}.pdf`.replace(/\s+/g, "_");
     
     const element = document.createElement("div");
@@ -2176,9 +2516,9 @@ const Dashboard = () => {
 
     setPendingAssessmentAvailability({ courseId, assessmentType });
     setAssessmentDurationMinutes("30");
-    setAssessmentTargetBranch(managedBranchId ?? "male");
+    setAssessmentTargetBranch(managedBranchId ?? "all");
     setAssessmentBlockedBranch(null);
-    setAssessmentRestrictToBranchOnly(true);
+    setAssessmentRestrictToBranchOnly(false);
     setAssessmentTemplateDraft(
       course.assessmentNotificationTemplates[assessmentType] || getDefaultAssessmentNotificationTemplate(assessmentType),
     );
@@ -2186,28 +2526,81 @@ const Dashboard = () => {
     setAssessmentTemplateOpen(false);
   };
 
-  const handleConfirmAssessmentAvailability = async () => {
-    if (!pendingAssessmentAvailability) {
+  const getAssessmentManageOptions = (course: CourseRecord, assessmentType: AssessmentType) => {
+    const maleActive = isAssessmentEnabledForCourse(course, assessmentType, "male");
+    const femaleActive = isAssessmentEnabledForCourse(course, assessmentType, "female");
+
+    if (managedBranchId) {
+      return maleActive || femaleActive
+        ? [{ value: `close_${managedBranchId}`, label: `إغلاق ${branchLabels[managedBranchId]}` }]
+        : [];
+    }
+
+    if (maleActive && femaleActive) {
+      return [
+        { value: "close_all", label: "إغلاق الكل" },
+        { value: "close_male", label: "إغلاق معلمين" },
+        { value: "close_female", label: "إغلاق معلمات" },
+      ];
+    }
+
+    if (maleActive) {
+      return [
+        { value: "close_male", label: "إغلاق معلمين" },
+        { value: "open_female", label: "بدء اختبار معلمات" },
+        { value: "open_all", label: "بدء اختبار الكل" },
+      ];
+    }
+
+    if (femaleActive) {
+      return [
+        { value: "close_female", label: "إغلاق معلمات" },
+        { value: "open_male", label: "بدء اختبار معلمين" },
+        { value: "open_all", label: "بدء اختبار الكل" },
+      ];
+    }
+
+    return [
+      { value: "open_all", label: "بدء اختبار الكل" },
+      { value: "open_male", label: "بدء اختبار معلمين" },
+      { value: "open_female", label: "بدء اختبار معلمات" },
+    ];
+  };
+
+  const handleOpenAssessmentManageDialog = (courseId: string, assessmentType: AssessmentType) => {
+    const course = data.courses.find((item) => item.id === courseId);
+
+    if (!course) {
       return;
+    }
+
+    const options = getAssessmentManageOptions(course, assessmentType);
+    setAssessmentManageChoice(options[0]?.value ?? "");
+    setAssessmentManageDialog({ courseId, assessmentType });
+  };
+
+  const handleConfirmAssessmentAvailability = async (): Promise<boolean> => {
+    if (!pendingAssessmentAvailability) {
+      return false;
     }
 
     const course = data.courses.find((item) => item.id === pendingAssessmentAvailability.courseId);
 
     if (!course) {
-      return;
+      return false;
     }
 
     const duration = Number(assessmentDurationMinutes);
 
     if (!assessmentNoTimeLimit && (!Number.isFinite(duration) || duration <= 0)) {
       setAssessmentAvailabilityError("أدخل مدة صحيحة بالدقائق.");
-      return;
+      return false;
     }
 
     const targetBranchId = assessmentTargetBranch;
     if (!targetBranchId) {
       setAssessmentAvailabilityError("اختر فرعًا.");
-      return;
+      return false;
     }
 
     // Check for cross-course conflict
@@ -2224,7 +2617,7 @@ const Dashboard = () => {
         pendingCourseId: course.id,
         pendingType: pendingAssessmentAvailability.assessmentType,
       });
-      return;
+      return false;
     }
 
     // Close the conflicting course's assessment before opening the new one
@@ -2246,7 +2639,7 @@ const Dashboard = () => {
 
     const closesAt = assessmentNoTimeLimit ? undefined : new Date(Date.now() + duration * 60 * 1000).toISOString();
     const windowValue = assessmentNoTimeLimit ? "__always_open__" : closesAt;
-    const branchLabel = branchLabels[targetBranchId];
+    const branchLabel = targetBranchId === "all" ? "جميع الفروع" : branchLabels[targetBranchId];
     const assessmentLabel = assessmentLabels[pendingAssessmentAvailability.assessmentType];
     const template = assessmentTemplateDraft.trim() || getDefaultAssessmentNotificationTemplate(pendingAssessmentAvailability.assessmentType);
     const message = template
@@ -2255,6 +2648,8 @@ const Dashboard = () => {
       .split("{branchLabel}").join(branchLabel)
       .split("{durationMinutes}").join(assessmentNoTimeLimit ? "غير محدودة" : String(duration))
       .split("{durationLabel}").join(assessmentNoTimeLimit ? "غير محدودة" : formatDurationMinutes(duration));
+
+    setAssessmentSubmitting(true);
 
     try {
       // Keep the other branch as-is; activation is additive per branch.
@@ -2265,21 +2660,24 @@ const Dashboard = () => {
         : (!existingGlobalWindow || new Date(existingGlobalWindow) < new Date(closesAt!))
           ? closesAt
           : existingGlobalWindow;
-      const branchAvailabilityUpdate = {
-        ...course.branchAvailability,
-        [targetBranchId]: {
-          ...course.branchAvailability[targetBranchId],
+      const targetBranches: BranchId[] = targetBranchId === "all" ? ["male", "female"] : [targetBranchId];
+      const branchAvailabilityUpdate = { ...course.branchAvailability };
+      targetBranches.forEach((branchId) => {
+        branchAvailabilityUpdate[branchId] = {
+          ...course.branchAvailability[branchId],
           [pendingAssessmentAvailability.assessmentType]: true,
-        },
-      };
+        };
+      });
       const assessmentWindowsUpdate = {
         ...course.assessmentWindows,
         global: { ...course.assessmentWindows.global, [globalWindowKey]: nextGlobalWindow },
-        [targetBranchId]: {
-          ...course.assessmentWindows[targetBranchId],
-          [pendingAssessmentAvailability.assessmentType]: windowValue,
-        },
       };
+      targetBranches.forEach((branchId) => {
+        assessmentWindowsUpdate[branchId] = {
+          ...course.assessmentWindows[branchId],
+          [pendingAssessmentAvailability.assessmentType]: windowValue,
+        };
+      });
       await store.updateCourse(course.id, {
           // Ensure global flag is true
           ...(pendingAssessmentAvailability.assessmentType === "pre" ? { isPreEnabled: true } :
@@ -2297,19 +2695,23 @@ const Dashboard = () => {
         await store.activateCourse(course.id);
       }
 
-      const pushStudents = getBranchStudents(data, targetBranchId);
+      const pushStudents = targetBranchId === "all" ? data.students : getBranchStudents(data, targetBranchId);
       sendPushNotification(`${assessmentLabel} - ${course.title}`, message, pushStudents.map((s) => s.loginId),
         pendingAssessmentAvailability.assessmentType === "pre" ? "/course/pre" :
         pendingAssessmentAvailability.assessmentType === "post" ? "/course/post" :
         "/tasks"
       );
       resetAssessmentAvailabilityDialog();
+      return true;
     } catch (error) {
       setAssessmentAvailabilityError(getSupabaseErrorMessage(error, "تعذر فتح الاختبار بالمؤقت المحدد."));
+      return false;
+    } finally {
+      setAssessmentSubmitting(false);
     }
   };
 
-  const handleToggleAssessmentAvailability = async (courseId: string, assessmentType: AssessmentType) => {
+  const handleToggleAssessmentAvailability = async (courseId: string, assessmentType: AssessmentType, targetBranch?: AssessmentOpenBranch) => {
     const course = data.courses.find((item) => item.id === courseId);
 
     if (!course) {
@@ -2319,19 +2721,33 @@ const Dashboard = () => {
     setCourseError("");
 
     try {
-      if (managedBranchId) {
+      const resolvedBranchTarget = managedBranchId ?? targetBranch ?? "all";
+
+      if (resolvedBranchTarget !== "all") {
+        const otherBranch: BranchId = resolvedBranchTarget === "male" ? "female" : "male";
+        const otherBranchActive = isAssessmentEnabledForCourse(course, assessmentType, otherBranch);
+
         await store.updateCourse(courseId, {
+          ...(assessmentType === "pre"
+            ? { isPreEnabled: otherBranchActive }
+            : assessmentType === "post"
+              ? { isPostEnabled: otherBranchActive }
+              : { isTasksEnabled: otherBranchActive }),
           branchAvailability: {
             ...course.branchAvailability,
-            [managedBranchId]: {
-              ...course.branchAvailability[managedBranchId],
+            [resolvedBranchTarget]: {
+              ...course.branchAvailability[resolvedBranchTarget],
               [assessmentType]: false,
             },
           },
           assessmentWindows: {
             ...course.assessmentWindows,
-            [managedBranchId]: {
-              ...course.assessmentWindows[managedBranchId],
+            global: {
+              ...course.assessmentWindows.global,
+              [assessmentType]: otherBranchActive ? course.assessmentWindows.global[assessmentType] : undefined,
+            },
+            [resolvedBranchTarget]: {
+              ...course.assessmentWindows[resolvedBranchTarget],
               [assessmentType]: undefined,
             },
           },
@@ -2345,6 +2761,8 @@ const Dashboard = () => {
           assessmentWindows: {
             ...course.assessmentWindows,
             global: { ...course.assessmentWindows.global, pre: undefined },
+            male: { ...course.assessmentWindows.male, pre: undefined },
+            female: { ...course.assessmentWindows.female, pre: undefined },
           },
         });
         return;
@@ -2356,6 +2774,8 @@ const Dashboard = () => {
           assessmentWindows: {
             ...course.assessmentWindows,
             global: { ...course.assessmentWindows.global, post: undefined },
+            male: { ...course.assessmentWindows.male, post: undefined },
+            female: { ...course.assessmentWindows.female, post: undefined },
           },
         });
         return;
@@ -2363,9 +2783,16 @@ const Dashboard = () => {
 
       await store.updateCourse(courseId, {
         isTasksEnabled: false,
+        branchAvailability: {
+          ...course.branchAvailability,
+          male: { ...course.branchAvailability.male, tasks: false },
+          female: { ...course.branchAvailability.female, tasks: false },
+        },
         assessmentWindows: {
           ...course.assessmentWindows,
           global: { ...course.assessmentWindows.global, tasks: undefined },
+          male: { ...course.assessmentWindows.male, tasks: undefined },
+          female: { ...course.assessmentWindows.female, tasks: undefined },
         },
       });
     } catch (error) {
@@ -2417,6 +2844,67 @@ const Dashboard = () => {
     }
 
     setPendingDeleteCourse({ id: course.id, name: course.title });
+  };
+
+  const handleAddCourse = async () => {
+    if (!canCreateCourses) {
+      return;
+    }
+
+    const normalizedTitle = courseTitle.trim();
+
+    if (!normalizedTitle) {
+      setCourseError("اكتب اسم الدورة.");
+      return;
+    }
+
+    setCourseError("");
+
+    try {
+      await store.addCourse(normalizedTitle);
+      setCourseTitle("");
+      showSuccessToast("تمت إضافة الدورة", `تمت إضافة دورة ${normalizedTitle} بنجاح.`);
+      appendActivityLog({ action: "إضافة دورة", target: normalizedTitle, status: "نجحت", details: "تمت إضافة دورة جديدة إلى النظام." });
+    } catch (error) {
+      setCourseError(getSupabaseErrorMessage(error, "تعذر إضافة الدورة إلى قاعدة البيانات."));
+      appendActivityLog({ action: "إضافة دورة", target: normalizedTitle, status: "فشلت", details: "فشل إنشاء دورة جديدة في النظام." });
+    }
+  };
+
+  const handleEditCourse = (courseId: string, title: string) => {
+    if (!canCreateCourses) {
+      return;
+    }
+
+    setCourseEditError("");
+    setCourseEditForm({ id: courseId, title });
+    setCourseEditOpen(true);
+  };
+
+  const handleSaveEditedCourse = async () => {
+    if (!canCreateCourses || !courseEditForm.id) {
+      return;
+    }
+
+    const normalizedTitle = courseEditForm.title.trim();
+
+    if (!normalizedTitle) {
+      setCourseEditError("اكتب اسم الدورة.");
+      return;
+    }
+
+    setCourseEditError("");
+
+    try {
+      await store.updateCourse(courseEditForm.id, { title: normalizedTitle });
+      setCourseEditOpen(false);
+      setCourseEditForm(emptyCourseEditForm);
+      showSuccessToast("تم تعديل الدورة", `تم تحديث اسم الدورة إلى ${normalizedTitle}.`);
+      appendActivityLog({ action: "تعديل دورة", target: normalizedTitle, status: "نجحت", details: "تم تحديث اسم الدورة بنجاح." });
+    } catch (error) {
+      setCourseEditError(getSupabaseErrorMessage(error, "تعذر تعديل اسم الدورة في قاعدة البيانات."));
+      appendActivityLog({ action: "تعديل دورة", target: normalizedTitle, status: "فشلت", details: "فشل تحديث اسم الدورة." });
+    }
   };
 
   const confirmDeleteCourse = async () => {
@@ -2571,7 +3059,7 @@ const Dashboard = () => {
       return;
     }
 
-    openReciterEditor(selectedReciterActions.reciter.id);
+    openEntityManager("reciter", selectedReciterActions.reciter.id);
     resetReciterActionsState();
   };
 
@@ -2616,379 +3104,39 @@ const Dashboard = () => {
     setAdminTransferError("");
 
     try {
-      await transferStudentToReciterInDatabase({
-        studentId: pendingAdminTransfer.studentId,
-        targetReciterId: adminTransferTargetReciterId,
-      });
-
+      await transferStudentToReciterInDatabase(
+        pendingAdminTransfer.studentId,
+        pendingAdminTransfer.currentReciterId,
+        adminTransferTargetReciterId,
+      );
       syncTransferredStudentLocally(
         pendingAdminTransfer.studentId,
         pendingAdminTransfer.currentReciterId,
         adminTransferTargetReciterId,
       );
+      showSuccessToast("تم نقل الطالب", `تم نقل ${pendingAdminTransfer.studentName} بنجاح.`);
+      appendActivityLog({
+        action: "نقل طالب",
+        target: pendingAdminTransfer.studentName,
+        status: "نجحت",
+        details: "تم نقل الطالب إلى مقرئ آخر بنجاح.",
+      });
       resetAdminTransferState();
     } catch (error) {
-      setAdminTransferError(getSupabaseErrorMessage(error, "تعذر نقل الطالب إلى المقرئ الجديد."));
+      setAdminTransferError(getSupabaseErrorMessage(error, "تعذر نقل الطالب إلى المقرئ المحدد."));
+      appendActivityLog({
+        action: "نقل طالب",
+        target: pendingAdminTransfer.studentName,
+        status: "فشلت",
+        details: "فشل نقل الطالب إلى المقرئ المحدد.",
+      });
+    } finally {
       setAdminTransferSubmitting(false);
     }
   };
 
-  const handleAddCourse = async () => {
-    if (!canCreateCourses) {
-      return;
-    }
-
-    const trimmedTitle = courseTitle.trim();
-
-    if (!trimmedTitle) {
-      setCourseError("أدخل اسم الدورة.");
-      return;
-    }
-
-    setCourseError("");
-
-    try {
-      await store.addCourse(trimmedTitle);
-      setCourseTitle("");
-    } catch (error) {
-      setCourseError(getSupabaseErrorMessage(error, "تعذر حفظ الدورة في قاعدة البيانات."));
-    }
-  };
-
-  const handleCopyCourseLink = async (assessmentType: AssessmentType) => {
-    const link = getCourseLink(assessmentType);
-
-    try {
-      await navigator.clipboard.writeText(link);
-    } catch {
-      window.prompt("انسخ الرابط", link);
-    }
-  };
-
-  const handleEditCourse = (courseId: string, currentTitle: string) => {
-    if (!canCreateCourses) {
-      return;
-    }
-
-    setCourseEditForm({ id: courseId, title: currentTitle });
-    setCourseEditError("");
-    setCourseEditOpen(true);
-  };
-
-  const handleSaveEditedCourse = async () => {
-    if (!canCreateCourses) {
-      return;
-    }
-
-    const nextTitle = courseEditForm.title.trim();
-
-    if (!courseEditForm.id) {
-      return;
-    }
-
-    if (!nextTitle) {
-      setCourseEditError("أدخل اسم الدورة.");
-      return;
-    }
-
-    try {
-      await store.updateCourse(courseEditForm.id, { title: nextTitle });
-      setCourseEditOpen(false);
-      setCourseEditForm(emptyCourseEditForm);
-      setCourseEditError("");
-    } catch (error) {
-      setCourseEditError(getSupabaseErrorMessage(error, "تعذر تعديل اسم الدورة في قاعدة البيانات."));
-    }
-  };
-
-  const handleAddQuestion = (assessmentType: AssessmentType) => {
-    if (!canEditCourseModels) {
-      return;
-    }
-
-    if (!selectedCourse) {
-      setQuestionErrors((current) => ({ ...current, [assessmentType]: "أنشئ دورة أولًا." }));
-      return;
-    }
-
-    const form = questionForms[assessmentType];
-    const prompt = form.prompt.trim();
-
-    if (!prompt) {
-      setQuestionErrors((current) => ({ ...current, [assessmentType]: "أدخل السؤال." }));
-      return;
-    }
-
-    const options = form.type === "multiple" ? parseQuestionOptions(form.optionsText)
-      : form.type === "truefalse" ? ["صح", "خطأ"]
-      : [];
-
-    if (form.type === "multiple" && options.length < 2) {
-      setQuestionErrors((current) => ({ ...current, [assessmentType]: "أدخل خيارين على الأقل مفصولين بـ |" }));
-      return;
-    }
-
-    const points = Number(form.points);
-
-    if (!Number.isFinite(points) || points < 0) {
-      setQuestionErrors((current) => ({ ...current, [assessmentType]: "أدخل درجة صحيحة للسؤال." }));
-      return;
-    }
-
-    store.addQuestion(selectedCourse.id, assessmentType, {
-      prompt,
-      type: form.type,
-      options,
-      allowFile: form.allowFile === "yes",
-      points,
-      correctAnswer: form.correctAnswer.trim(),
-    });
-
-    setQuestionForms((current) => ({ ...current, [assessmentType]: emptyQuestionForm }));
-    setQuestionErrors((current) => ({ ...current, [assessmentType]: "" }));
-    setQuestionImportMessages((current) => ({ ...current, [assessmentType]: "" }));
-  };
-
-  const handleSplitQuestions = (assessmentType: AssessmentType) => {
-    if (!selectedCourse) {
-      setQuestionErrors((current) => ({ ...current, [assessmentType]: "أنشئ دورة أولًا." }));
-      return;
-    }
-    const text = splitText[assessmentType].trim();
-    if (!text) {
-      setQuestionErrors((current) => ({ ...current, [assessmentType]: "الصق الأسئلة في الخانة أولاً." }));
-      return;
-    }
-    const parsed = parseImportedQuestionsFromText(text);
-    if (parsed.length === 0) {
-      setQuestionErrors((current) => ({ ...current, [assessmentType]: "لم يتم التعرف على أسئلة. تأكد من الصيغة (١. السؤال...)." }));
-      return;
-    }
-    for (const q of parsed) {
-      store.addQuestion(selectedCourse.id, assessmentType, {
-        prompt: q.prompt,
-        type: q.type,
-        options: q.options,
-        allowFile: false,
-        points: 1,
-        correctAnswer: "",
-      });
-    }
-    setSplitText((current) => ({ ...current, [assessmentType]: "" }));
-    setQuestionErrors((current) => ({ ...current, [assessmentType]: "" }));
-    setQuestionImportMessages((current) => ({ ...current, [assessmentType]: `تم إضافة ${parsed.length} سؤال بنجاح.` }));
-  };
-
-  const handleQuestionPdfImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-
-    if (!file || !questionImportTarget) {
-      return;
-    }
-
-    if (!selectedCourse) {
-      setQuestionErrors((current) => ({ ...current, [questionImportTarget]: "أنشئ دورة أولًا." }));
-      event.target.value = "";
-      return;
-    }
-
-    const assessmentType = questionImportTarget;
-    const form = questionForms[assessmentType];
-    const rawPoints = Number(form.points);
-    const points = Number.isFinite(rawPoints) && rawPoints >= 0 ? rawPoints : 1;
-
-    setIsImportingQuestions((current) => ({ ...current, [assessmentType]: true }));
-    setQuestionErrors((current) => ({ ...current, [assessmentType]: "" }));
-    setQuestionImportMessages((current) => ({ ...current, [assessmentType]: "" }));
-
-    try {
-      const importedQuestions = await extractQuestionsFromPdf(file);
-
-      if (!importedQuestions.length) {
-        setQuestionErrors((current) => ({ ...current, [assessmentType]: "لم يتم العثور على أسئلة قابلة للاستخراج داخل الملف." }));
-        return;
-      }
-
-      importedQuestions.forEach((question) => {
-        store.addQuestion(selectedCourse.id, assessmentType, {
-          prompt: question.prompt,
-          type: question.type,
-          options: question.options,
-          allowFile: form.allowFile === "yes",
-          points,
-          correctAnswer: "",
-        });
-      });
-
-      setQuestionImportMessages((current) => ({ ...current, [assessmentType]: `تم تفريغ ${importedQuestions.length} سؤال من الملف بنجاح.` }));
-    } catch {
-      setQuestionErrors((current) => ({ ...current, [assessmentType]: "تعذر قراءة ملف PDF أو استخراج الأسئلة منه." }));
-    } finally {
-      setIsImportingQuestions((current) => ({ ...current, [assessmentType]: false }));
-      event.target.value = "";
-    }
-  };
-
-  const renderPartGrid = (studentId: string, completedParts: number[]) => (
-    <div className="grid w-fit grid-cols-5 gap-2 sm:grid-cols-6">
-      {parts.map((part) => {
-        const active = completedParts.includes(part);
-
-        return (
-          <button
-            key={part}
-            type="button"
-            onClick={() => store.toggleStudentPart(studentId, part)}
-            className={cn(
-              "flex h-10 w-10 items-center justify-center rounded-full border text-sm font-black transition-smooth sm:h-11 sm:w-11 sm:text-base",
-              active
-                ? "border-cyan-200/30 bg-[linear-gradient(145deg,#0d7490,#0f3f5c)] text-white shadow-[0_12px_26px_rgba(8,61,93,0.35)] hover:brightness-110"
-                : "border-slate-200 bg-white text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.06)] hover:border-cyan-300 hover:text-primary hover:shadow-[0_10px_24px_rgba(14,116,144,0.12)]",
-            )}
-          >
-            {part}
-          </button>
-        );
-      })}
-    </div>
-  );
-
-  const renderQuestionsList = (assessmentType: AssessmentType, questions: CourseQuestion[]) => {
-    const permKey: PermissionKey = assessmentType === "pre" ? "edit_pre_questions" : assessmentType === "post" ? "edit_post_questions" : "edit_tasks";
-    return (
-    <div className="space-y-3">
-      {questions.length === 0 && (
-        <div className={cn(dashboardEmptyStateClass, "p-4 text-sm text-muted-foreground")}>
-          لا توجد أسئلة بعد.
-        </div>
-      )}
-      {questions.map((question, index) => (
-        <div key={question.id} className={cn(dashboardPlainPanelClass, "p-4")}>
-          <div className="mb-2 flex items-start justify-between gap-3">
-            <div>
-              <div className="font-bold text-foreground">{index + 1}. {question.prompt} <span className="text-sm font-medium text-muted-foreground">• الدرجة: {question.points}</span></div>
-            </div>
-            {hasPermission(permKey) && (
-              <Button variant="ghost" size="sm" onClick={() => store.deleteQuestion(selectedCourse!.id, assessmentType, question.id)}>
-                حذف
-              </Button>
-            )}
-          </div>
-          {question.type === "multiple" && (
-            <div className="space-y-2 pt-2 text-sm text-foreground">
-              {question.options.map((option) => (
-                <div key={option} className={cn(option.trim() === question.correctAnswer.trim() ? "font-bold text-emerald-700" : "text-foreground")}>{option}</div>
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-    );
-  };
-
-  const getAssessmentQuestionsForCourse = (courseId: string, assessmentType: AssessmentType) => {
-    const course = data.courses.find((item) => item.id === courseId);
-
-    if (!course) {
-      return [] as CourseQuestion[];
-    }
-
-    if (assessmentType === "pre") {
-      return course.preQuestions;
-    }
-
-    if (assessmentType === "post") {
-      return course.postQuestions;
-    }
-
-    return course.taskQuestions;
-  };
-
-  const getSubmissionGrade = (courseId: string, assessmentType: AssessmentType, submissionId: string) => {
-    const submission = data.submissions.find((item) => item.id === submissionId);
-    const questions = getAssessmentQuestionsForCourse(courseId, assessmentType);
-    const questionTotal = questions.reduce((sum, question) => sum + question.points, 0);
-
-    if (!submission) {
-      return { score: 0, total: questionTotal };
-    }
-
-    const answersByQuestionId = new Map(submission.answers.map((answer) => [answer.questionId, answer]));
-
-    if (typeof submission.manualScore === "number" && Number.isFinite(submission.manualScore) && submission.manualScore >= 0) {
-      return { score: submission.manualScore, total: Math.max(questionTotal, submission.manualScore) };
-    }
-
-    const scoreOverride = answersByQuestionId.get("__score_override__")?.value;
-    if (scoreOverride !== undefined) {
-      const numericScore = Number(scoreOverride);
-      if (Number.isFinite(numericScore) && numericScore >= 0) {
-        return { score: numericScore, total: Math.max(questionTotal, numericScore) };
-      }
-    }
-
-    const score = questions.reduce((sum, question) => {
-      const answer = answersByQuestionId.get(question.id);
-
-      if (!answer) {
-        return sum;
-      }
-
-      if (!question.correctAnswer.trim()) {
-        return sum;
-      }
-
-      return isAnswerCorrect(question, answer.value) ? sum + question.points : sum;
-    }, 0);
-
-    return { score, total: questionTotal };
-  };
-
-  const getSubmissionCorrectAnswersStats = (courseId: string, assessmentType: AssessmentType, submissionId: string) => {
-    const submission = data.submissions.find((item) => item.id === submissionId);
-    const questions = getAssessmentQuestionsForCourse(courseId, assessmentType);
-
-    if (!submission) {
-      return { correctAnswers: 0, totalCorrectableAnswers: questions.filter((question) => question.correctAnswer.trim()).length };
-    }
-
-    const answersByQuestionId = new Map(submission.answers.map((answer) => [answer.questionId, answer]));
-    const correctableQuestions = questions.filter((question) => question.correctAnswer.trim());
-    const correctAnswers = correctableQuestions.reduce((sum, question) => {
-      const answer = answersByQuestionId.get(question.id);
-
-      if (!answer) {
-        return sum;
-      }
-
-      return isAnswerCorrect(question, answer.value) ? sum + 1 : sum;
-    }, 0);
-
-    return {
-      correctAnswers,
-      totalCorrectableAnswers: correctableQuestions.length,
-    };
-  };
-
-  const getLatestSubmissionByLoginId = (courseId: string, assessmentType: AssessmentType) => {
-    const latestByLoginId = new Map<string, (typeof data.submissions)[number]>();
-
-    data.submissions
-      .filter((submission) => submission.courseId === courseId && submission.assessmentType === assessmentType)
-      .slice()
-      .sort((left, right) => new Date(right.submittedAt).getTime() - new Date(left.submittedAt).getTime())
-      .forEach((submission) => {
-        if (!latestByLoginId.has(submission.loginId)) {
-          latestByLoginId.set(submission.loginId, submission);
-        }
-      });
-
-    return latestByLoginId;
-  };
-
-  const latestResultRows = useMemo(() => {
-    if (!resultsCourse || resultsType === "attendance") {
+  const resultsRows = useMemo(() => {
+    if (!resultsCourse || !resultsType) {
       return [] as Array<{
         studentId: string;
         studentName: string;
@@ -3019,7 +3167,7 @@ const Dashboard = () => {
         score: grade.score,
         total: grade.total,
         hasViewableAnswers: submission
-          ? submission.answers.some((answer) => answer.questionId !== "__score_override__")
+          ? (submission.answers ?? []).some((answer) => answer.questionId !== "__score_override__")
           : false,
       };
     });
@@ -3250,67 +3398,102 @@ const Dashboard = () => {
 
   const courseIndicatorsMetrics = useMemo(() => {
     if (!courseIndicatorsCourseId) return null;
-    const course = courseItems.find((c) => c.id === courseIndicatorsCourseId);
-    if (!course) return null;
+    const isAllCoursesSelected = courseIndicatorsCourseId === ALL_COURSE_INDICATORS_ID;
+    const selectedCourses = isAllCoursesSelected
+      ? courseItems
+      : courseItems.filter((course) => course.id === courseIndicatorsCourseId);
+    if (selectedCourses.length === 0) return null;
 
-    const branchStudents = getBranchStudents(data, courseIndicatorsBranch);
+    const branchStudents = courseIndicatorsBranch === "all"
+      ? data.students
+      : getBranchStudents(data, courseIndicatorsBranch);
     const branchLoginIds = new Set(branchStudents.map((s) => s.loginId));
 
     const calcAssessment = (type: AssessmentType) => {
-      const latestByLoginId = getLatestSubmissionByLoginId(course.id, type);
-      const branchSubmissions = [...latestByLoginId.values()].filter((s) => branchLoginIds.has(s.loginId));
-      const scorers = branchSubmissions.filter((s) => {
-        const grade = getSubmissionGrade(course.id, type, s.id);
-        return grade.score >= 1;
+      const byParticipationKey = new Map<string, number>();
+      let totalPct = 0;
+      let count = 0;
+
+      selectedCourses.forEach((course) => {
+        const latestByLoginId = getLatestSubmissionByLoginId(course.id, type);
+        [...latestByLoginId.values()].forEach((submission) => {
+          if (!branchLoginIds.has(submission.loginId)) return;
+          const grade = getSubmissionGrade(course.id, type, submission.id);
+          if (grade.total <= 0 || grade.score < 1) return;
+          const pct = (grade.score / grade.total) * 100;
+          const participationKey = `${course.id}:${submission.loginId}`;
+          byParticipationKey.set(participationKey, pct);
+          totalPct += pct;
+          count += 1;
+        });
       });
-      const byLoginId = new Map<string, number>();
-      if (scorers.length === 0) return { avg: 0, count: 0, byLoginId };
-      const avg = scorers.reduce((sum, s) => {
-        const grade = getSubmissionGrade(course.id, type, s.id);
-        const pct = grade.total > 0 ? (grade.score / grade.total) * 100 : 0;
-        byLoginId.set(s.loginId, pct);
-        return sum + pct;
-      }, 0) / scorers.length;
-      return { avg, count: scorers.length, byLoginId };
+
+      return {
+        avg: count > 0 ? totalPct / count : 0,
+        count,
+        byParticipationKey,
+      };
     };
 
     const pre = calcAssessment("pre");
     const post = calcAssessment("post");
 
-    // Rise: only students who scored ≥ 1 in BOTH pre and post
-    const bothLoginIds = [...pre.byLoginId.keys()].filter((id) => post.byLoginId.has(id));
-    const bothCount = bothLoginIds.length;
+    // Rise: for all-courses mode, each (student + course) pair counts independently.
+    const bothParticipationKeys = [...pre.byParticipationKey.keys()].filter((key) => post.byParticipationKey.has(key));
+    const bothCount = bothParticipationKeys.length;
     let rise = 0;
     if (bothCount > 0) {
-      const preAvgBoth = bothLoginIds.reduce((sum, id) => sum + (pre.byLoginId.get(id) ?? 0), 0) / bothCount;
-      const postAvgBoth = bothLoginIds.reduce((sum, id) => sum + (post.byLoginId.get(id) ?? 0), 0) / bothCount;
+      const preAvgBoth = bothParticipationKeys.reduce((sum, key) => sum + (pre.byParticipationKey.get(key) ?? 0), 0) / bothCount;
+      const postAvgBoth = bothParticipationKeys.reduce((sum, key) => sum + (post.byParticipationKey.get(key) ?? 0), 0) / bothCount;
       rise = Math.max(-100, Math.min(100, postAvgBoth - preAvgBoth));
     }
 
-    const attendedLoginIds = new Set(
-      data.attendance.filter((r) => r.courseId === course.id && branchLoginIds.has(r.loginId)).map((r) => r.loginId),
-    );
-    const attendance = branchStudents.length > 0 ? (attendedLoginIds.size / branchStudents.length) * 100 : 0;
+    const attendanceEntries = data.attendance.filter((record) => selectedCourses.some((course) => course.id === record.courseId) && branchLoginIds.has(record.loginId));
+    const attendedParticipationKeys = new Set(attendanceEntries.map((record) => `${record.courseId}:${record.loginId}`));
+    const attendanceBaseCount = isAllCoursesSelected ? branchStudents.length * selectedCourses.length : branchStudents.length;
+    const attendance = attendanceBaseCount > 0 ? (attendedParticipationKeys.size / attendanceBaseCount) * 100 : 0;
 
     // Per-student rows for export
-    const preLatest = getLatestSubmissionByLoginId(course.id, "pre");
-    const postLatest = getLatestSubmissionByLoginId(course.id, "post");
-    const studentRows = branchStudents.map((student) => {
-      const preSub = preLatest.get(student.loginId);
-      const postSub = postLatest.get(student.loginId);
-      const preGrade = preSub ? getSubmissionGrade(course.id, "pre", preSub.id) : null;
-      const postGrade = postSub ? getSubmissionGrade(course.id, "post", postSub.id) : null;
-      const prePct = preGrade && preGrade.score >= 1 && preGrade.total > 0 ? Math.round((preGrade.score / preGrade.total) * 100) : null;
-      const postPct = postGrade && postGrade.score >= 1 && postGrade.total > 0 ? Math.round((postGrade.score / postGrade.total) * 100) : null;
-      return {
-        name: student.name,
-        loginId: student.loginId,
-        prePct,
-        postPct,
-        diff: prePct !== null && postPct !== null ? postPct - prePct : null,
-        attended: attendedLoginIds.has(student.loginId),
-      };
-    });
+    const studentRows = isAllCoursesSelected
+      ? selectedCourses.flatMap((course) => {
+        const preLatest = getLatestSubmissionByLoginId(course.id, "pre");
+        const postLatest = getLatestSubmissionByLoginId(course.id, "post");
+        return branchStudents.map((student) => {
+          const preSub = preLatest.get(student.loginId);
+          const postSub = postLatest.get(student.loginId);
+          const preGrade = preSub ? getSubmissionGrade(course.id, "pre", preSub.id) : null;
+          const postGrade = postSub ? getSubmissionGrade(course.id, "post", postSub.id) : null;
+          const prePct = preGrade && preGrade.total > 0 ? Math.round((preGrade.score / preGrade.total) * 100) : null;
+          const postPct = postGrade && postGrade.total > 0 ? Math.round((postGrade.score / postGrade.total) * 100) : null;
+          return {
+            name: student.name,
+            loginId: student.loginId,
+            prePct,
+            postPct,
+            diff: prePct !== null && postPct !== null ? postPct - prePct : null,
+            attended: attendedParticipationKeys.has(`${course.id}:${student.loginId}`),
+          };
+        }).filter((row) => row.prePct !== null || row.postPct !== null || row.attended);
+      })
+      : branchStudents.map((student) => {
+        const course = selectedCourses[0];
+        const preLatest = getLatestSubmissionByLoginId(course.id, "pre");
+        const postLatest = getLatestSubmissionByLoginId(course.id, "post");
+        const preSub = preLatest.get(student.loginId);
+        const postSub = postLatest.get(student.loginId);
+        const preGrade = preSub ? getSubmissionGrade(course.id, "pre", preSub.id) : null;
+        const postGrade = postSub ? getSubmissionGrade(course.id, "post", postSub.id) : null;
+        const prePct = preGrade && preGrade.total > 0 ? Math.round((preGrade.score / preGrade.total) * 100) : null;
+        const postPct = postGrade && postGrade.total > 0 ? Math.round((postGrade.score / postGrade.total) * 100) : null;
+        return {
+          name: student.name,
+          loginId: student.loginId,
+          prePct,
+          postPct,
+          diff: prePct !== null && postPct !== null ? postPct - prePct : null,
+          attended: attendedParticipationKeys.has(`${course.id}:${student.loginId}`),
+        };
+      });
 
     return {
       pre: pre.avg,
@@ -3320,9 +3503,9 @@ const Dashboard = () => {
       rise,
       bothCount,
       attendance,
-      attendanceCount: attendedLoginIds.size,
-      totalStudents: branchStudents.length,
-      courseName: course.title,
+      attendanceCount: attendedParticipationKeys.size,
+      totalStudents: isAllCoursesSelected ? branchStudents.length * selectedCourses.length : branchStudents.length,
+      courseName: isAllCoursesSelected ? "جميع الدورات" : selectedCourses[0].title,
       studentRows,
     };
   }, [courseItems, courseIndicatorsCourseId, courseIndicatorsBranch, data.attendance, data.courses, data.submissions, data.students]);
@@ -3404,7 +3587,9 @@ const Dashboard = () => {
   }, [homeBranchFilter, data.students, data.submissions, data.attendance, data.courses, courseItems]);
 
   const adminName = session.name;
-  const activeMenuItem = dashboardTab === "activity"
+  const activeMenuItem = dashboardTab === "home"
+    ? { id: "home", label: "الرئيسية" }
+    : dashboardTab === "activity"
     ? { id: "activity", label: "سجل النشاط" }
     : availableDashboardMenu.find((item) => item.id === dashboardTab) ?? availableDashboardMenu[0];
   const appendActivityLog = (entry: { action: string; target: string; status: "نجحت" | "فشلت" | "ألغيت"; details: string }) => {
@@ -3463,20 +3648,38 @@ const Dashboard = () => {
     ];
   }, [data.attendance.length, data.courses.length, data.finalExamQuestions.length, data.finalExamSubmissions.length, data.notifications.length, data.reciters.length, data.satisfactionQuestions.length, data.satisfactionResponses.length, data.students, data.submissions.length, data.taskTemplates.length, pendingBackupData]);
 
+  const handleGoToDashboardHome = (isMobile = false) => {
+    setDashboardTab("home");
+    if (isMobile) {
+      setMobileMenuOpen(false);
+    }
+  };
+
   const renderDashboardNavigation = (isMobile = false) => (
     <div className="flex h-full flex-col bg-white">
       <div className="border-b border-border/60 px-4 py-5 text-right">
-        <Link to="/" className="flex w-full items-center justify-start gap-3 rounded-2xl outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-primary/30">
+        <div
+          role="link"
+          tabIndex={0}
+          onClick={() => handleGoToDashboardHome(isMobile)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              handleGoToDashboardHome(isMobile);
+            }
+          }}
+          className="flex w-full cursor-pointer items-center justify-start gap-3 rounded-2xl outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-primary/30"
+        >
           <img src="/اللوقو-شفاف.png" alt="شعار المنصة" className="site-logo site-logo-scrolled h-12 w-auto object-contain" />
           <div className="text-right">
             <p className="whitespace-nowrap text-base font-extrabold leading-tight text-foreground">لوحة التحكم</p>
           </div>
-        </Link>
+        </div>
       </div>
 
       <div className={cn("flex-1 overflow-y-auto px-4 py-5 text-right", isMobile && "pb-8")}>
         <div className="space-y-2">
-          {availableDashboardMenu.map((item) => {
+          {primaryDashboardMenu.map((item) => {
             const Icon = item.icon;
             const active = dashboardTab === item.id;
 
@@ -3506,8 +3709,37 @@ const Dashboard = () => {
             );
           })}
         </div>
-        {(canViewActivityLog || canAccessBackup) && (
+        {(secondaryDashboardMenu.length > 0 || canViewActivityLog || canAccessBackup) && (
           <div className="mt-4 border-t border-border/60 pt-4 space-y-2">
+            {secondaryDashboardMenu.map((item) => {
+              const Icon = item.icon;
+              const active = dashboardTab === item.id;
+
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    setDashboardTab(item.id);
+                    if (isMobile) {
+                      setMobileMenuOpen(false);
+                    }
+                  }}
+                  className={cn(
+                    "flex w-full items-center justify-between rounded-xl px-4 py-3 text-[15px] font-medium transition-all duration-300",
+                    active
+                      ? "bg-primary text-white shadow-lg shadow-primary/20"
+                      : "text-foreground hover:bg-primary/5 hover:text-primary",
+                  )}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span>{item.label}</span>
+                    <Icon className={cn("size-4", active ? "text-white" : "text-primary/70")} />
+                  </div>
+                  <span className={cn("h-2.5 w-2.5 rounded-full", active ? "bg-white" : "bg-primary/20")} />
+                </button>
+              );
+            })}
             {canViewActivityLog && (
               <button
                 type="button"
@@ -3561,6 +3793,7 @@ const Dashboard = () => {
     setNotifTemplatePre(course?.assessmentNotificationTemplates.pre || getDefaultAssessmentNotificationTemplate("pre"));
     setNotifTemplatePost(course?.assessmentNotificationTemplates.post || getDefaultAssessmentNotificationTemplate("post"));
     setNotifTemplateTasks(course?.assessmentNotificationTemplates.tasks || getDefaultAssessmentNotificationTemplate("tasks"));
+    setNotifTemplateFinalExam(data.finalExamSettings[effectiveFinalExamManageBranch]?.notificationTemplate || getDefaultFinalExamNotificationTemplate());
     setNotifTemplatesOpen(true);
   };
 
@@ -3581,20 +3814,10 @@ const Dashboard = () => {
 
     return (
       <>
-        <Button variant="outline" className={actionClassName} onClick={() => handleAction(() => setCourseLinksOpen(true))}>
-          <span>الروابط</span>
-        </Button>
-        {dashboardTab === "satisfaction" && selectedSatisfactionQuestions.length > 0 && (
-          <Button
-            variant="outline"
-            className={destructiveActionClassName}
-            onClick={() => handleAction(() => {
-              setSatisfactionDeleteQuestionId(selectedSatisfactionQuestions[0]?.id ?? "");
-              setSatisfactionDeleteDialogOpen(true);
-            })}
-          >
-            <span>حذف</span>
-            <Trash2 className="size-4" />
+        {dashboardTab === "home" && (
+          <Button variant="outline" className={actionClassName} onClick={() => handleAction(() => setCourseLinksOpen(true))}>
+            <span>الروابط</span>
+            <Link2 className="size-4" />
           </Button>
         )}
         {dashboardTab === "finalexam" && canCreateCourses && (
@@ -3621,19 +3844,19 @@ const Dashboard = () => {
             </Button>
           </>
         )}
-        {canManageDashboardAccounts && (
+        {dashboardTab === "home" && canManageDashboardAccounts && (
           <Button variant="outline" className={actionClassName} onClick={() => handleAction(() => void handleOpenAdmins())} aria-label="الإشراف" disabled={adminsLoading}>
             <span>{adminsLoading ? "جارٍ التحميل..." : "الإشراف"}</span>
             <ShieldCheck className="size-4" />
           </Button>
         )}
-        {canCreateCourses && (
+        {dashboardTab === "home" && canCreateCourses && (
           <Button variant="outline" className={actionClassName} onClick={() => handleAction(() => setCoursesManageOpen(true))}>
             <span>الدورات</span>
             <BookOpen className="size-4" />
           </Button>
         )}
-        {dashboardTab === "courses" && (
+        {dashboardTab === "home" && (
           <Button variant="outline" className={actionClassName} aria-label="قوالب الإشعارات" onClick={() => handleAction(openCourseTemplatesDialog)}>
             <span>قوالب الإشعارات</span>
             <FilePen className="size-4" />
@@ -3687,7 +3910,18 @@ const Dashboard = () => {
                     {renderDashboardNavigation(true)}
                   </SheetContent>
                 </Sheet>
-                <div className="min-w-0 flex-1 text-right">
+                <div
+                  role="link"
+                  tabIndex={0}
+                  onClick={() => handleGoToDashboardHome()}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      handleGoToDashboardHome();
+                    }
+                  }}
+                  className="min-w-0 flex-1 cursor-pointer text-right outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-primary/30"
+                >
                   <p className="text-xs font-medium text-muted-foreground">لوحة التحكم</p>
                   <p className="truncate text-sm font-extrabold text-foreground">{activeMenuItem.label}</p>
                 </div>
@@ -3717,36 +3951,8 @@ const Dashboard = () => {
                     {renderDashboardNavigation(true)}
                   </SheetContent>
                 </Sheet>
-                {dashboardTab === "home" && (
-                  <div className="w-full min-w-0 sm:w-auto sm:min-w-[140px]">
-                    <Select value={homeBranchFilter} onValueChange={(value) => setHomeBranchFilter(value as IndicatorsBranchFilter)}>
-                      <SelectTrigger className="h-11 flex-row-reverse rounded-full border-border/60 bg-white px-4 text-right [&>span]:text-right">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="text-right">
-                        <SelectItem value="all" className="justify-end pr-3 text-right">الكل</SelectItem>
-                        <SelectItem value="male" className="justify-end pr-3 text-right">المعلمون</SelectItem>
-                        <SelectItem value="female" className="justify-end pr-3 text-right">المعلمات</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
                 {renderDashboardHeaderActions()}
               </div>
-              {dashboardTab === "home" && (
-                <div className="w-full lg:hidden">
-                  <Select value={homeBranchFilter} onValueChange={(value) => setHomeBranchFilter(value as IndicatorsBranchFilter)}>
-                    <SelectTrigger className="h-11 flex-row-reverse rounded-full border-border/60 bg-white px-4 text-right [&>span]:text-right">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="text-right">
-                      <SelectItem value="all" className="justify-end pr-3 text-right">الكل</SelectItem>
-                      <SelectItem value="male" className="justify-end pr-3 text-right">المعلمون</SelectItem>
-                      <SelectItem value="female" className="justify-end pr-3 text-right">المعلمات</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
               </div>
             </div>
 
@@ -3757,8 +3963,23 @@ const Dashboard = () => {
           <div className="space-y-5" dir="rtl">
 
             {/* ─── Filters + section title ─────────────────────────────────── */}
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <h3 className="text-[0.95rem] font-bold text-foreground">المؤشرات الإجمالية</h3>
+            <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+              <div className="text-right md:order-1">
+                <h3 className="text-[0.95rem] font-bold text-foreground">المؤشرات الإجمالية</h3>
+              </div>
+              <div className="space-y-2 md:order-2 md:w-auto md:max-w-max">
+                <div className="text-sm font-bold text-foreground">الفرع</div>
+                <Select value={homeBranchFilter} onValueChange={(value) => setHomeBranchFilter(value as IndicatorsBranchFilter)}>
+                  <SelectTrigger className="h-10 w-full min-w-[112px] flex-row-reverse justify-between gap-2 px-3 text-right md:w-auto [&>span]:text-right">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="text-right">
+                    <SelectItem value="all" className="justify-end pr-3 text-right">الكل</SelectItem>
+                    <SelectItem value="male" className="justify-end pr-3 text-right">المعلمون</SelectItem>
+                    <SelectItem value="female" className="justify-end pr-3 text-right">المعلمات</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             {/* ─── Circular KPI indicators ─────────────────────────────────── */}
@@ -3773,20 +3994,6 @@ const Dashboard = () => {
                   suffix: "",
                 },
                 {
-                  key: "pre",
-                  label: "الاختبارات القبلية",
-                  value: homeMetrics.pre.avg,
-                  displayValue: homeMetrics.pre.avg,
-                  suffix: "%",
-                },
-                {
-                  key: "post",
-                  label: "الاختبارات البعدية",
-                  value: homeMetrics.post.avg,
-                  displayValue: homeMetrics.post.avg,
-                  suffix: "%",
-                },
-                {
                   key: "attendance",
                   label: "الحضور",
                   value: homeMetrics.attendanceRate,
@@ -3794,8 +4001,22 @@ const Dashboard = () => {
                   suffix: "%",
                 },
                 {
+                  key: "pre",
+                  label: "الاختبار القبلي",
+                  value: homeMetrics.pre.avg,
+                  displayValue: homeMetrics.pre.avg,
+                  suffix: "%",
+                },
+                {
+                  key: "post",
+                  label: "الاختبار البعدي",
+                  value: homeMetrics.post.avg,
+                  displayValue: homeMetrics.post.avg,
+                  suffix: "%",
+                },
+                {
                   key: "tasks",
-                  label: "التكاليف",
+                  label: "المهام الأدائية",
                   value: T > 0 ? clampPercent((homeMetrics.tasksCount / T) * 100) : 0,
                   displayValue: T > 0 ? clampPercent((homeMetrics.tasksCount / T) * 100) : 0,
                   suffix: "%",
@@ -3823,75 +4044,6 @@ const Dashboard = () => {
               );
             })()}
 
-            {/* ─── Per-course breakdown ─────────────────────────────────────── */}
-            {homeMetrics.courseBreakdown.length > 0 && (
-              <div className="space-y-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <h3 className="text-[0.95rem] font-bold text-foreground">مؤشرات الدورات</h3>
-                  <div className="w-full sm:w-[280px]">
-                    <Select value={homeCourseFilter} onValueChange={setHomeCourseFilter}>
-                      <SelectTrigger className="h-11 flex-row-reverse rounded-full border-border/60 bg-white px-4 text-right [&>span]:text-right">
-                        <SelectValue placeholder="اختر الدورة" />
-                      </SelectTrigger>
-                      <SelectContent className="text-right">
-                        <SelectItem value="all" className="justify-end pr-3 text-right">جميع الدورات</SelectItem>
-                        {homeMetrics.courseBreakdown.map((course) => (
-                          <SelectItem key={course.id} value={course.id} className="justify-end pr-3 text-right">
-                            {course.title}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="space-y-4">
-                  {(homeCourseFilter === "all"
-                    ? homeMetrics.courseBreakdown
-                    : homeMetrics.courseBreakdown.filter((course) => course.id === homeCourseFilter)
-                  ).map((course) => {
-                    const courseRise = course.postAvg - course.preAvg;
-                    const riseMagnitude = Math.abs(courseRise);
-                    const isRisePositive = courseRise > 0;
-                    const isRiseNegative = courseRise < 0;
-
-                    return (
-                      <div key={course.id} className="space-y-5">
-                        <div className="text-right text-base font-extrabold text-[#08384a]">{course.title}</div>
-                        <div className="grid grid-cols-2 gap-6 lg:gap-10">
-                          <ProgramIndicatorRing
-                            label="القبلي"
-                            progressValue={course.preAvg}
-                            displayValue={course.preAvg}
-                            suffix="%"
-                          />
-                          <div className="flex flex-col items-center gap-3 text-center">
-                            <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-center sm:justify-center sm:gap-4">
-                              <ProgramIndicatorRing
-                                label="البعدي"
-                                progressValue={course.postAvg}
-                                displayValue={course.postAvg}
-                                suffix="%"
-                              />
-                              <div
-                                className={cn(
-                                  "inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-black shadow-sm",
-                                  isRisePositive && "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
-                                  isRiseNegative && "bg-rose-50 text-rose-700 ring-1 ring-rose-200",
-                                  !isRisePositive && !isRiseNegative && "bg-slate-50 text-slate-600 ring-1 ring-slate-200",
-                                )}
-                              >
-                                {isRisePositive ? <TrendingUp className="size-4" /> : isRiseNegative ? <TrendingDown className="size-4" /> : <Minus className="size-4" />}
-                                <span>{`${Math.round(riseMagnitude)}%`}</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
 
           </div>
         )}
@@ -4485,16 +4637,6 @@ const Dashboard = () => {
             }
           };
 
-          const handleSelectAll = () => {
-            setAttendanceCourseId(selectedCourseForAttendance?.id ?? "");
-            setAttendanceChecked(new Set(branchStudents.map((s) => s.loginId)));
-          };
-
-          const handleDeselectAll = () => {
-            setAttendanceCourseId(selectedCourseForAttendance?.id ?? "");
-            setAttendanceChecked(new Set());
-          };
-
           const handleSave = () => {
             if (!selectedCourseForAttendance) return;
             const presentStudents = branchStudents.filter((s) => displayChecked.has(s.loginId));
@@ -4638,7 +4780,7 @@ const Dashboard = () => {
                   <CardTitle className="text-xl">التحضير</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid gap-4 md:grid-cols-2">
+                  <div className={cn("grid gap-4", managedBranchId ? "md:grid-cols-[minmax(0,1fr)_7rem]" : "md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem]")}>
                     {!managedBranchId && (
                       <div className="space-y-2">
                         <label className="text-sm font-bold text-foreground">الفرع</label>
@@ -4654,27 +4796,49 @@ const Dashboard = () => {
                     <div className="space-y-2">
                       <label className="text-sm font-bold text-foreground">الدورة / المهام</label>
                       <div className="flex items-center gap-2">
-                        <Select
-                          value={attendanceCourseId || (selectedCourseForAttendance?.id ?? "")}
-                          onValueChange={handleCourseChange}
-                        >
-                          <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue placeholder="اختر الدورة" /></SelectTrigger>
-                          <SelectContent className="text-right">
-                            {courseItems.map((c) => <SelectItem key={c.id} value={c.id} className="justify-end pr-3 text-right">{c.title}</SelectItem>)}
-                            {getTasks(data).sort((a, b) => a.sortOrder - b.sortOrder).map((t) => <SelectItem key={t.id} value={t.id} className="justify-end pr-3 text-right">تكليف: {t.title}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="shrink-0"
-                          onClick={() => attendanceFileInputRef.current?.click()}
-                          title="رفع ملف"
-                        >
-                          <FileUp className="size-4" />
-                        </Button>
+                        <div className="w-full">
+                          <Select
+                            value={attendanceCourseId || (selectedCourseForAttendance?.id ?? "")}
+                            onValueChange={handleCourseChange}
+                          >
+                            <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue placeholder="اختر الدورة" /></SelectTrigger>
+                            <SelectContent className="text-right">
+                              {courseItems.map((c) => <SelectItem key={c.id} value={c.id} className="justify-end pr-3 text-right">{c.title}</SelectItem>)}
+                              {getTasks(data).sort((a, b) => a.sortOrder - b.sortOrder).map((t) => <SelectItem key={t.id} value={t.id} className="justify-end pr-3 text-right">تكليف: {t.title}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {branchStudents.length > 0 && (
+                          <button
+                            type="button"
+                            aria-label={isAllSelected ? "إلغاء تحديد الكل" : "تحديد الكل"}
+                            aria-pressed={isAllSelected}
+                            className={cn(
+                              "shrink-0 inline-flex h-5 w-5 items-center justify-center rounded-full border-2 transition-colors md:hidden",
+                              isAllSelected ? "border-primary bg-primary" : "border-primary/70 bg-transparent",
+                            )}
+                            onClick={handleToggleAll}
+                          />
+                        )}
                       </div>
                     </div>
+                    {branchStudents.length > 0 && (
+                      <div className="hidden md:flex md:flex-col md:justify-end md:space-y-2">
+                        <div className="h-6" aria-hidden="true" />
+                        <div className="flex h-10 w-28 items-center justify-center translate-x-2">
+                          <button
+                            type="button"
+                            aria-label={isAllSelected ? "إلغاء تحديد الكل" : "تحديد الكل"}
+                            aria-pressed={isAllSelected}
+                            className={cn(
+                              "inline-flex h-5 w-5 items-center justify-center rounded-full border-2 transition-colors",
+                              isAllSelected ? "border-primary bg-primary" : "border-primary/70 bg-transparent",
+                            )}
+                            onClick={handleToggleAll}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {selectedCourseForAttendance && (
@@ -4688,16 +4852,6 @@ const Dashboard = () => {
                         <div className={cn(dashboardEmptyStateClass, "p-5 text-sm text-muted-foreground")}>لا يوجد طلاب في هذا الفرع.</div>
                       ) : (
                         <div className="space-y-3">
-                          <div className="flex justify-end">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={handleToggleAll}
-                              className={cn("rounded-full px-4", isAllSelected && "border-primary bg-primary/10 text-primary")}
-                            >
-                              تحديد الكل
-                            </Button>
-                          </div>
                           <div className="space-y-3 md:hidden">
                             {branchStudents.map((student) => {
                               const checked = displayChecked.has(student.loginId);
@@ -4808,10 +4962,34 @@ const Dashboard = () => {
 
         {dashboardTab === "indicators" && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between gap-4">
-              <div className="text-right">
-                <h2 className="text-xl font-bold text-foreground">إحصائيات الطلاب</h2>
-              </div>
+            <div className="flex items-center justify-end gap-2">
+              {(hasPermission("edit_student") || hasPermission("delete_student") || hasPermission("edit_reciter") || hasPermission("delete_reciter")) && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="group relative overflow-visible rounded-full"
+                  onClick={() => openEntityManager("student")}
+                  aria-label="إدارة البيانات"
+                >
+                  <Pencil className="size-4" />
+                  <span className="pointer-events-none absolute top-full left-1/2 mt-2 -translate-x-1/2 whitespace-nowrap rounded-full border border-primary/20 bg-white px-3 py-1.5 text-xs font-bold text-primary opacity-0 shadow-sm transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
+                    تعديل البيانات
+                  </span>
+                </Button>
+              )}
+              {(hasPermission("add_student") || hasPermission("add_reciter")) && (
+                <Button
+                  size="icon"
+                  className="group relative overflow-visible rounded-full"
+                  onClick={() => openUnifiedCreateDialog(hasPermission("add_student") ? "student" : "reciter")}
+                  aria-label="إضافة"
+                >
+                  <Plus className="size-5" />
+                  <span className="pointer-events-none absolute top-full left-1/2 mt-2 -translate-x-1/2 whitespace-nowrap rounded-full border border-primary/20 bg-white px-3 py-1.5 text-xs font-bold text-primary opacity-0 shadow-sm transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
+                    إضافة
+                  </span>
+                </Button>
+              )}
             </div>
 
             <div className="grid w-full gap-4 md:max-w-2xl md:grid-cols-2">
@@ -4828,7 +5006,7 @@ const Dashboard = () => {
                 </Select>
               </div>
               <div className="space-y-2 text-right">
-                <div className="text-sm font-medium text-muted-foreground">الترتيب</div>
+                <div className="text-sm font-medium text-muted-foreground">الفلتر</div>
                 <Select value={indicatorsSortOrder} onValueChange={(value) => setIndicatorsSortOrder(value as "alpha" | "overall-desc" | "overall-asc") }>
                   <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
                     <SelectValue />
@@ -4870,6 +5048,7 @@ const Dashboard = () => {
                             <div className="text-right">
                               <div className="text-lg font-bold text-foreground">{student.name}</div>
                               <div className="mt-1 text-xs text-muted-foreground">المقرئ: {student.reciterName}</div>
+                              <div className="mt-1 text-xs text-muted-foreground">رقم الدخول: {student.loginId}</div>
                             </div>
                           </div>
 
@@ -4877,7 +5056,13 @@ const Dashboard = () => {
                             {itemMetrics.map((metric) => (
                               <div key={metric.label} className="space-y-2 rounded-[1.1rem] border border-border/60 bg-white p-4">
                                 <div className="flex items-center justify-between gap-3 text-sm">
-                                  <span className="font-medium text-muted-foreground">{metric.label}</span>
+                                  {metric.label === "الأجزاء" ? (
+                                    <button type="button" className="font-medium text-muted-foreground hover:text-primary hover:underline" onClick={() => setPartsDialogStudentId(student.id)}>
+                                      {metric.label}
+                                    </button>
+                                  ) : (
+                                    <span className="font-medium text-muted-foreground">{metric.label}</span>
+                                  )}
                                   <span className="font-bold text-foreground">{formatPercent(metric.value)}</span>
                                 </div>
                                 <Progress value={clampPercent(metric.value)} className="h-2.5 bg-muted" />
@@ -4890,6 +5075,70 @@ const Dashboard = () => {
                   })
                 )}
               </div>
+            )}
+
+            {indicatorsBranchId !== "all" && (
+              <Card className={dashboardCardClass}>
+                <CardHeader className="text-right">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      {hasPermission("add_reciter") && (
+                        <Button className="gap-2 rounded-full px-4 sm:px-5" variant="outline" onClick={() => openUnifiedCreateDialog("reciter")}>
+                          <Plus className="size-4" />
+                          إضافة مقرئ
+                        </Button>
+                      )}
+                    </div>
+                    <div>
+                      <CardTitle className="text-xl">المقرئون</CardTitle>
+                      <CardDescription>جميع المقرئين في الفرع المحدد.</CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {indicatorReciters.length === 0 ? (
+                    <div className={cn(dashboardEmptyStateClass, "p-6 text-sm text-muted-foreground")}>
+                      لا يوجد مقرئون في هذا الفرع بعد.
+                    </div>
+                  ) : (
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {indicatorReciters.map((reciter) => {
+                        const linkedStudents = data.students.filter((student) => reciter.studentIds.includes(student.id));
+
+                        return (
+                          <Card key={reciter.id} className={dashboardPlainPanelClass}>
+                            <CardContent className="space-y-4 p-4 text-right">
+                              <div className="flex items-start justify-between gap-3">
+                                <Button variant="outline" size="icon" className="h-9 w-9 rounded-xl" onClick={() => openEntityManager("reciter", reciter.id)}>
+                                  <Pencil className="size-4" />
+                                </Button>
+                                <div>
+                                  <div className="font-bold text-foreground">{reciter.name}</div>
+                                  <div className="mt-1 text-xs text-muted-foreground">رقم الدخول: {reciter.loginCode}</div>
+                                </div>
+                              </div>
+                              <div className="space-y-2">
+                                <div className="text-sm font-medium text-muted-foreground">الطلاب المرتبطون</div>
+                                {linkedStudents.length === 0 ? (
+                                  <div className="text-sm text-muted-foreground">لا يوجد طلاب مرتبطون.</div>
+                                ) : (
+                                  <div className="flex flex-wrap justify-end gap-2">
+                                    {linkedStudents.map((student) => (
+                                      <span key={student.id} className="rounded-full border border-border/60 bg-muted/20 px-3 py-1 text-xs font-medium text-foreground">
+                                        {student.name}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             )}
           </div>
         )}
@@ -5027,14 +5276,7 @@ const Dashboard = () => {
               const average = values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
               return { question: q, average, count: values.length };
             });
-          const formatRatingAverage = (value: number | null) => {
-            if (value == null) {
-              return "0";
-            }
-
-            const rounded = Math.round(value * 10) / 10;
-            return Number.isInteger(rounded) ? String(Math.round(rounded)) : rounded.toFixed(1).replace(".", ",");
-          };
+          const toRatingPercent = (value: number | null) => (value == null ? 0 : clampPercent(value * 10));
           return (
             <div className="space-y-6" dir="rtl">
 
@@ -5055,10 +5297,35 @@ const Dashboard = () => {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                    <Button className="rounded-full px-6" disabled={!selectedSatisfactionCourse} onClick={() => setSatisfactionAddDialogOpen(true)}>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="group relative overflow-visible rounded-full border-destructive/25 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => {
+                        const initialQuestion = selectedSatisfactionQuestions[0] ?? data.satisfactionQuestions[0] ?? null;
+                        setSatisfactionDeleteQuestionKey(initialQuestion ? getSatisfactionDeleteQuestionKey(initialQuestion.prompt, initialQuestion.type) : "");
+                        setSatisfactionDeleteCourseId(selectedSatisfactionCourse?.id ?? ALL_SATISFACTION_DELETE_COURSES);
+                        setSatisfactionDeleteDialogOpen(true);
+                      }}
+                      aria-label="حذف"
+                    >
+                      <Trash2 className="size-4" />
+                      <span className="pointer-events-none absolute top-full left-1/2 mt-2 -translate-x-1/2 whitespace-nowrap rounded-full border border-destructive/20 bg-white px-3 py-1.5 text-xs font-bold text-destructive opacity-0 shadow-sm transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
+                        حذف
+                      </span>
+                    </Button>
+                    <Button
+                      size="icon"
+                      className="group relative overflow-visible rounded-full"
+                      disabled={!selectedSatisfactionCourse}
+                      onClick={() => setSatisfactionAddDialogOpen(true)}
+                      aria-label="إضافة"
+                    >
                       <Plus className="size-4" />
-                      إضافة
+                      <span className="pointer-events-none absolute top-full left-1/2 mt-2 -translate-x-1/2 whitespace-nowrap rounded-full border border-primary/20 bg-white px-3 py-1.5 text-xs font-bold text-primary opacity-0 shadow-sm transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
+                        إضافة
+                      </span>
                     </Button>
                   </div>
                 </div>
@@ -5077,15 +5344,15 @@ const Dashboard = () => {
                 ) : (
                   <div className="grid grid-cols-2 gap-x-4 gap-y-8 lg:grid-cols-3 lg:gap-x-6 lg:gap-y-10">
                     {ratingIndicators.map(({ question, average, count }) => {
+                      const percentValue = toRatingPercent(average);
                       return (
                         <ProgramIndicatorRing
                           key={question.id}
                           label={question.prompt}
                           helperText={`${count} إجابة`}
-                          progressValue={average == null ? 0 : average * 10}
-                          displayValue={average ?? 0}
-                          suffix=""
-                          formatDisplay={formatRatingAverage}
+                          progressValue={percentValue}
+                          displayValue={percentValue}
+                          formatDisplay={formatPercent}
                         />
                       );
                     })}
@@ -5179,27 +5446,41 @@ const Dashboard = () => {
         <Dialog open={satisfactionDeleteDialogOpen} onOpenChange={(open) => {
           setSatisfactionDeleteDialogOpen(open);
           if (!open) {
-            setSatisfactionDeleteQuestionId("");
+            setSatisfactionDeleteQuestionKey("");
+            setSatisfactionDeleteCourseId(ALL_SATISFACTION_DELETE_COURSES);
           }
         }}>
           <DialogContent className="max-w-xl rounded-[1.75rem] text-right [&>button]:hidden" dir="rtl">
             <DialogHeader>
               <DialogTitle className="text-right text-xl">حذف سؤال من الاستبيان</DialogTitle>
-              <DialogDescription className="text-right text-sm text-muted-foreground">
-                اختر سؤالًا واحدًا من أسئلة الدورة الحالية ثم احذفه.
-              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
-                <div className="text-sm font-bold text-foreground">السؤال</div>
-                <Select value={satisfactionDeleteQuestionId} onValueChange={setSatisfactionDeleteQuestionId}>
+                <div className="text-sm font-bold text-foreground">اختر السؤال</div>
+                <Select value={satisfactionDeleteQuestionKey} onValueChange={setSatisfactionDeleteQuestionKey}>
                   <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
                     <SelectValue placeholder="اختر السؤال" />
                   </SelectTrigger>
                   <SelectContent>
-                    {selectedSatisfactionQuestions.map((question) => (
-                      <SelectItem key={question.id} value={question.id} className="justify-end pr-3 text-right">
+                    {satisfactionDeleteQuestionOptions.map((question) => (
+                      <SelectItem key={question.key} value={question.key} className="justify-end pr-3 text-right">
                         {question.prompt}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <div className="text-sm font-bold text-foreground">اختر الدورة</div>
+                <Select value={satisfactionDeleteCourseId} onValueChange={setSatisfactionDeleteCourseId} disabled={!satisfactionDeleteQuestionKey}>
+                  <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
+                    <SelectValue placeholder="اختر الدورة" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL_SATISFACTION_DELETE_COURSES} className="justify-end pr-3 text-right">جميع الدورات</SelectItem>
+                    {satisfactionDeleteCourseOptions.map((course) => (
+                      <SelectItem key={course.id} value={course.id} className="justify-end pr-3 text-right">
+                        {course.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -5207,7 +5488,7 @@ const Dashboard = () => {
               </div>
               <div className="flex justify-end gap-3">
                 <Button variant="outline" onClick={() => setSatisfactionDeleteDialogOpen(false)}>إلغاء</Button>
-                <Button variant="destructive" disabled={!satisfactionDeleteQuestionId} onClick={() => void handleDeleteSelectedSatisfactionQuestion()}>
+                <Button variant="destructive" disabled={!satisfactionDeleteQuestionKey} onClick={() => void handleDeleteSelectedSatisfactionQuestion()}>
                   حذف السؤال
                 </Button>
               </div>
@@ -5251,31 +5532,30 @@ const Dashboard = () => {
                         <div className="text-right">
                           <CardTitle className="min-h-[4rem] text-lg leading-8">{course.title}</CardTitle>
                         </div>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <button
-                              type="button"
-                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center bg-transparent text-primary outline-none transition-colors hover:text-primary/80 focus-visible:ring-2 focus-visible:ring-primary/30"
-                              aria-label="توضيح حالة تفعيل الدورة"
-                            >
-                              <AlertCircle className="size-5" aria-hidden="true" />
-                            </button>
-                          </PopoverTrigger>
-                          <PopoverContent
-                            side="bottom"
-                            align="start"
-                            className="max-w-72 rounded-2xl border-primary/15 bg-white px-4 py-3 text-right text-base font-semibold leading-relaxed text-primary shadow-[0_20px_45px_rgba(14,116,144,0.14)]"
-                          >
-                            <div className="space-y-2">
-                              {courseStatusHints.map((hint) => (
-                                <div key={hint} className="flex items-start gap-2 text-right">
-                                  <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true" />
-                                  <span>{hint}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </PopoverContent>
-                        </Popover>
+                        <div className="flex justify-start gap-1.5">
+                          {canCreateCourses && (
+                            <>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-foreground">
+                                    <Pencil className="size-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="start" className="min-w-[10rem] rounded-2xl bg-white text-right">
+                                  <DropdownMenuItem className="justify-end text-right" onSelect={() => handleEditCourse(course.id, course.title)}>
+                                    تعديل الاسم
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem className="justify-end text-right" onSelect={() => handleOpenAssessmentModel(course.id, "pre")}>
+                                    عرض الأسئلة
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                              <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-destructive" onClick={() => handleDeleteCourse(course.id)}>
+                                <Trash2 className="size-4" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-3">
@@ -5305,31 +5585,17 @@ const Dashboard = () => {
                               if (!hasPermission(permKey)) return;
                               const isOpen = course.isActive && item.active;
                               if (isOpen) {
-                                // Manager: only deactivate their branch
                                 if (managedBranchId) {
-                                  void handleToggleAssessmentAvailability(course.id, item.type);
+                                  void handleToggleAssessmentAvailability(course.id, item.type, managedBranchId);
                                 } else {
-                                  // Admin: check if both/one branch active
-                                  const maleActive = isAssessmentEnabledForCourse(course, item.type, "male");
-                                  const femaleActive = isAssessmentEnabledForCourse(course, item.type, "female");
-                                  if (maleActive && femaleActive) {
-                                    // Both active — deactivate all
-                                    void handleToggleAssessmentAvailability(course.id, item.type);
-                                  } else if (maleActive || femaleActive) {
-                                    // One active — show dialog
-                                    const activeBranch: BranchId = maleActive ? "male" : "female";
-                                    const inactiveBranch: BranchId = maleActive ? "female" : "male";
-                                    setBranchConflictDialog({ courseId: course.id, assessmentType: item.type, activeBranch, inactiveBranch });
-                                  } else {
-                                    void handleToggleAssessmentAvailability(course.id, item.type);
-                                  }
+                                  handleOpenAssessmentManageDialog(course.id, item.type);
                                 }
                               } else {
-                                setAssessmentPickerStep("pick");
+                                handleOpenAssessmentAvailabilityDialog(course.id, item.type);
+                                setAssessmentPickerStep("timer");
                                 setAssessmentActionPicker({ courseId: course.id, assessmentType: item.type });
                               }
                             }}
-                            onDoubleClick={() => handleOpenAssessmentModel(course.id, item.type)}
                             className={cn(
                               "block rounded-[1rem] border p-3 text-center text-sm font-bold transition-smooth",
                               isOpen
@@ -5345,20 +5611,6 @@ const Dashboard = () => {
                           })()
                         ))}
                       </div>
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="flex justify-start gap-2">
-                          {canCreateCourses && (
-                            <>
-                              <Button variant="outline" size="icon" className="h-10 w-10 rounded-xl" onClick={() => handleEditCourse(course.id, course.title)}>
-                                <Pencil className="size-4" />
-                              </Button>
-                              <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-destructive" onClick={() => handleDeleteCourse(course.id)}>
-                                <Trash2 className="size-4" />
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </div>
                     </CardContent>
                   </Card>
                   </SortableCourseCard>
@@ -5367,6 +5619,88 @@ const Dashboard = () => {
                 </SortableContext>
               </DndContext>
             </div>
+
+            {courseItems.length > 0 && (
+              <Card className={dashboardCardClass}>
+                <CardHeader className="text-right">
+                  <CardTitle className="text-xl">مؤشرات الدورات</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-foreground">الدورة</label>
+                      <Select value={courseIndicatorsCourseId} onValueChange={setCourseIndicatorsCourseId}>
+                        <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
+                          <SelectValue placeholder="اختر الدورة" />
+                        </SelectTrigger>
+                        <SelectContent className="text-right">
+                          <SelectItem value={ALL_COURSE_INDICATORS_ID} className="justify-end pr-3 text-right">
+                            جميع الدورات
+                          </SelectItem>
+                          {courseItems.map((course) => (
+                            <SelectItem key={course.id} value={course.id} className="justify-end pr-3 text-right">
+                              {course.title}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-foreground">الفرع</label>
+                      {managedBranchId ? (
+                        <div className="flex h-10 items-center rounded-2xl border border-border/60 bg-muted/20 px-4 text-sm font-medium text-foreground">
+                          {branchLabels[managedBranchId]}
+                        </div>
+                      ) : (
+                        <Select value={courseIndicatorsBranch} onValueChange={(value) => setCourseIndicatorsBranch(value as IndicatorsBranchFilter)}>
+                          <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="text-right">
+                            <SelectItem value="all" className="justify-end pr-3 text-right">الكل</SelectItem>
+                            <SelectItem value="male" className="justify-end pr-3 text-right">معلمين</SelectItem>
+                            <SelectItem value="female" className="justify-end pr-3 text-right">معلمات</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                  </div>
+
+                  {courseIndicatorsMetrics && (
+                    <div className="flex flex-col items-center justify-center gap-6 rounded-[1.5rem] border border-border/60 bg-muted/10 px-4 py-6 lg:flex-row lg:gap-8">
+                      <ProgramIndicatorRing
+                        label="الاختبار القبلي"
+                        helperText={`${courseIndicatorsMetrics.preCount} طالب`}
+                        progressValue={courseIndicatorsMetrics.pre}
+                        displayValue={courseIndicatorsMetrics.pre}
+                      />
+
+                      <div
+                        className={cn(
+                          "flex items-center gap-2 px-1 py-1 text-center",
+                          courseIndicatorsMetrics.rise >= 0
+                            ? "text-emerald-600"
+                            : "text-rose-600",
+                        )}
+                      >
+                        <span className="text-xl font-black">
+                          {Math.abs(Math.round(courseIndicatorsMetrics.rise))}%
+                        </span>
+                        {courseIndicatorsMetrics.rise >= 0 ? <TrendingUp className="size-5" /> : <TrendingDown className="size-5" />}
+                      </div>
+
+                      <ProgramIndicatorRing
+                        label="الاختبار البعدي"
+                        helperText={`${courseIndicatorsMetrics.postCount} طالب`}
+                        progressValue={courseIndicatorsMetrics.post}
+                        displayValue={courseIndicatorsMetrics.post}
+                      />
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             {selectedCourse && selectedCourseAssessment && (
               <div className="grid gap-6 xl:grid-cols-[0.7fr_0.3fr]">
@@ -5577,7 +5911,7 @@ const Dashboard = () => {
                 <CardTitle className="text-xl text-right">لوحة النتائج</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-4">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-foreground">القسم</label>
                     <Select value={isResultsFinalExamSelected ? FINAL_EXAM_RESULTS_ID : resultsCourse?.id ?? ""} onValueChange={(v) => {
@@ -5599,7 +5933,7 @@ const Dashboard = () => {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2 md:col-span-1">
+                  <div className="space-y-2">
                     <label className="text-sm font-bold text-foreground">الفرع</label>
                     <Select value={resultsBranchId} onValueChange={(value) => setResultsBranchId(value as IndicatorsBranchFilter)}>
                       <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue /></SelectTrigger>
@@ -5610,7 +5944,7 @@ const Dashboard = () => {
                     </Select>
                   </div>
                   {!isResultsFinalExamSelected && resultsCourse?.entityType !== "task" && (
-                  <div className="space-y-2 md:col-span-1 xl:col-span-2">
+                  <div className="space-y-2">
                     <label className="text-sm font-bold text-foreground">نوع البيانات</label>
                     <Select value={resultsType} onValueChange={(value) => setResultsType(value as "attendance" | AssessmentType)}>
                       <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue /></SelectTrigger>
@@ -5621,6 +5955,20 @@ const Dashboard = () => {
                       </SelectContent>
                     </Select>
                   </div>
+                  )}
+                  {resultsCourse && resultsType === "attendance" && resultsCourse.entityType !== "task" && (
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-foreground">الطلاب</label>
+                      <Select value={resultsAttendanceFilter} onValueChange={(value) => setResultsAttendanceFilter(value as "all" | "present" | "absent" | "frequent-absent") }>
+                        <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue /></SelectTrigger>
+                        <SelectContent className="text-right">
+                          <SelectItem value="all" className="justify-end pr-3 text-right">جميع الطلاب</SelectItem>
+                          <SelectItem value="present" className="justify-end pr-3 text-right">الحاضرين</SelectItem>
+                          <SelectItem value="absent" className="justify-end pr-3 text-right">الغائبين</SelectItem>
+                          <SelectItem value="frequent-absent" className="justify-end pr-3 text-right">غائبين 3 مرات فأكثر</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   )}
                 </div>
               </CardContent>
@@ -5634,23 +5982,6 @@ const Dashboard = () => {
 
             {resultsCourse && resultsType === "attendance" && resultsCourse.entityType !== "task" && (
               <Card className="border-primary/10 bg-white/90">
-                <CardHeader className="space-y-4">
-                  <div className="flex w-full flex-col gap-3 sm:max-w-xs sm:flex-row sm:items-center">
-                    <Select value={resultsAttendanceFilter} onValueChange={(value) => setResultsAttendanceFilter(value as "all" | "present" | "absent" | "frequent-absent") }>
-                      <SelectTrigger className="flex-1 flex-row-reverse text-right [&>span]:text-right"><SelectValue /></SelectTrigger>
-                      <SelectContent className="text-right">
-                        <SelectItem value="all" className="justify-end pr-3 text-right">جميع الطلاب</SelectItem>
-                        <SelectItem value="present" className="justify-end pr-3 text-right">الحاضرين</SelectItem>
-                        <SelectItem value="absent" className="justify-end pr-3 text-right">الغائبين</SelectItem>
-                        <SelectItem value="frequent-absent" className="justify-end pr-3 text-right">غائبين 3 مرات فأكثر</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <div className="flex items-center justify-between rounded-[1rem] border border-border/60 bg-muted/20 px-3 py-2 text-xs font-medium sm:block sm:space-y-0.5 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 sm:text-left">
-                      <div className="text-emerald-700">الحاضرين: {presentStudents.length}</div>
-                      <div className="text-rose-700">الغائبين: {absentStudents.length}</div>
-                    </div>
-                  </div>
-                </CardHeader>
                 <CardContent className="space-y-3">
                   {filteredAttendanceStudents.length === 0 && (
                     <div className="rounded-3xl border border-dashed border-primary/20 p-4 text-sm text-muted-foreground">
@@ -5689,11 +6020,11 @@ const Dashboard = () => {
               <Card className="border-primary/10 bg-white/90">
                 <CardHeader>
                   <CardDescription>{resultsCourse.title}</CardDescription>
-                  <CardTitle className="text-xl">{resultsCourse.entityType === "task" ? `التكليف - ${resultsBranchId === "all" ? "جميع الفروع" : branchLabels[resultsBranchId]}` : `${assessmentLabels[resultsType]} - ${resultsBranchId === "all" ? "جميع الفروع" : branchLabels[resultsBranchId]}`}</CardTitle>
+                  <CardTitle className="text-xl">{resultsCourse.entityType === "task" ? `المهمة الأدائية - ${resultsBranchId === "all" ? "جميع الفروع" : branchLabels[resultsBranchId]}` : `${assessmentLabels[resultsType]} - ${resultsBranchId === "all" ? "جميع الفروع" : branchLabels[resultsBranchId]}`}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {latestResultRows.length === 0 && <div className="rounded-3xl border border-dashed border-primary/20 p-4 text-sm text-muted-foreground">{resultsBranchId === "all" ? "لا يوجد طلاب في جميع الفروع." : "لا يوجد طلاب في هذا الفرع."}</div>}
-                  {latestResultRows.map((row) => {
+                  {resultsRows.length === 0 && <div className="rounded-3xl border border-dashed border-primary/20 p-4 text-sm text-muted-foreground">{resultsBranchId === "all" ? "لا يوجد طلاب في جميع الفروع." : "لا يوجد طلاب في هذا الفرع."}</div>}
+                  {resultsRows.map((row) => {
                     const isTaskResult = resultsCourse.entityType === "task";
                     const isCompletedTask = isTaskResult && row.score > 0;
 
@@ -5747,7 +6078,7 @@ const Dashboard = () => {
                     {feSubs.length === 0 && <div className="rounded-3xl border border-dashed border-primary/20 p-4 text-sm text-muted-foreground">لا توجد إجابات بعد.</div>}
                     {feSubs.map((sub) => {
                       const score = typeof sub.manualScore === "number" ? sub.manualScore : null;
-                      const hasViewableAnswers = sub.answers.some((answer) => answer.questionId !== "__score_override__");
+                      const hasViewableAnswers = (sub.answers ?? []).some((answer) => answer.questionId !== "__score_override__");
                       return (
                           <div key={sub.id} className="flex flex-col gap-3 rounded-3xl border border-primary/10 bg-white p-4 md:flex-row md:items-center md:justify-between">
                           <button type="button" className="text-right" disabled={!hasViewableAnswers} onClick={() => hasViewableAnswers && setFinalExamDetailsSubmissionId(sub.id)}>
@@ -5800,44 +6131,6 @@ const Dashboard = () => {
 
       <Dialog open={Boolean(assessmentActionPicker)} onOpenChange={(open) => { if (!open) { setAssessmentActionPicker(null); setAssessmentPickerStep("pick"); resetAssessmentAvailabilityDialog(); } }}>
         <DialogContent className="max-w-sm rounded-[1.75rem] p-0 text-right [&>button]:hidden">
-          {assessmentPickerStep === "pick" && (
-            <>
-              <DialogHeader className="border-b border-border/60 px-4 py-3 text-right">
-                <DialogTitle className="text-right text-xl">
-                  {assessmentActionPicker ? assessmentLabels[assessmentActionPicker.assessmentType] : ""}
-                </DialogTitle>
-              </DialogHeader>
-              <div className="grid grid-cols-2 gap-2.5 p-4">
-                <button
-                  type="button"
-                  className="flex flex-col items-center gap-2.5 rounded-[1.25rem] border border-border/70 bg-muted/20 p-3.5 text-center transition-colors hover:border-primary/40 hover:bg-primary/5"
-                  onClick={() => {
-                    if (!assessmentActionPicker) return;
-                    handleOpenAssessmentAvailabilityDialog(assessmentActionPicker.courseId, assessmentActionPicker.assessmentType);
-                    setAssessmentPickerStep("timer");
-                  }}
-                >
-                  <div className="text-2xl">⏱</div>
-                  <div className="text-sm font-bold text-foreground">بدء الاختبار</div>
-                </button>
-                <button
-                  type="button"
-                  className="flex flex-col items-center gap-2.5 rounded-[1.25rem] border border-border/70 bg-muted/20 p-3.5 text-center transition-colors hover:border-primary/40 hover:bg-primary/5"
-                  onClick={() => {
-                    if (!assessmentActionPicker) return;
-                    setAssessmentActionPicker(null);
-                    navigate(`/dashboard/course/${assessmentActionPicker.assessmentType}?courseId=${assessmentActionPicker.courseId}`);
-                  }}
-                >
-                  <div className="text-2xl">📋</div>
-                  <div className="text-sm font-bold text-foreground">عرض الأسئلة</div>
-                </button>
-              </div>
-              <div className="flex justify-end border-t border-border/60 px-4 py-3">
-                <Button variant="outline" className="rounded-full px-5" onClick={() => setAssessmentActionPicker(null)}>إلغاء</Button>
-              </div>
-            </>
-          )}
           {assessmentPickerStep === "timer" && (
             <>
               <DialogHeader className="border-b border-border/60 px-4 py-3 text-right">
@@ -5847,10 +6140,10 @@ const Dashboard = () => {
                 {!managedBranchId && (
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-foreground">الفرع</label>
-                    <Select value={assessmentTargetBranch ?? "male"} onValueChange={(v) => setAssessmentTargetBranch(v as BranchId)}>
+                    <Select value={assessmentTargetBranch ?? "all"} onValueChange={(v) => setAssessmentTargetBranch(v as AssessmentOpenBranch)}>
                       <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {!assessmentRestrictToBranchOnly && <SelectItem value="all" className="justify-end pr-3 text-right">جميع الفروع</SelectItem>}
+                        {!assessmentRestrictToBranchOnly && <SelectItem value="all" className="justify-end pr-3 text-right">الكل</SelectItem>}
                         {assessmentBlockedBranch !== "male" && <SelectItem value="male" className="justify-end pr-3 text-right">معلمين</SelectItem>}
                         {assessmentBlockedBranch !== "female" && <SelectItem value="female" className="justify-end pr-3 text-right">معلمات</SelectItem>}
                       </SelectContent>
@@ -5883,8 +6176,18 @@ const Dashboard = () => {
                 </label>
                 {assessmentAvailabilityError && <p className="text-sm font-medium text-destructive">{assessmentAvailabilityError}</p>}
                 <div className="flex justify-end gap-3">
-                  <Button variant="outline" onClick={() => setAssessmentPickerStep("pick")}>رجوع</Button>
-                  <Button onClick={() => { void handleConfirmAssessmentAvailability().then(() => setAssessmentActionPicker(null)); }}>فتح</Button>
+                  <Button variant="outline" disabled={assessmentSubmitting} onClick={() => setAssessmentActionPicker(null)}>إلغاء</Button>
+                  <Button
+                    disabled={assessmentSubmitting}
+                    onClick={async () => {
+                      const opened = await handleConfirmAssessmentAvailability();
+                      if (opened) {
+                        setAssessmentActionPicker(null);
+                      }
+                    }}
+                  >
+                    {assessmentSubmitting ? "جارٍ الفتح..." : "فتح"}
+                  </Button>
                 </div>
               </div>
             </>
@@ -5893,7 +6196,7 @@ const Dashboard = () => {
       </Dialog>
 
       <AlertDialog open={Boolean(crossCourseConflict)} onOpenChange={(open) => { if (!open) setCrossCourseConflict(null); }}>
-        <AlertDialogContent className="rounded-[1.5rem] text-right">
+        <AlertDialogContent className="rounded-[1.75rem] text-right">
           <AlertDialogHeader className="text-right">
             <AlertDialogTitle className="text-right">تنبيه: اختبار مفتوح في دورة أخرى</AlertDialogTitle>
             <AlertDialogDescription className="text-right">
@@ -5908,63 +6211,93 @@ const Dashboard = () => {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-row-reverse gap-2">
-            <AlertDialogAction onClick={() => void handleConfirmAssessmentAvailability().then(() => setAssessmentActionPicker(null))}>متابعة</AlertDialogAction>
+            <AlertDialogAction
+              onClick={async () => {
+                const opened = await handleConfirmAssessmentAvailability();
+                if (opened) {
+                  setAssessmentActionPicker(null);
+                }
+              }}
+            >
+              {assessmentSubmitting ? "جارٍ الفتح..." : "متابعة"}
+            </AlertDialogAction>
             <AlertDialogCancel onClick={() => setCrossCourseConflict(null)}>إلغاء</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={Boolean(branchConflictDialog)} onOpenChange={(open) => { if (!open) setBranchConflictDialog(null); }}>
-        <AlertDialogContent className="rounded-[1.5rem] text-right">
-          <AlertDialogHeader className="text-right">
-            <AlertDialogTitle className="text-right">تنبيه: فرع نشط</AlertDialogTitle>
-            <AlertDialogDescription className="text-right">
-              {branchConflictDialog && (
-                <>
-                  <span className="font-bold text-foreground">{branchLabels[branchConflictDialog.activeBranch]}</span>
-                  {" شغّال حاليًا. ماذا تريد؟"}
-                </>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="flex-row-reverse gap-2 flex-wrap">
-            <AlertDialogAction
-              className="bg-primary"
-              onClick={() => {
-                if (!branchConflictDialog) return;
-                // Open timer directly and restrict branch choices to the inactive branch only.
-                handleOpenAssessmentAvailabilityDialog(branchConflictDialog.courseId, branchConflictDialog.assessmentType);
-                setAssessmentTargetBranch(branchConflictDialog.inactiveBranch);
-                setAssessmentBlockedBranch(branchConflictDialog.activeBranch);
-                setAssessmentRestrictToBranchOnly(true);
-                setAssessmentPickerStep("timer");
-                setAssessmentActionPicker({ courseId: branchConflictDialog.courseId, assessmentType: branchConflictDialog.assessmentType });
-                setBranchConflictDialog(null);
-              }}
-            >
-              تفعيل {branchConflictDialog ? branchLabels[branchConflictDialog.inactiveBranch] : ""}
-            </AlertDialogAction>
-            <AlertDialogAction
-              className="bg-destructive hover:bg-destructive/90"
-              onClick={() => {
-                if (!branchConflictDialog) return;
-                void handleToggleAssessmentAvailability(branchConflictDialog.courseId, branchConflictDialog.assessmentType);
-                setBranchConflictDialog(null);
-              }}
-            >
-              إلغاء {branchConflictDialog ? branchLabels[branchConflictDialog.activeBranch] : ""}
-            </AlertDialogAction>
-            <AlertDialogCancel onClick={() => setBranchConflictDialog(null)}>إلغاء</AlertDialogCancel>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <Dialog open={Boolean(assessmentManageDialog)} onOpenChange={(open) => { if (!open) { setAssessmentManageDialog(null); setAssessmentManageChoice(""); } }}>
+        <DialogContent className="max-w-sm rounded-[1.75rem] p-0 text-right [&>button]:hidden">
+          <DialogHeader className="border-b border-border/60 px-4 py-3 text-right">
+            <DialogTitle className="text-right text-xl">إدارة حالة الاختبار</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 p-4">
+            <div className="space-y-2">
+              <label className="text-sm font-bold text-foreground">الإجراء</label>
+              <Select value={assessmentManageChoice} onValueChange={setAssessmentManageChoice}>
+                <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {(() => {
+                    if (!assessmentManageDialog) {
+                      return null;
+                    }
+
+                    const course = data.courses.find((item) => item.id === assessmentManageDialog.courseId);
+                    if (!course) {
+                      return null;
+                    }
+
+                    return getAssessmentManageOptions(course, assessmentManageDialog.assessmentType).map((option) => (
+                      <SelectItem key={option.value} value={option.value} className="justify-end pr-3 text-right">{option.label}</SelectItem>
+                    ));
+                  })()}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button variant="outline" disabled={assessmentManageSubmitting} onClick={() => setAssessmentManageDialog(null)}>إلغاء</Button>
+              <Button
+                disabled={!assessmentManageChoice || assessmentManageSubmitting}
+                onClick={async () => {
+                  if (!assessmentManageDialog || !assessmentManageChoice) return;
+
+                  if (assessmentManageChoice.startsWith("close_")) {
+                    const branch = assessmentManageChoice === "close_all"
+                      ? "all"
+                      : (assessmentManageChoice.replace("close_", "") as AssessmentOpenBranch);
+                    setAssessmentManageSubmitting(true);
+                    try {
+                      await handleToggleAssessmentAvailability(assessmentManageDialog.courseId, assessmentManageDialog.assessmentType, branch);
+                      setAssessmentManageDialog(null);
+                    } finally {
+                      setAssessmentManageSubmitting(false);
+                    }
+                    return;
+                  }
+
+                  const branch = assessmentManageChoice === "open_all"
+                    ? "all"
+                    : (assessmentManageChoice.replace("open_", "") as AssessmentOpenBranch);
+                  handleOpenAssessmentAvailabilityDialog(assessmentManageDialog.courseId, assessmentManageDialog.assessmentType);
+                  setAssessmentTargetBranch(branch);
+                  setAssessmentPickerStep("timer");
+                  setAssessmentActionPicker({ courseId: assessmentManageDialog.courseId, assessmentType: assessmentManageDialog.assessmentType });
+                  setAssessmentManageDialog(null);
+                }}
+              >
+                {assessmentManageSubmitting ? "جارٍ التنفيذ..." : "متابعة"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <ImportResultsDialog
         open={importResultsOpen}
         onOpenChange={setImportResultsOpen}
         courses={[...courseItems, ...getTasks(data).sort((a, b) => a.sortOrder - b.sortOrder)]}
         students={data.students}
-        defaultCourseId={resultsCourse?.id}
+        defaultCourseId={resultsCourse?.id ?? (indicatorsCourseId !== "all" ? indicatorsCourseId : "")}
         defaultAssessmentType={resultsType !== "attendance" ? resultsType : "pre"}
         onSave={async (cId, aType, rows) => {
           await store.bulkImportAssessments(
@@ -5991,8 +6324,9 @@ const Dashboard = () => {
         courses={[...courseItems, ...getTasks(data).sort((a, b) => a.sortOrder - b.sortOrder)]}
         students={data.students}
         submissions={data.submissions}
-        defaultCourseId={resultsCourse?.id}
+        defaultCourseId={resultsCourse?.id ?? (indicatorsCourseId !== "all" ? indicatorsCourseId : "")}
         defaultAssessmentType={resultsType !== "attendance" ? resultsType : "pre"}
+        onImportClick={() => setImportResultsOpen(true)}
         onSave={async (cId, aType, rows) => {
           await store.bulkImportAssessments(
             cId,
@@ -6015,22 +6349,133 @@ const Dashboard = () => {
       }}>
         <DialogContent className="max-w-xl rounded-[1.75rem] p-0 text-right [&>button]:hidden">
           <DialogHeader className="border-b border-border/60 px-4 py-3 text-right">
-            <DialogTitle className="text-right text-xl">{editingStudentId ? "تعديل بيانات الطالب/ة" : "إضافة طالب/ة"}</DialogTitle>
+            <div className="flex items-center justify-between gap-3">
+              {!studentManagerMode && studentManagerEntityType === "student" && !editingStudentId ? (
+                <DialogTitle className="text-left text-xl">إضافة طالب/ة</DialogTitle>
+              ) : studentManagerMode ? (
+                <DialogTitle className="text-right text-xl">إدارة البيانات</DialogTitle>
+              ) : <span />}
+              {!studentManagerMode && studentManagerEntityType === "student" && !editingStudentId ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 rounded-full px-3 text-xs"
+                  onClick={() => bulkStudentFileInputRef.current?.click()}
+                >
+                  إضافة جماعية
+                </Button>
+              ) : studentManagerMode ? (
+                <Button type="button" variant="outline" className="rounded-full px-4" onClick={() => setManualGradesOpen(true)}>
+                  <Pencil className="size-4" />
+                  تعديل الدرجات
+                </Button>
+              ) : (
+                <DialogTitle className="text-right text-xl">{studentManagerMode ? "إدارة البيانات" : studentManagerEntityType === "reciter" ? (editingReciterId ? "تعديل المقرئ" : "إضافة مقرئ") : editingStudentId ? "تعديل بيانات الطالب/ة" : "إضافة طالب/ة"}</DialogTitle>
+              )}
+            </div>
           </DialogHeader>
 
           <div className="space-y-3 p-4">
-            {!editingStudentId && (
-              <div className="grid grid-cols-2 gap-3">
-                <Button type="button" variant={studentEntryMode === "single" ? "default" : "outline"} className={studentEntryMode === "single" ? "text-white" : ""} onClick={() => setStudentEntryMode("single")}>
-                  إضافة فردية
-                </Button>
-                <Button type="button" variant={studentEntryMode === "bulk" ? "default" : "outline"} className={studentEntryMode === "bulk" ? "text-white" : ""} onClick={() => setStudentEntryMode("bulk")}>
-                  إضافة جماعية
-                </Button>
+            <div className="space-y-2">
+              <label className="text-sm font-bold text-foreground">اختر النوع</label>
+              <Select value={studentManagerEntityType} onValueChange={(value) => {
+                const entityType = value as "student" | "reciter";
+                setStudentManagerEntityType(entityType);
+                setEditingStudentId(null);
+                setEditingReciterId(null);
+                setStudentPickerStudentId("");
+                setStudentPickerReciterId("");
+                setStudentTransferTargetReciterId("");
+                setStudentForm({ ...emptyStudentForm, branchId: studentManagerBranch });
+                setReciterForm({ ...emptyReciterForm, branchId: studentManagerBranch });
+              }}>
+                <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue /></SelectTrigger>
+                <SelectContent className="text-right">
+                  <SelectItem value="student" className="justify-end pr-3 text-right">طالب</SelectItem>
+                  <SelectItem value="reciter" className="justify-end pr-3 text-right">مقرئ</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {!studentManagerMode && studentManagerEntityType === "student" && !editingStudentId && (
+              <div className="hidden">
+                <input
+                  ref={bulkStudentFileInputRef}
+                  type="file"
+                  accept=".xlsx,.csv,.pdf"
+                  onChange={handleBulkStudentFileSelect}
+                  className="hidden"
+                />
               </div>
             )}
 
-            {studentEntryMode === "single" || editingStudentId ? (
+            {studentManagerMode && (
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-foreground">اختر الفرع</label>
+                  {managedBranchId ? (
+                    <div className="rounded-[0.9rem] border border-border/60 bg-muted/20 px-3 py-2 text-sm font-medium text-foreground">
+                      {branchLabels[managedBranchId]}
+                    </div>
+                  ) : (
+                    <Select value={studentPickerBranchId} onValueChange={(value) => {
+                      setStudentPickerBranchId(value as BranchId);
+                      setStudentPickerStudentId("");
+                      setStudentPickerReciterId("");
+                      setEditingStudentId(null);
+                      setEditingReciterId(null);
+                      setStudentTransferTargetReciterId("");
+                      setStudentForm({ ...emptyStudentForm, branchId: value as BranchId });
+                      setReciterForm({ ...emptyReciterForm, branchId: value as BranchId });
+                    }}>
+                      <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue /></SelectTrigger>
+                      <SelectContent className="text-right">
+                        {data.branches.map((branch) => <SelectItem key={branch.id} value={branch.id} className="justify-end pr-3 text-right">{branch.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-foreground">{studentManagerEntityType === "student" ? "اختر الطالب/ة" : "اختر المقرئ"}</label>
+                  {studentManagerEntityType === "student" ? (
+                    <Select value={studentPickerStudentId} onValueChange={(value) => {
+                      setStudentPickerStudentId(value);
+                      setStudentTransferTargetReciterId("");
+                      if (!loadStudentIntoForm(value)) {
+                        setEditingStudentId(null);
+                      }
+                    }}>
+                      <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue placeholder="اختر الطالب/ة" /></SelectTrigger>
+                      <SelectContent className="text-right">
+                        {studentManagerStudents.map((student) => <SelectItem key={student.id} value={student.id} className="justify-end pr-3 text-right">{student.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Select value={studentPickerReciterId} onValueChange={(value) => {
+                      setStudentPickerReciterId(value);
+                      if (!loadReciterIntoForm(value)) {
+                        setEditingReciterId(null);
+                      }
+                    }}>
+                      <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue placeholder="اختر المقرئ" /></SelectTrigger>
+                      <SelectContent className="text-right">
+                        {studentManagerReciters.map((reciter) => <SelectItem key={reciter.id} value={reciter.id} className="justify-end pr-3 text-right">{reciter.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {studentManagerMode && studentManagerEntityType === "student" && !editingStudentId ? (
+              <div className="rounded-[1rem] border border-dashed border-border/70 bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
+                اختر الفرع ثم اختر الطالب/ة لعرض بياناته وتعديلها.
+              </div>
+            ) : studentManagerMode && studentManagerEntityType === "reciter" && !editingReciterId ? (
+              <div className="rounded-[1rem] border border-dashed border-border/70 bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
+                اختر الفرع ثم اختر المقرئ لعرض بياناته وتعديلها.
+              </div>
+            ) : studentManagerEntityType === "student" && (studentEntryMode === "single" || editingStudentId) ? (
               <>
                 <div className="space-y-2">
                   <label className="text-sm font-bold text-foreground">اسم الطالب/ة</label>
@@ -6055,19 +6500,31 @@ const Dashboard = () => {
                   <label className="text-sm font-bold text-foreground">رقم الدخول</label>
                   <Input value={studentForm.loginId} onChange={(event) => setStudentForm((current) => ({ ...current, loginId: event.target.value }))} placeholder="رقم الدخول" />
                 </div>
+                {studentManagerMode && editingStudentId && (
+                  <div className="space-y-2 rounded-[1rem] border border-border/60 bg-muted/20 p-3">
+                    <div className="text-sm font-bold text-foreground">نقل الطالب</div>
+                    <div className="text-xs text-muted-foreground">المقرئ الحالي: {selectedManagerStudentReciter?.name ?? "غير مرتبط"}</div>
+                    {selectedManagerStudentReciter ? (
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                        <Select value={studentTransferTargetReciterId} onValueChange={setStudentTransferTargetReciterId}>
+                          <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue placeholder={availableStudentTransferReciters.length ? "اختر المقرئ" : "لا يوجد مقرئ آخر متاح"} /></SelectTrigger>
+                          <SelectContent className="text-right">
+                            {availableStudentTransferReciters.map((reciter) => <SelectItem key={reciter.id} value={reciter.id} className="justify-end pr-3 text-right">{reciter.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        <Button type="button" variant="outline" className="rounded-full px-5" onClick={() => void handleTransferStudentFromManager()} disabled={availableStudentTransferReciters.length === 0}>
+                          نقل الطالب
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-muted-foreground">الطالب غير مرتبط بمقرئ حاليًا.</div>
+                    )}
+                  </div>
+                )}
               </>
-            ) : (
+            ) : studentManagerEntityType === "student" ? (
               <>
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-foreground">ملف الإكسل أو PDF</label>
-                  <input
-                    type="file"
-                    accept=".xlsx,.csv,.pdf"
-                    onChange={handleBulkStudentFileSelect}
-                    className="block w-full rounded-[0.9rem] border border-border/60 bg-white px-3 py-2 text-sm file:ml-3 file:rounded-full file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-medium file:text-white"
-                  />
-                  {bulkStudentFileName && <div className="text-xs text-muted-foreground">الملف الحالي: {bulkStudentFileName}</div>}
-                </div>
+                {bulkStudentFileName && <div className="text-xs text-muted-foreground">الملف الحالي: {bulkStudentFileName}</div>}
 
                 {!managedBranchId && bulkStudents.length > 0 && (
                   <div className="space-y-2">
@@ -6119,13 +6576,106 @@ const Dashboard = () => {
                   </div>
                 </div>
               </>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <div className="text-sm font-medium text-muted-foreground">اسم المقرئ</div>
+                  <Input value={reciterForm.name} onChange={(event) => setReciterForm((current) => ({ ...current, name: event.target.value }))} placeholder="اسم المقرئ" />
+                </div>
+                <div className="space-y-2">
+                  <div className="text-sm font-medium text-muted-foreground">الفرع</div>
+                  {managedBranchId ? (
+                    <div className="rounded-[0.9rem] border border-border/60 bg-muted/20 px-3 py-2 text-sm font-medium text-foreground">
+                      {branchLabels[managedBranchId]}
+                    </div>
+                  ) : (
+                    <Select
+                      value={reciterForm.branchId}
+                      onValueChange={(value) => setReciterForm((current) => ({ ...current, branchId: value as BranchId, studentIds: [] }))}
+                    >
+                      <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue /></SelectTrigger>
+                      <SelectContent className="text-right">
+                        {data.branches.map((branch) => <SelectItem key={branch.id} value={branch.id} className="justify-end pr-3 text-right">{branch.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <div className="text-sm font-medium text-muted-foreground">الطلاب المرتبطون (اختياري)</div>
+                  <div className="rounded-[1.25rem] border border-border/60 bg-white p-3">
+                    {availableReciterStudents.length > 0 ? (
+                      <div className="max-h-48 space-y-2 overflow-y-auto pr-1">
+                        {availableReciterStudents.map((student) => {
+                          const checked = reciterForm.studentIds.includes(student.id);
+
+                          return (
+                            <button
+                              key={student.id}
+                              type="button"
+                              onClick={() => {
+                                setReciterForm((current) => ({
+                                  ...current,
+                                  studentIds: checked
+                                    ? current.studentIds.filter((currentStudentId) => currentStudentId !== student.id)
+                                    : [...new Set([...current.studentIds, student.id])],
+                                }));
+                              }}
+                              className={cn(
+                                "flex w-full items-center justify-between rounded-2xl border px-3 py-2 text-right transition-smooth",
+                                checked
+                                  ? "border-primary/35 bg-primary/10"
+                                  : "border-border/60 bg-muted/10 hover:border-primary/25 hover:bg-primary/5",
+                              )}
+                            >
+                              <div className="text-sm font-medium text-foreground">{student.name}</div>
+                              <span
+                                className={cn(
+                                  "flex h-5 w-5 shrink-0 rounded-full border-2 transition-colors",
+                                  checked ? "border-primary bg-primary" : "border-primary/70 bg-transparent",
+                                )}
+                                aria-hidden="true"
+                              />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="py-3 text-sm text-muted-foreground">لا يوجد طلاب متاحون</div>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="text-sm font-medium text-muted-foreground">رقم الدخول</div>
+                  <Input value={reciterForm.loginCode} onChange={(event) => setReciterForm((current) => ({ ...current, loginCode: event.target.value }))} placeholder="رقم الدخول" />
+                </div>
+              </>
             )}
 
             {studentError && <p className="text-sm font-medium text-destructive">{studentError}</p>}
+            {studentManagerEntityType === "reciter" && reciterError && <p className="text-sm font-medium text-destructive">{reciterError}</p>}
             <div className="flex justify-end gap-3">
+              {studentManagerMode && studentManagerEntityType === "student" && editingStudentId && hasPermission("delete_student") && (
+                <Button variant="destructive" onClick={() => {
+                  handleDeleteStudent(editingStudentId);
+                  setStudentsOpen(false);
+                }}>
+                  حذف الطالب/ة
+                </Button>
+              )}
+              {studentManagerMode && studentManagerEntityType === "reciter" && editingReciterId && hasPermission("delete_reciter") && (
+                <Button variant="destructive" onClick={() => {
+                  handleDeleteReciter(editingReciterId);
+                  setStudentsOpen(false);
+                }}>
+                  حذف المقرئ
+                </Button>
+              )}
               <Button variant="outline" onClick={() => { resetStudentForm(); setStudentsOpen(false); }}>إلغاء</Button>
-              <Button onClick={studentEntryMode === "bulk" && !editingStudentId ? handleSaveBulkStudents : handleSaveStudent}>
-                {editingStudentId ? "حفظ التعديل" : studentEntryMode === "bulk" ? "حفظ جماعي" : "إضافة"}
+              <Button
+                onClick={studentManagerEntityType === "reciter" ? handleSaveReciter : studentEntryMode === "bulk" && !editingStudentId ? handleSaveBulkStudents : handleSaveStudent}
+                disabled={studentManagerMode && ((studentManagerEntityType === "student" && !editingStudentId) || (studentManagerEntityType === "reciter" && !editingReciterId))}
+              >
+                {studentManagerMode || editingStudentId || editingReciterId ? "حفظ التعديل" : studentManagerEntityType === "student" && studentEntryMode === "bulk" ? "حفظ جماعي" : "إضافة"}
               </Button>
             </div>
           </div>
@@ -6139,7 +6689,7 @@ const Dashboard = () => {
           setAdminDeletingId(null);
         }
       }}>
-        <DialogContent className="max-w-md rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_20px_50px_rgba(15,23,42,0.08)] [&>button]:hidden">
+        <DialogContent className="max-w-md rounded-[1.75rem] border-primary/20 bg-white/95 p-0 text-right shadow-[0_20px_50px_rgba(15,23,42,0.08)] [&>button]:hidden">
           <DialogHeader className="border-b border-border/60 px-4 py-3 text-right">
             <DialogTitle className="text-right text-xl text-foreground">الإشراف</DialogTitle>
           </DialogHeader>
@@ -6182,8 +6732,8 @@ const Dashboard = () => {
                 <SelectTrigger className="flex-row-reverse bg-white text-right [&>span]:w-full [&>span]:text-right"><SelectValue /></SelectTrigger>
                 <SelectContent className="border-border/70 bg-white text-right shadow-lg backdrop-blur-none">
                   <SelectItem value="admin" className="justify-end pr-8 text-right">مدير عام</SelectItem>
-                  <SelectItem value="male_manager" className="justify-end pr-8 text-right">مسؤول الرجال</SelectItem>
-                  <SelectItem value="female_manager" className="justify-end pr-8 text-right">مسؤول النساء</SelectItem>
+                  <SelectItem value="male_manager" className="justify-end pr-8 text-right">مشرف</SelectItem>
+                  <SelectItem value="female_manager" className="justify-end pr-8 text-right">مشرفة</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -6256,7 +6806,7 @@ const Dashboard = () => {
           setCourseEditError("");
         }
       }}>
-        <DialogContent className="max-w-lg overflow-hidden rounded-[2rem] border border-primary/15 bg-white/95 p-0 text-right shadow-[0_28px_80px_rgba(8,65,89,0.16)] backdrop-blur-sm [&>button]:hidden">
+        <DialogContent className="max-w-lg overflow-hidden rounded-[1.75rem] border border-primary/20 bg-white/95 p-0 text-right shadow-[0_28px_80px_rgba(8,65,89,0.16)] backdrop-blur-sm [&>button]:hidden">
           <div className="relative">
             <div className="pointer-events-none absolute inset-0">
               <div className="absolute -top-12 -left-8 h-28 w-28 rounded-full bg-primary/10 blur-3xl" />
@@ -6304,7 +6854,7 @@ const Dashboard = () => {
       </Dialog>
 
       <Dialog open={Boolean(detailsSubmission)} onOpenChange={(open) => !open && setDetailsSubmissionId(null)}>
-        <DialogContent className="max-h-[90vh] w-[calc(100vw-1.5rem)] max-w-4xl overflow-y-auto rounded-[2rem] p-0 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300/80 [&::-webkit-scrollbar-track]:bg-transparent [&>button]:hidden">
+        <DialogContent className="max-h-[90vh] w-[calc(100vw-1.5rem)] max-w-4xl overflow-y-auto rounded-[1.75rem] p-0 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300/80 [&::-webkit-scrollbar-track]:bg-transparent [&>button]:hidden">
           <DialogHeader className="flex flex-row items-center justify-between border-b border-border px-4 py-3 text-right">
             <div className="flex-1">
               <DialogTitle className="text-right text-2xl">
@@ -6337,7 +6887,7 @@ const Dashboard = () => {
           <div className="space-y-3 p-4">
             {detailsSubmission && (() => {
               const questions = getAssessmentQuestionsForCourse(detailsSubmission.courseId, detailsSubmission.assessmentType);
-              const realAnswers = detailsSubmission.answers.filter((answer) => answer.questionId !== "__score_override__");
+              const realAnswers = (detailsSubmission.answers ?? []).filter((answer) => answer.questionId !== "__score_override__");
               const answers = new Map(realAnswers.map((answer) => [answer.questionId, answer]));
               const submissionCourse = data.courses.find((course) => course.id === detailsSubmission.courseId) ?? null;
               const isDocumentTaskSubmission = detailsSubmission.assessmentType === "tasks" && submissionCourse?.taskMode === "document";
@@ -6431,7 +6981,7 @@ const Dashboard = () => {
       </Dialog>
 
       <Dialog open={Boolean(finalExamDetailsSubmission)} onOpenChange={(open) => !open && setFinalExamDetailsSubmissionId(null)}>
-        <DialogContent className="max-h-[90vh] w-[calc(100vw-1.5rem)] max-w-4xl overflow-y-auto rounded-[2rem] p-0 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300/80 [&::-webkit-scrollbar-track]:bg-transparent [&>button]:hidden">
+        <DialogContent className="max-h-[90vh] w-[calc(100vw-1.5rem)] max-w-4xl overflow-y-auto rounded-[1.75rem] p-0 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300/80 [&::-webkit-scrollbar-track]:bg-transparent [&>button]:hidden">
           <DialogHeader className="flex flex-row items-center justify-between border-b border-border px-4 py-3 text-right">
             <div className="flex-1">
               <DialogTitle className="text-right text-2xl">
@@ -6447,7 +6997,7 @@ const Dashboard = () => {
               const questions = (data.finalExamQuestions ?? [])
                 .filter((question) => question.branchCode === finalExamDetailsSubmission.branchCode)
                 .sort((left, right) => left.sortOrder - right.sortOrder);
-              const answers = new Map(finalExamDetailsSubmission.answers.map((answer) => [answer.questionId, answer]));
+              const answers = new Map((finalExamDetailsSubmission.answers ?? []).map((answer) => [answer.questionId, answer]));
 
               return questions.map((question, index) => {
                 const answer = answers.get(question.id);
@@ -6577,7 +7127,7 @@ const Dashboard = () => {
       </Dialog>
 
       <Dialog open={notifTemplatesOpen} onOpenChange={setNotifTemplatesOpen}>
-        <DialogContent className="max-w-xl rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
+        <DialogContent className="max-w-xl rounded-[1.75rem] border-primary/20 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
           <DialogHeader className="border-b border-border/60 px-4 py-3 text-right">
             <div className="flex items-center justify-between">
               <DialogTitle className="text-right text-xl text-foreground">قوالب الإشعارات</DialogTitle>
@@ -6595,7 +7145,7 @@ const Dashboard = () => {
                       <span className="font-mono text-xs text-primary">{'{courseTitle}'}</span>
                     </li>
                     <li className="flex items-center justify-between gap-2">
-                      <span className="text-xs text-muted-foreground">نوع الاختبار (قبلي / بعدي / تكليف)</span>
+                      <span className="text-xs text-muted-foreground">نوع الاختبار (قبلي / بعدي / تكليف / نهائي)</span>
                       <span className="font-mono text-xs text-primary">{'{assessmentLabel}'}</span>
                     </li>
                     <li className="flex items-center justify-between gap-2">
@@ -6621,24 +7171,37 @@ const Dashboard = () => {
               <Textarea value={notifTemplatePost} onChange={(e) => setNotifTemplatePost(e.target.value)} className="min-h-24 text-right" dir="rtl" />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-bold text-foreground">قالب التكليف</label>
+              <label className="text-sm font-bold text-foreground">قالب المهمة الأدائية</label>
               <Textarea value={notifTemplateTasks} onChange={(e) => setNotifTemplateTasks(e.target.value)} className="min-h-24 text-right" dir="rtl" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-bold text-foreground">قالب الاختبار النهائي</label>
+              <Textarea value={notifTemplateFinalExam} onChange={(e) => setNotifTemplateFinalExam(e.target.value)} className="min-h-24 text-right" dir="rtl" />
             </div>
           </div>
           <div className="flex justify-end gap-3 border-t border-border/60 px-4 py-3">
             <Button variant="outline" className="rounded-full px-5" onClick={() => setNotifTemplatesOpen(false)}>إلغاء</Button>
             <Button className="rounded-full px-5" disabled={notifTemplateSaving} onClick={async () => {
-              if (!activeCourse) return;
               setNotifTemplateSaving(true);
               try {
-                await store.updateCourse(activeCourse.id, {
-                  assessmentNotificationTemplates: {
-                    ...activeCourse.assessmentNotificationTemplates,
-                    pre: notifTemplatePre,
-                    post: notifTemplatePost,
-                    tasks: notifTemplateTasks,
-                  },
-                } as never);
+                if (activeCourse) {
+                  await store.updateCourse(activeCourse.id, {
+                    assessmentNotificationTemplates: {
+                      ...activeCourse.assessmentNotificationTemplates,
+                      pre: notifTemplatePre,
+                      post: notifTemplatePost,
+                      tasks: notifTemplateTasks,
+                    },
+                  } as never);
+                }
+                if (managedBranchId) {
+                  await store.updateFinalExamNotificationTemplate(managedBranchId, notifTemplateFinalExam);
+                } else {
+                  await Promise.all([
+                    store.updateFinalExamNotificationTemplate("male", notifTemplateFinalExam),
+                    store.updateFinalExamNotificationTemplate("female", notifTemplateFinalExam),
+                  ]);
+                }
                 setNotifTemplatesOpen(false);
               } finally {
                 setNotifTemplateSaving(false);
@@ -6649,7 +7212,7 @@ const Dashboard = () => {
       </Dialog>
 
       <Dialog open={courseLinksOpen} onOpenChange={setCourseLinksOpen}>
-        <DialogContent className="max-w-lg rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
+        <DialogContent className="max-w-lg rounded-[1.75rem] border-primary/20 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
           <DialogHeader className="border-b border-border/60 px-3 py-2.5 text-right">
             <DialogTitle className="text-right text-xl text-foreground">الروابط</DialogTitle>
           </DialogHeader>
@@ -6670,7 +7233,7 @@ const Dashboard = () => {
             </div>
             <div className={cn(dashboardMutedPanelClass, "space-y-1.5 p-2.5")}>
               <div className="space-y-1">
-                <div className="text-sm font-bold text-foreground">رابط التكاليف</div>
+                <div className="text-sm font-bold text-foreground">رابط المهام الأدائية</div>
                 <div className="break-all text-sm text-muted-foreground">{getTaskLink()}</div>
               </div>
               <Button variant="outline" size="sm" onClick={() => void navigator.clipboard.writeText(getTaskLink())}><Copy className="size-4" />نسخ الرابط</Button>
@@ -6690,7 +7253,7 @@ const Dashboard = () => {
       </Dialog>
 
       <Dialog open={backupDialogOpen} onOpenChange={setBackupDialogOpen}>
-        <DialogContent className="max-h-[85vh] w-[calc(100vw-1.5rem)] max-w-2xl overflow-hidden rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
+        <DialogContent className="max-h-[85vh] w-[calc(100vw-1.5rem)] max-w-2xl overflow-hidden rounded-[1.75rem] border-primary/20 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
           <DialogHeader className="border-b border-border/60 px-3 py-2.5 text-right">
             <DialogTitle className="text-right text-xl text-foreground">النسخة الاحتياطية</DialogTitle>
           </DialogHeader>
@@ -6709,17 +7272,18 @@ const Dashboard = () => {
               </div>
             ) : (
               <>
-            <div className="grid gap-2 sm:grid-cols-3">
+            <div className="flex flex-col gap-2">
               <Button className="h-11 rounded-2xl" onClick={handleExportBackup} disabled={!canExportBackup}>
                 <Download className="size-4" />
-                تحميل نسخة احتياطية
+                تحميل
               </Button>
               <Button variant="outline" className="h-11 rounded-2xl" onClick={() => backupImportInputRef.current?.click()} disabled={!canImportBackup}>
                 <FileUp className="size-4" />
-                رفع نسخة احتياطية
+                رفع
               </Button>
               <Button variant="destructive" className="h-11 rounded-2xl" onClick={() => setBackupDeleteConfirmOpen(true)} disabled={!canRestoreBackup || backupDeleteRunning}>
-                حذف النسخة الحالية
+                <Trash2 className="size-4" />
+                حذف
               </Button>
               <input ref={backupImportInputRef} type="file" accept="application/json,.json" className="hidden" onChange={handleBackupImportSelect} />
             </div>
@@ -6772,11 +7336,7 @@ const Dashboard = () => {
                   </div>
                 )}
               </div>
-            ) : (
-              <div className={cn(dashboardMutedPanelClass, "rounded-[1.25rem] p-3 text-sm text-muted-foreground")}>
-                بعد رفع ملف النسخة، سيظهر هنا ملخص سريع لمحتواه.
-              </div>
-            )}
+            ) : null}
               </>
             )}
           </div>
@@ -6792,7 +7352,7 @@ const Dashboard = () => {
       </Dialog>
 
       <AlertDialog open={backupImportConfirmOpen} onOpenChange={setBackupImportConfirmOpen}>
-        <AlertDialogContent className="max-w-sm rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
+        <AlertDialogContent className="max-w-sm rounded-[1.75rem] border-primary/20 bg-white/95 p-0 text-right shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
           <AlertDialogHeader className="border-b border-border/60 px-4 py-3 text-right">
             <AlertDialogTitle className="text-right text-lg text-foreground">تأكيد رفع النسخة</AlertDialogTitle>
             <AlertDialogDescription className="text-right text-sm leading-6 text-muted-foreground">
@@ -6826,7 +7386,7 @@ const Dashboard = () => {
       </AlertDialog>
 
       <AlertDialog open={backupRestoreConfirmOpen} onOpenChange={setBackupRestoreConfirmOpen}>
-        <AlertDialogContent className="max-w-sm rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
+        <AlertDialogContent className="max-w-sm rounded-[1.75rem] border-primary/20 bg-white/95 p-0 text-right shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
           <AlertDialogHeader className="border-b border-border/60 px-4 py-3 text-right">
             <AlertDialogTitle className="text-right text-lg text-foreground">تأكيد الاسترجاع</AlertDialogTitle>
             <AlertDialogDescription className="text-right text-sm leading-6 text-muted-foreground">
@@ -6843,7 +7403,7 @@ const Dashboard = () => {
       </AlertDialog>
 
       <AlertDialog open={backupDeleteConfirmOpen} onOpenChange={setBackupDeleteConfirmOpen}>
-        <AlertDialogContent className="max-w-sm rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
+        <AlertDialogContent className="max-w-sm rounded-[1.75rem] border-primary/20 bg-white/95 p-0 text-right shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
           <AlertDialogHeader className="border-b border-border/60 px-4 py-3 text-right">
             <AlertDialogTitle className="text-right text-lg text-foreground">تأكيد حذف البيانات الحالية</AlertDialogTitle>
             <AlertDialogDescription className="text-right text-sm leading-6 text-muted-foreground">
@@ -6908,13 +7468,41 @@ const Dashboard = () => {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={Boolean(partsDialogStudent)} onOpenChange={(open) => !open && setPartsDialogStudentId(null)}>
+        <DialogContent className="max-w-2xl rounded-[1.75rem] p-0 text-right [&>button]:hidden">
+          <DialogHeader className="border-b border-border/60 px-4 py-3 text-right">
+            <DialogTitle className="text-right text-xl">{partsDialogStudent ? `أجزاء ${partsDialogStudent.name}` : "الأجزاء"}</DialogTitle>
+          </DialogHeader>
+          {partsDialogStudent && (
+            <div className="space-y-4 p-4">
+              <div className="text-sm text-muted-foreground">اضغط على الجزء لتحديده أو إلغائه.</div>
+              <div className="flex justify-center">
+                {renderPartGrid(partsDialogStudent.id, partsDialogStudent.completedParts)}
+              </div>
+              <div className="flex justify-end gap-3 border-t border-border/60 pt-4">
+                <Button variant="outline" className="rounded-full px-5" onClick={() => setPartsDialogStudentId(null)}>
+                  إغلاق
+                </Button>
+                <Button
+                  className="rounded-full px-5"
+                  variant={partsDialogStudent.isCertified ? "outline" : "default"}
+                  onClick={() => store.toggleCertifiedStudent(partsDialogStudent.id)}
+                >
+                  {partsDialogStudent.isCertified ? "مجاز" : "اعتماد مجاز"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={recitersOpen} onOpenChange={(open) => {
         setRecitersOpen(open);
         if (!open) {
           resetReciterForm();
         }
       }}>
-        <DialogContent className="max-w-lg rounded-[1.75rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
+        <DialogContent className="max-w-lg rounded-[1.75rem] border-primary/20 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
           <DialogHeader className="border-b border-border/60 px-4 py-3 text-right">
             <DialogTitle className="text-right text-xl text-foreground">{editingReciterId ? "تعديل المقرئ" : "إضافة مقرئ"}</DialogTitle>
           </DialogHeader>
@@ -7001,7 +7589,7 @@ const Dashboard = () => {
       </Dialog>
 
       <Dialog open={Boolean(selectedReciterActions)} onOpenChange={(open) => !open && resetReciterActionsState()}>
-        <DialogContent className="max-w-md rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
+        <DialogContent className="max-w-md rounded-[1.75rem] border-primary/20 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
           <DialogHeader className="border-b border-border/60 px-4 py-3 text-right">
             <DialogTitle className="text-right text-xl text-foreground">إجراءات المقرئ</DialogTitle>
             <DialogDescription className="text-right">
@@ -7051,7 +7639,7 @@ const Dashboard = () => {
       </Dialog>
 
       <Dialog open={Boolean(pendingAdminTransfer)} onOpenChange={(open) => !open && resetAdminTransferState()}>
-        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-md rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
+        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-md rounded-[1.75rem] border-primary/20 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(15,23,42,0.08)] [&>button]:hidden">
           <DialogHeader className="border-b border-border/60 px-4 py-3 text-right">
             <DialogTitle className="text-right text-xl text-foreground">نقل الطالب</DialogTitle>
             <DialogDescription className="sr-only"></DialogDescription>
@@ -7084,7 +7672,7 @@ const Dashboard = () => {
       </Dialog>
 
       <AlertDialog open={Boolean(pendingDeleteStudent)} onOpenChange={(open) => !open && setPendingDeleteStudent(null)}>
-        <AlertDialogContent className="max-w-sm rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
+        <AlertDialogContent className="max-w-sm rounded-[1.75rem] border-primary/20 bg-white/95 p-0 text-right shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
           <AlertDialogHeader className="border-b border-border/60 px-4 py-3 text-right">
             <AlertDialogTitle className="text-right text-lg text-foreground">تأكيد حذف الطالب</AlertDialogTitle>
             <AlertDialogDescription className="text-right text-sm leading-6 text-muted-foreground">
@@ -7103,7 +7691,7 @@ const Dashboard = () => {
       </AlertDialog>
 
       <AlertDialog open={Boolean(pendingDeleteCourse)} onOpenChange={(open) => !open && setPendingDeleteCourse(null)}>
-        <AlertDialogContent className="max-w-sm overflow-hidden rounded-[1.75rem] border border-primary/15 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(8,65,89,0.14)] backdrop-blur-sm">
+        <AlertDialogContent className="max-w-sm overflow-hidden rounded-[1.75rem] border border-primary/20 bg-white/95 p-0 text-right shadow-[0_24px_60px_rgba(8,65,89,0.14)] backdrop-blur-sm">
           <div className="relative">
             <div className="pointer-events-none absolute inset-0">
               <div className="absolute -top-10 -left-6 h-24 w-24 rounded-full bg-primary/10 blur-3xl" />
@@ -7126,7 +7714,7 @@ const Dashboard = () => {
       </AlertDialog>
 
       <AlertDialog open={Boolean(pendingDeleteReciter)} onOpenChange={(open) => !open && setPendingDeleteReciter(null)}>
-        <AlertDialogContent className="max-w-sm rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
+        <AlertDialogContent className="max-w-sm rounded-[1.75rem] border-primary/20 bg-white/95 p-0 text-right shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
           <AlertDialogHeader className="border-b border-border/60 px-4 py-3 text-right">
             <AlertDialogTitle className="text-right text-lg text-foreground">تأكيد حذف المقرئ</AlertDialogTitle>
             <AlertDialogDescription className="text-right text-sm leading-6 text-muted-foreground">
@@ -7143,7 +7731,7 @@ const Dashboard = () => {
       </AlertDialog>
 
       <AlertDialog open={Boolean(pendingAttendanceSave)} onOpenChange={(open) => !open && setPendingAttendanceSave(null)}>
-        <AlertDialogContent className="max-w-sm rounded-[1.5rem] border-white/80 bg-white/95 p-0 text-right shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
+        <AlertDialogContent className="max-w-sm rounded-[1.75rem] border-primary/20 bg-white/95 p-0 text-right shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
           <AlertDialogHeader className="border-b border-border/60 px-4 py-3 text-right">
             <AlertDialogTitle className="text-right text-lg text-foreground">تأكيد {pendingAttendanceSave?.isTask ? "حفظ المهام" : "حفظ التحضير"}</AlertDialogTitle>
             <AlertDialogDescription className="text-right text-sm leading-6 text-muted-foreground">

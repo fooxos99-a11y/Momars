@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { FileUp, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ export interface ManualGradesDialogProps {
   submissions: CourseSubmission[];
   defaultCourseId?: string;
   defaultAssessmentType?: AssessmentType;
+  onImportClick?: () => void;
   onSave: (
     courseId: string,
     assessmentType: AssessmentType,
@@ -26,7 +27,7 @@ export interface ManualGradesDialogProps {
 const assessmentLabels: Record<AssessmentType, string> = {
   pre: "الاختبار القبلي",
   post: "الاختبار البعدي",
-  tasks: "التكاليف",
+  tasks: "المهام الأدائية",
 };
 
 export const ManualGradesDialog = ({
@@ -37,6 +38,7 @@ export const ManualGradesDialog = ({
   submissions,
   defaultCourseId = "",
   defaultAssessmentType = "pre",
+  onImportClick,
   onSave,
 }: ManualGradesDialogProps) => {
   const [courseId, setCourseId] = useState(defaultCourseId);
@@ -116,9 +118,15 @@ export const ManualGradesDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="left-auto right-3 flex w-[min(98vw,700px)] max-h-[90vh] translate-x-0 flex-col rounded-[1.5rem] p-0 text-right sm:right-6 [&>button]:hidden">
+      <DialogContent className="flex w-[min(98vw,700px)] max-h-[90vh] flex-col rounded-[1.75rem] p-0 text-right [&>button]:hidden">
         <DialogHeader className="flex-shrink-0 border-b border-border/60 px-4 py-3">
-          <div className="flex items-center justify-end">
+          <div className="flex items-center justify-between gap-3">
+            {onImportClick ? (
+              <Button type="button" variant="outline" className="rounded-full px-4" onClick={onImportClick}>
+                <FileUp className="size-4" />
+                استيراد
+              </Button>
+            ) : <span />}
             <DialogTitle className="text-xl">تعديل الدرجات يدوياً</DialogTitle>
           </div>
         </DialogHeader>
