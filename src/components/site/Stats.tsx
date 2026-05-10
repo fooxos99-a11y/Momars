@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { getCourses, getTasks, useDashboardStore, type AssessmentType, type CourseQuestion, type CourseRecord } from "@/lib/dashboard-store";
+import { getCourses, getTasks, type AssessmentType, type CourseQuestion, type CourseRecord, type DashboardData } from "@/lib/dashboard-store";
 import { cn } from "@/lib/utils";
 
 const clamp = (v: number) => Math.max(0, Math.min(100, v));
@@ -102,7 +102,7 @@ const isCorrect = (question: CourseQuestion, value: string) => {
   return false;
 };
 
-const getGrade = (course: CourseRecord, type: AssessmentType, submissions: ReturnType<typeof useDashboardStore>["data"]["submissions"]) => {
+const getGrade = (course: CourseRecord, type: AssessmentType, submissions: DashboardData["submissions"]) => {
   const qKey = type === "pre" ? "preQuestions" : type === "post" ? "postQuestions" : "taskQuestions";
   const questions = course[qKey];
   const qTotal = questions.reduce((s, q) => s + q.points, 0);
@@ -130,7 +130,7 @@ const getGrade = (course: CourseRecord, type: AssessmentType, submissions: Retur
 const getLatestByLoginId = (
   courseId: string,
   type: AssessmentType,
-  submissions: ReturnType<typeof useDashboardStore>["data"]["submissions"],
+  submissions: DashboardData["submissions"],
 ) => {
   const map = new Map<string, (typeof submissions)[number]>();
   [...submissions]
@@ -168,9 +168,9 @@ const INDICATORS = [
 ] as const;
 
 const Stats = () => {
-  const { data } = useDashboardStore();
   const sectionRef = useRef<HTMLElement | null>(null);
   const [shouldAnimateIndicators, setShouldAnimateIndicators] = useState(false);
+  const [data, setData] = useState<DashboardData | null>(null);
 
   useEffect(() => {
     const section = sectionRef.current;
@@ -198,7 +198,32 @@ const Stats = () => {
     return () => observer.disconnect();
   }, [shouldAnimateIndicators]);
 
+  useEffect(() => {
+    if (!shouldAnimateIndicators || data) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadStatsData = async () => {
+      const { loadDashboardDataFromDatabase } = await import("@/lib/supabase");
+      const nextData = await loadDashboardDataFromDatabase();
+
+      if (!cancelled) {
+        setData(nextData);
+      }
+    };
+
+    void loadStatsData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [data, shouldAnimateIndicators]);
+
   const metrics = useMemo(() => {
+    if (!data) return null;
+
     const students = data.students;
     const totalStudents = students.length;
     if (totalStudents === 0) return null;

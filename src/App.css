@@ -276,6 +276,17 @@
   gap: 0.25rem;
 }
 
+.word-document-shell-inner,
+.word-document-page-slot,
+.word-document-toolbar-slot {
+  width: 100%;
+  min-width: 0;
+}
+
+.word-document-toolbar-desktop-only {
+  display: inline-flex;
+}
+
 .word-document-toolbar-separator-h {
   width: 1px;
   height: 1.5rem;
@@ -323,6 +334,10 @@
   .word-document-toolbar-bottom {
     display: none !important;
     order: 3;
+  }
+
+  .word-document-toolbar-desktop-only {
+    display: none !important;
   }
 
   /* Top toolbar scrolls horizontally */

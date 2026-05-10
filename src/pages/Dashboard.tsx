@@ -4974,195 +4974,210 @@ const Dashboard = () => {
         })()}
 
         {dashboardTab === "indicators" && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-end gap-2">
-              {(hasPermission("edit_student") || hasPermission("delete_student") || hasPermission("edit_reciter") || hasPermission("delete_reciter")) && (
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="group relative overflow-visible rounded-full"
-                  onClick={() => openEntityManager("student")}
-                  aria-label="إدارة البيانات"
-                >
-                  <Pencil className="size-4" />
-                  <span className="pointer-events-none absolute top-full left-1/2 mt-2 -translate-x-1/2 whitespace-nowrap rounded-full border border-primary/20 bg-white px-3 py-1.5 text-xs font-bold text-primary opacity-0 shadow-sm transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
-                    تعديل البيانات
-                  </span>
-                </Button>
-              )}
-              {(hasPermission("add_student") || hasPermission("add_reciter")) && (
-                <Button
-                  size="icon"
-                  className="group relative overflow-visible rounded-full"
-                  onClick={() => openUnifiedCreateDialog(hasPermission("add_student") ? "student" : "reciter")}
-                  aria-label="إضافة"
-                >
-                  <Plus className="size-5" />
-                  <span className="pointer-events-none absolute top-full left-1/2 mt-2 -translate-x-1/2 whitespace-nowrap rounded-full border border-primary/20 bg-white px-3 py-1.5 text-xs font-bold text-primary opacity-0 shadow-sm transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
-                    إضافة
-                  </span>
-                </Button>
-              )}
-            </div>
+          <Dialog open onOpenChange={(open) => {
+            if (!open) {
+              setDashboardTab("home", { replace: true });
+            }
+          }}>
+            <DialogContent className="flex h-[92vh] w-[min(96vw,1100px)] flex-col overflow-hidden rounded-[1.9rem] border-primary/20 bg-white p-0 text-right shadow-[0_24px_70px_rgba(15,23,42,0.14)] sm:h-[88vh] [&>button]:hidden">
+              <DialogHeader className="shrink-0 border-b border-border/60 px-5 py-4 text-right">
+                <DialogTitle className="text-right text-xl">المستخدمون</DialogTitle>
+                <DialogDescription className="text-right">عرض وتعديل مؤشرات الطلاب والمقرئين في نافذة مستقلة.</DialogDescription>
+              </DialogHeader>
 
-            <div className="grid w-full gap-4 md:max-w-2xl md:grid-cols-2">
-              <div className="space-y-2 text-right">
-                <div className="text-sm font-medium text-muted-foreground">الفرع</div>
-                <Select value={indicatorsBranchId} onValueChange={(value) => setIndicatorsBranchId(value as IndicatorsBranchFilter)}>
-                  <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">جميع الفروع</SelectItem>
-                    {data.branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2 text-right">
-                <div className="text-sm font-medium text-muted-foreground">الفلتر</div>
-                <Select value={indicatorsSortOrder} onValueChange={(value) => setIndicatorsSortOrder(value as "alpha" | "overall-desc" | "overall-asc") }>
-                  <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="alpha">الترتيب الأبجدي أ-ي</SelectItem>
-                    <SelectItem value="overall-desc">الأعلى فالأقل إنجازًا</SelectItem>
-                    <SelectItem value="overall-asc">الأقل فالأعلى إنجازًا</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {indicatorMetrics.totalStudents === 0 ? (
-              <div className={cn(dashboardEmptyStateClass, "p-6 text-sm text-muted-foreground")}>
-                {indicatorsBranchId === "all" ? "لا يوجد طلاب في جميع الفروع بعد." : `لا يوجد طلاب في فرع ${branchLabels[indicatorsBranchId]} بعد.`}
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {indicatorMetrics.studentRows.length === 0 ? (
-                  <div className={cn(dashboardEmptyStateClass, "p-6 text-sm text-muted-foreground")}>
-                    لا يوجد طلاب لعرض مؤشراتهم في الدورة المختارة.
+              <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+                <div className="space-y-6">
+                  <div className="flex items-center justify-end gap-2">
+                    {(hasPermission("edit_student") || hasPermission("delete_student") || hasPermission("edit_reciter") || hasPermission("delete_reciter")) && (
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="group relative overflow-visible rounded-full"
+                        onClick={() => openEntityManager("student")}
+                        aria-label="إدارة البيانات"
+                      >
+                        <Pencil className="size-4" />
+                        <span className="pointer-events-none absolute top-full left-1/2 mt-2 -translate-x-1/2 whitespace-nowrap rounded-full border border-primary/20 bg-white px-3 py-1.5 text-xs font-bold text-primary opacity-0 shadow-sm transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
+                          تعديل البيانات
+                        </span>
+                      </Button>
+                    )}
+                    {(hasPermission("add_student") || hasPermission("add_reciter")) && (
+                      <Button
+                        size="icon"
+                        className="group relative overflow-visible rounded-full"
+                        onClick={() => openUnifiedCreateDialog(hasPermission("add_student") ? "student" : "reciter")}
+                        aria-label="إضافة"
+                      >
+                        <Plus className="size-5" />
+                        <span className="pointer-events-none absolute top-full left-1/2 mt-2 -translate-x-1/2 whitespace-nowrap rounded-full border border-primary/20 bg-white px-3 py-1.5 text-xs font-bold text-primary opacity-0 shadow-sm transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
+                          إضافة
+                        </span>
+                      </Button>
+                    )}
                   </div>
-                ) : (
-                  indicatorMetrics.studentRows.map((student) => {
-                    const itemMetrics = [
-                      { label: "الأجزاء", value: student.memorizationPercent },
-                      { label: "الحضور", value: student.attendancePercent },
-                      { label: "القبلي", value: student.prePercent },
-                      { label: "البعدي", value: student.postPercent },
-                      { label: "المهام الأدائية", value: student.tasksPercent },
-                      { label: "الإجمالي", value: student.overallPercent },
-                    ];
 
-                    return (
-                      <Card key={student.id} className={dashboardCardClass}>
-                        <CardContent className="space-y-5 p-5">
-                          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                            <div className="text-right">
-                              <div className="text-lg font-bold text-foreground">{student.name}</div>
-                              <div className="mt-1 text-xs text-muted-foreground">المقرئ: {student.reciterName}</div>
-                              <div className="mt-1 text-xs text-muted-foreground">رقم الدخول: {student.loginId}</div>
-                            </div>
-                          </div>
-
-                          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                            {itemMetrics.map((metric) => (
-                              metric.label === "الأجزاء" ? (
-                                <button
-                                  key={metric.label}
-                                  type="button"
-                                  className="space-y-2 rounded-[1.1rem] border border-border/60 bg-white p-4 text-right transition-colors hover:border-primary/30 hover:bg-primary/5"
-                                  onClick={() => setPartsDialogStudentId(student.id)}
-                                >
-                                  <div className="flex items-center justify-between gap-3 text-sm">
-                                    <span className="font-medium text-muted-foreground">{metric.label}</span>
-                                    <span className="font-bold text-foreground">{formatPercent(metric.value)}</span>
-                                  </div>
-                                  <Progress value={clampPercent(metric.value)} className="h-2.5 bg-muted" />
-                                </button>
-                              ) : (
-                                <div key={metric.label} className="space-y-2 rounded-[1.1rem] border border-border/60 bg-white p-4">
-                                  <div className="flex items-center justify-between gap-3 text-sm">
-                                    <span className="font-medium text-muted-foreground">{metric.label}</span>
-                                    <span className="font-bold text-foreground">{formatPercent(metric.value)}</span>
-                                  </div>
-                                  <Progress value={clampPercent(metric.value)} className="h-2.5 bg-muted" />
-                                </div>
-                              )
-                            ))}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })
-                )}
-              </div>
-            )}
-
-            {indicatorsBranchId !== "all" && (
-              <Card className={dashboardCardClass}>
-                <CardHeader className="text-right">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      {hasPermission("add_reciter") && (
-                        <Button className="gap-2 rounded-full px-4 sm:px-5" variant="outline" onClick={() => openUnifiedCreateDialog("reciter")}>
-                          <Plus className="size-4" />
-                          إضافة مقرئ
-                        </Button>
-                      )}
+                  <div className="grid w-full gap-4 md:max-w-2xl md:grid-cols-2">
+                    <div className="space-y-2 text-right">
+                      <div className="text-sm font-medium text-muted-foreground">الفرع</div>
+                      <Select value={indicatorsBranchId} onValueChange={(value) => setIndicatorsBranchId(value as IndicatorsBranchFilter)}>
+                        <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">جميع الفروع</SelectItem>
+                          {data.branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
                     </div>
-                    <div>
-                      <CardTitle className="text-xl">المقرئون</CardTitle>
-                      <CardDescription>جميع المقرئين في الفرع المحدد.</CardDescription>
+                    <div className="space-y-2 text-right">
+                      <div className="text-sm font-medium text-muted-foreground">الفلتر</div>
+                      <Select value={indicatorsSortOrder} onValueChange={(value) => setIndicatorsSortOrder(value as "alpha" | "overall-desc" | "overall-asc") }>
+                        <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="alpha">الترتيب الأبجدي أ-ي</SelectItem>
+                          <SelectItem value="overall-desc">الأعلى فالأقل إنجازًا</SelectItem>
+                          <SelectItem value="overall-asc">الأقل فالأعلى إنجازًا</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
-                </CardHeader>
-                <CardContent>
-                  {indicatorReciters.length === 0 ? (
+
+                  {indicatorMetrics.totalStudents === 0 ? (
                     <div className={cn(dashboardEmptyStateClass, "p-6 text-sm text-muted-foreground")}>
-                      لا يوجد مقرئون في هذا الفرع بعد.
+                      {indicatorsBranchId === "all" ? "لا يوجد طلاب في جميع الفروع بعد." : `لا يوجد طلاب في فرع ${branchLabels[indicatorsBranchId]} بعد.`}
                     </div>
                   ) : (
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      {indicatorReciters.map((reciter) => {
-                        const linkedStudents = data.students.filter((student) => reciter.studentIds.includes(student.id));
+                    <div className="space-y-4">
+                      {indicatorMetrics.studentRows.length === 0 ? (
+                        <div className={cn(dashboardEmptyStateClass, "p-6 text-sm text-muted-foreground")}>
+                          لا يوجد طلاب لعرض مؤشراتهم في الدورة المختارة.
+                        </div>
+                      ) : (
+                        indicatorMetrics.studentRows.map((student) => {
+                          const itemMetrics = [
+                            { label: "الأجزاء", value: student.memorizationPercent },
+                            { label: "الحضور", value: student.attendancePercent },
+                            { label: "القبلي", value: student.prePercent },
+                            { label: "البعدي", value: student.postPercent },
+                            { label: "المهام الأدائية", value: student.tasksPercent },
+                            { label: "الإجمالي", value: student.overallPercent },
+                          ];
 
-                        return (
-                          <Card key={reciter.id} className={dashboardPlainPanelClass}>
-                            <CardContent className="space-y-4 p-4 text-right">
-                              <div className="flex items-start justify-between gap-3">
-                                <Button variant="outline" size="icon" className="h-9 w-9 rounded-xl" onClick={() => openEntityManager("reciter", reciter.id)}>
-                                  <Pencil className="size-4" />
-                                </Button>
-                                <div>
-                                  <div className="font-bold text-foreground">{reciter.name}</div>
-                                  <div className="mt-1 text-xs text-muted-foreground">رقم الدخول: {reciter.loginCode}</div>
-                                </div>
-                              </div>
-                              <div className="space-y-2">
-                                <div className="text-sm font-medium text-muted-foreground">الطلاب المرتبطون</div>
-                                {linkedStudents.length === 0 ? (
-                                  <div className="text-sm text-muted-foreground">لا يوجد طلاب مرتبطون.</div>
-                                ) : (
-                                  <div className="flex flex-wrap justify-end gap-2">
-                                    {linkedStudents.map((student) => (
-                                      <span key={student.id} className="rounded-full border border-border/60 bg-muted/20 px-3 py-1 text-xs font-medium text-foreground">
-                                        {student.name}
-                                      </span>
-                                    ))}
+                          return (
+                            <Card key={student.id} className={dashboardCardClass}>
+                              <CardContent className="space-y-5 p-5">
+                                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                  <div className="text-right">
+                                    <div className="text-lg font-bold text-foreground">{student.name}</div>
+                                    <div className="mt-1 text-xs text-muted-foreground">المقرئ: {student.reciterName}</div>
+                                    <div className="mt-1 text-xs text-muted-foreground">رقم الدخول: {student.loginId}</div>
                                   </div>
-                                )}
-                              </div>
-                            </CardContent>
-                          </Card>
-                        );
-                      })}
+                                </div>
+
+                                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                  {itemMetrics.map((metric) => (
+                                    metric.label === "الأجزاء" ? (
+                                      <button
+                                        key={metric.label}
+                                        type="button"
+                                        className="space-y-2 rounded-[1.1rem] border border-border/60 bg-white p-4 text-right transition-colors hover:border-primary/30 hover:bg-primary/5"
+                                        onClick={() => setPartsDialogStudentId(student.id)}
+                                      >
+                                        <div className="flex items-center justify-between gap-3 text-sm">
+                                          <span className="font-medium text-muted-foreground">{metric.label}</span>
+                                          <span className="font-bold text-foreground">{formatPercent(metric.value)}</span>
+                                        </div>
+                                        <Progress value={clampPercent(metric.value)} className="h-2.5 bg-muted" />
+                                      </button>
+                                    ) : (
+                                      <div key={metric.label} className="space-y-2 rounded-[1.1rem] border border-border/60 bg-white p-4">
+                                        <div className="flex items-center justify-between gap-3 text-sm">
+                                          <span className="font-medium text-muted-foreground">{metric.label}</span>
+                                          <span className="font-bold text-foreground">{formatPercent(metric.value)}</span>
+                                        </div>
+                                        <Progress value={clampPercent(metric.value)} className="h-2.5 bg-muted" />
+                                      </div>
+                                    )
+                                  ))}
+                                </div>
+                              </CardContent>
+                            </Card>
+                          );
+                        })
+                      )}
                     </div>
                   )}
-                </CardContent>
-              </Card>
-            )}
-          </div>
+
+                  {indicatorsBranchId !== "all" && (
+                    <Card className={dashboardCardClass}>
+                      <CardHeader className="text-right">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            {hasPermission("add_reciter") && (
+                              <Button className="gap-2 rounded-full px-4 sm:px-5" variant="outline" onClick={() => openUnifiedCreateDialog("reciter")}>
+                                <Plus className="size-4" />
+                                إضافة مقرئ
+                              </Button>
+                            )}
+                          </div>
+                          <div>
+                            <CardTitle className="text-xl">المقرئون</CardTitle>
+                            <CardDescription>جميع المقرئين في الفرع المحدد.</CardDescription>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        {indicatorReciters.length === 0 ? (
+                          <div className={cn(dashboardEmptyStateClass, "p-6 text-sm text-muted-foreground")}>
+                            لا يوجد مقرئون في هذا الفرع بعد.
+                          </div>
+                        ) : (
+                          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                            {indicatorReciters.map((reciter) => {
+                              const linkedStudents = data.students.filter((student) => reciter.studentIds.includes(student.id));
+
+                              return (
+                                <Card key={reciter.id} className={dashboardPlainPanelClass}>
+                                  <CardContent className="space-y-4 p-4 text-right">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <Button variant="outline" size="icon" className="h-9 w-9 rounded-xl" onClick={() => openEntityManager("reciter", reciter.id)}>
+                                        <Pencil className="size-4" />
+                                      </Button>
+                                      <div>
+                                        <div className="font-bold text-foreground">{reciter.name}</div>
+                                        <div className="mt-1 text-xs text-muted-foreground">رقم الدخول: {reciter.loginCode}</div>
+                                      </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                      <div className="text-sm font-medium text-muted-foreground">الطلاب المرتبطون</div>
+                                      {linkedStudents.length === 0 ? (
+                                        <div className="text-sm text-muted-foreground">لا يوجد طلاب مرتبطون.</div>
+                                      ) : (
+                                        <div className="flex flex-wrap justify-end gap-2">
+                                          {linkedStudents.map((student) => (
+                                            <span key={student.id} className="rounded-full border border-border/60 bg-muted/20 px-3 py-1 text-xs font-medium text-foreground">
+                                              {student.name}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         )}
 
         {dashboardTab === "reader" && (

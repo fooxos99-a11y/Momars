@@ -27,11 +27,19 @@ const Hero = () => {
               <img
                 src="/شعار-الجمعية.png"
                 alt="شعار الجمعية"
+                width="118"
+                height="112"
+                decoding="async"
+                fetchPriority="high"
                 className="site-logo site-logo-top mt-1 h-20 w-auto object-contain sm:h-24 md:h-28"
               />
               <img
                 src="/اللوقو-شفاف.png"
                 alt="شعار برنامج رخصة ممارس"
+                width="118"
+                height="112"
+                decoding="async"
+                fetchPriority="high"
                 className="site-logo site-logo-top h-20 w-auto object-contain sm:h-24 md:h-28"
               />
             </div>

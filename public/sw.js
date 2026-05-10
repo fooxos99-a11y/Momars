@@ -1,4 +1,4 @@
-const CACHE_NAME = "mmars-pwa-v2";
+const CACHE_NAME = "mmars-pwa-v3";
 const APP_SHELL = ["/", "/manifest.webmanifest", "/الأيقونة.png"];
 
 const networkFirst = async (request, cacheKey = request) => {
@@ -19,6 +19,23 @@ const networkFirst = async (request, cacheKey = request) => {
 
     return Response.error();
   }
+};
+
+const staleWhileRevalidate = async (request, cacheKey = request) => {
+  const cache = await caches.open(CACHE_NAME);
+  const cachedResponse = await cache.match(cacheKey);
+
+  const networkPromise = fetch(request)
+    .then(async (response) => {
+      if (response && response.status === 200 && (response.type === "basic" || response.type === "default")) {
+        await cache.put(cacheKey, response.clone());
+      }
+
+      return response;
+    })
+    .catch(() => cachedResponse ?? Response.error());
+
+  return cachedResponse ?? networkPromise;
 };
 
 self.addEventListener("install", (event) => {
@@ -45,7 +62,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (event.request.mode === "navigate") {
-    event.respondWith(networkFirst(event.request, "/"));
+    event.respondWith(staleWhileRevalidate(event.request, "/"));
     return;
   }
 

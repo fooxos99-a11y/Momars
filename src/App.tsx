@@ -22,6 +22,10 @@ const TraineePage = lazy(() => import("./pages/TraineePage.tsx"));
 
 const queryClient = new QueryClient();
 
+const withDashboardStore = (element: JSX.Element) => (
+  <DashboardStoreProvider>{element}</DashboardStoreProvider>
+);
+
 const PushNotificationManager = () => {
   const [session, setSession] = useState(() => loadAccessSession());
 
@@ -63,19 +67,19 @@ const AnimatedRoutes = () => {
       <Suspense fallback={<PageLoadingScreen />}>
         <Routes location={location}>
           <Route path="/" element={<Index />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/dashboard/course/pre" element={<AdminAssessmentPage assessmentType="pre" />} />
-          <Route path="/dashboard/course/post" element={<AdminAssessmentPage assessmentType="post" />} />
-          <Route path="/dashboard/course/tasks" element={<AdminAssessmentPage assessmentType="tasks" />} />
-          <Route path="/reciter" element={<ReciterPage />} />
-          <Route path="/student" element={<StudentPage />} />
-          <Route path="/tasks" element={<TasksPage />} />
-          <Route path="/trainee" element={<TraineePage />} />
-          <Route path="/course" element={<CoursePage assessmentType="pre" />} />
-          <Route path="/course/pre" element={<CoursePage assessmentType="pre" />} />
-          <Route path="/course/post" element={<CoursePage assessmentType="post" />} />
-          <Route path="/course/tasks" element={<TasksPage />} />
-          <Route path="/final-exam" element={<FinalExamPage />} />
+          <Route path="/dashboard" element={withDashboardStore(<Dashboard />)} />
+          <Route path="/dashboard/course/pre" element={withDashboardStore(<AdminAssessmentPage assessmentType="pre" />)} />
+          <Route path="/dashboard/course/post" element={withDashboardStore(<AdminAssessmentPage assessmentType="post" />)} />
+          <Route path="/dashboard/course/tasks" element={withDashboardStore(<AdminAssessmentPage assessmentType="tasks" />)} />
+          <Route path="/reciter" element={withDashboardStore(<ReciterPage />)} />
+          <Route path="/student" element={withDashboardStore(<StudentPage />)} />
+          <Route path="/tasks" element={withDashboardStore(<TasksPage />)} />
+          <Route path="/trainee" element={withDashboardStore(<TraineePage />)} />
+          <Route path="/course" element={withDashboardStore(<CoursePage assessmentType="pre" />)} />
+          <Route path="/course/pre" element={withDashboardStore(<CoursePage assessmentType="pre" />)} />
+          <Route path="/course/post" element={withDashboardStore(<CoursePage assessmentType="post" />)} />
+          <Route path="/course/tasks" element={withDashboardStore(<TasksPage />)} />
+          <Route path="/final-exam" element={withDashboardStore(<FinalExamPage />)} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Suspense>
@@ -95,10 +99,8 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <DashboardStoreProvider>
-          <AnimatedRoutes />
-          <PushNotificationManager />
-        </DashboardStoreProvider>
+        <AnimatedRoutes />
+        <PushNotificationManager />
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

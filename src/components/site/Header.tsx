@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Menu, User, X } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -14,21 +14,14 @@ import {
 import { Input } from "@/components/ui/input";
 import {
   clearAccessSession,
-  getActiveCourse,
-  getActiveTask,
-  getCoursePath,
-  getTaskPath,
-  getManagedBranchId,
   getRoleLabel,
-  getStudentByLoginId,
-  isAssessmentEnabledForCourse,
-  isFinalExamAvailable,
   loadAccessSession,
-  resolveAccessByLoginCode,
   saveAccessSession,
   type AssessmentType,
-  useDashboardStore,
   type AccessSession,
+  type BranchId,
+  type CourseRecord,
+  type FinalExamBranchSetting,
 } from "@/lib/dashboard-store";
 import { resolveAccessByLoginCodeFromDatabase } from "@/lib/supabase";
 import { unsubscribeAndRemovePushForLogin } from "@/hooks/use-push-notifications";
@@ -42,6 +35,13 @@ const links = [
 
 type StudentAssessmentMenuType = AssessmentType | "finalexam";
 
+type StudentMenuData = {
+  branchId: BranchId | null;
+  activeCourse: CourseRecord | null;
+  activeTask: CourseRecord | null;
+  finalExamSettings: { male: FinalExamBranchSetting; female: FinalExamBranchSetting };
+};
+
 const Header = () => {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
@@ -52,13 +52,12 @@ const Header = () => {
   const [loginError, setLoginError] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
   const [session, setSession] = useState<AccessSession | null>(() => loadAccessSession());
+  const [studentMenuData, setStudentMenuData] = useState<StudentMenuData | null>(null);
+  const [studentMenuLoading, setStudentMenuLoading] = useState(false);
   const navigate = useNavigate();
-  const { data, isHydrated } = useDashboardStore();
-  const activeCourse = getActiveCourse(data);
-  // Use branchId from session directly (saved at login) — avoids depending on data.students being loaded
-  const sessionBranchId = session?.role === "student" ? (session.branchId ?? (getStudentByLoginId(data, session.loginCode)?.branchId ?? null)) : null;
-  const sessionStudent = session?.role === "student" ? getStudentByLoginId(data, session.loginCode) : null;
-  const activeTask = getActiveTask(data, sessionBranchId);
+  const activeCourse = studentMenuData?.activeCourse ?? null;
+  const activeTask = studentMenuData?.activeTask ?? null;
+  const sessionBranchId = session?.role === "student" ? (session.branchId ?? studentMenuData?.branchId ?? null) : null;
 
   useEffect(() => {
     const getScrollOffset = () => window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
@@ -103,6 +102,53 @@ const Header = () => {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (!accountMenuOpen || session?.role !== "student" || studentMenuData || studentMenuLoading) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadStudentMenuData = async () => {
+      setStudentMenuLoading(true);
+
+      try {
+        const [supabaseModule, dashboardStoreModule] = await Promise.all([
+          import("@/lib/supabase"),
+          import("@/lib/dashboard-store"),
+        ]);
+        const nextData = await supabaseModule.loadDashboardDataFromDatabase();
+
+        if (cancelled) {
+          return;
+        }
+
+        const branchId = session.branchId ?? dashboardStoreModule.getStudentByLoginId(nextData, session.loginCode)?.branchId ?? null;
+
+        setStudentMenuData({
+          branchId,
+          activeCourse: dashboardStoreModule.getActiveCourse(nextData),
+          activeTask: dashboardStoreModule.getActiveTask(nextData, branchId),
+          finalExamSettings: nextData.finalExamSettings,
+        });
+      } catch {
+        if (!cancelled) {
+          setStudentMenuData(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setStudentMenuLoading(false);
+        }
+      }
+    };
+
+    void loadStudentMenuData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accountMenuOpen, session, studentMenuData, studentMenuLoading]);
+
   const handleAccess = async () => {
     setLoginLoading(true);
 
@@ -110,19 +156,13 @@ const Header = () => {
       const resolved = await resolveAccessByLoginCodeFromDatabase(loginCode);
 
       if (!resolved) {
-        const fallback = resolveAccessByLoginCode(data, loginCode);
-
-        if (!fallback) {
-          setLoginError("رقم الدخول غير صحيح.");
-          return;
-        }
-
-        saveAccessSession(fallback);
-        setSession(fallback);
-      } else {
-        saveAccessSession(resolved);
-        setSession(resolved);
+        setLoginError("رقم الدخول غير صحيح.");
+        return;
       }
+
+      saveAccessSession(resolved);
+      setSession(resolved);
+      setStudentMenuData(null);
 
       setLoginOpen(false);
       setLoginCode("");
@@ -141,6 +181,7 @@ const Header = () => {
     }
     clearAccessSession();
     setSession(null);
+    setStudentMenuData(null);
     setProfileOpen(false);
     setAccountMenuOpen(false);
     navigate("/");
@@ -163,7 +204,14 @@ const Header = () => {
     }
 
     if (assessmentType === "finalexam") {
-      if (!sessionBranchId || !isFinalExamAvailable(data.finalExamSettings[sessionBranchId])) {
+      if (!sessionBranchId || !studentMenuData) {
+        return;
+      }
+
+      const setting = studentMenuData.finalExamSettings[sessionBranchId];
+      const isFinalExamEnabled = setting.isEnabled && (!setting.closesAt || new Date(setting.closesAt).getTime() > Date.now());
+
+      if (!isFinalExamEnabled) {
         return;
       }
 
@@ -173,18 +221,23 @@ const Header = () => {
     }
 
     if (assessmentType === "tasks") {
-      if (!isHydrated || !activeTask) return;
+      if (!activeTask) return;
+
+      void import("@/lib/dashboard-store").then(({ getTaskPath }) => {
+        setAccountMenuOpen(false);
+        navigate(getTaskPath(activeTask.id) + `&login=${encodeURIComponent(session.loginCode)}`);
+      });
+      return;
+    }
+
+    if (!activeCourse || !sessionBranchId || !activeCourse.branchAvailability[sessionBranchId]?.[assessmentType]) {
+      return;
+    }
+
+    void import("@/lib/dashboard-store").then(({ getCoursePath }) => {
       setAccountMenuOpen(false);
-      navigate(getTaskPath(activeTask.id) + `&login=${encodeURIComponent(session.loginCode)}`);
-      return;
-    }
-
-    if (!isHydrated || !activeCourse || !isAssessmentEnabledForCourse(activeCourse, assessmentType, sessionBranchId)) {
-      return;
-    }
-
-    setAccountMenuOpen(false);
-    navigate(`${getCoursePath(assessmentType)}?login=${encodeURIComponent(session.loginCode)}`);
+      navigate(`${getCoursePath(assessmentType)}?login=${encodeURIComponent(session.loginCode)}`);
+    });
   };
 
   const roleLabel = session ? getRoleLabel(session.role) : "";
@@ -193,8 +246,10 @@ const Header = () => {
   const secondaryActionPath = session?.role === "student"
     ? `/student?login=${encodeURIComponent(session.loginCode)}`
     : session?.redirectPath ?? "/";
-  const studentFinalExamEnabled = session?.role === "student" && sessionBranchId
-    ? isFinalExamAvailable(data.finalExamSettings[sessionBranchId])
+  const studentFinalExamEnabled = session?.role === "student" && sessionBranchId && studentMenuData
+    ? studentMenuData.finalExamSettings[sessionBranchId].isEnabled
+      && (!studentMenuData.finalExamSettings[sessionBranchId].closesAt
+        || new Date(studentMenuData.finalExamSettings[sessionBranchId].closesAt).getTime() > Date.now())
     : false;
   const studentAssessmentItems: Array<{ type: StudentAssessmentMenuType; label: string }> = [
     { type: "pre", label: "الاختبار القبلي" },
@@ -218,11 +273,17 @@ const Header = () => {
             <img
               src="/شعار-الجمعية.png"
               alt="شعار الجمعية"
+              width="36"
+              height="36"
+              decoding="async"
               className={`site-logo h-8 w-auto object-contain md:h-9 ${scrolled ? "site-logo-scrolled" : "site-logo-top"}`}
             />
             <img
               src="/اللوقو-شفاف.png"
               alt="شعار برنامج رخصة ممارس"
+              width="36"
+              height="36"
+              decoding="async"
               className={`site-logo h-8 w-auto object-contain md:h-9 ${scrolled ? "site-logo-scrolled" : "site-logo-top"}`}
             />
           </div>
@@ -277,8 +338,8 @@ const Header = () => {
                           item.type === "finalexam"
                             ? !studentFinalExamEnabled
                             : item.type === "tasks"
-                            ? !isHydrated || !activeTask
-                            : !isHydrated || !activeCourse || !isAssessmentEnabledForCourse(activeCourse, item.type, sessionBranchId)
+                            ? studentMenuLoading || !activeTask
+                            : studentMenuLoading || !activeCourse || !sessionBranchId || !activeCourse.branchAvailability[sessionBranchId]?.[item.type]
                         }
                         onSelect={() => handleStudentAssessmentNavigation(item.type)}
                       >
