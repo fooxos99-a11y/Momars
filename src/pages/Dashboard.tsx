@@ -698,6 +698,7 @@ const Dashboard = () => {
   const [studentPickerReciterId, setStudentPickerReciterId] = useState("");
   const [studentTransferTargetReciterId, setStudentTransferTargetReciterId] = useState("");
   const [partsDialogStudentId, setPartsDialogStudentId] = useState<string | null>(null);
+  const [partsCertificationSubmitting, setPartsCertificationSubmitting] = useState(false);
   const [studentError, setStudentError] = useState("");
   const bulkStudentFileInputRef = useRef<HTMLInputElement | null>(null);
   const [adminsOpen, setAdminsOpen] = useState(false);
@@ -3921,6 +3922,22 @@ const Dashboard = () => {
       </div>
     </div>
   );
+
+  const handleTogglePartsDialogCertification = async () => {
+    if (!partsDialogStudent || partsCertificationSubmitting) {
+      return;
+    }
+
+    setPartsCertificationSubmitting(true);
+
+    try {
+      await store.toggleCertifiedStudent(partsDialogStudent.id);
+    } catch {
+      showErrorToast("تعذر اعتماد الإنجاز.");
+    } finally {
+      setPartsCertificationSubmitting(false);
+    }
+  };
 
   if (!storedSession) {
     return <Navigate to="/" replace />;
@@ -7560,7 +7577,12 @@ const Dashboard = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(partsDialogStudent)} onOpenChange={(open) => !open && setPartsDialogStudentId(null)}>
+      <Dialog open={Boolean(partsDialogStudent)} onOpenChange={(open) => {
+        if (!open) {
+          setPartsCertificationSubmitting(false);
+          setPartsDialogStudentId(null);
+        }
+      }}>
         <DialogContent className="max-w-2xl rounded-[1.75rem] p-0 text-right [&>button]:hidden">
           <DialogHeader className="border-b border-border/60 px-4 py-3 text-right">
             <DialogTitle className="text-right text-xl">{partsDialogStudent ? `أجزاء ${partsDialogStudent.name}` : "الأجزاء"}</DialogTitle>
@@ -7572,13 +7594,26 @@ const Dashboard = () => {
               </div>
               <div className="flex justify-end gap-3 border-t border-border/60 pt-4">
                 <Button
-                  className="rounded-full px-5"
-                  variant={partsDialogStudent.isCertified ? "outline" : "default"}
-                  onClick={() => store.toggleCertifiedStudent(partsDialogStudent.id)}
+                  className={cn(
+                    "rounded-full px-5",
+                    partsDialogStudent.isCertified
+                      ? "border-green-200 bg-green-50 text-green-700 hover:bg-green-100 hover:text-green-700"
+                      : "bg-white text-foreground hover:bg-primary/5",
+                  )}
+                  variant="outline"
+                  disabled={partsCertificationSubmitting}
+                  onClick={() => void handleTogglePartsDialogCertification()}
                 >
                   {partsDialogStudent.isCertified ? "مجاز" : "اعتماد مجاز"}
                 </Button>
-                <Button variant="outline" className="rounded-full px-5" onClick={() => setPartsDialogStudentId(null)}>
+                <Button
+                  className="rounded-full px-5"
+                  disabled={partsCertificationSubmitting}
+                  onClick={() => {
+                    setPartsCertificationSubmitting(false);
+                    setPartsDialogStudentId(null);
+                  }}
+                >
                   حفظ
                 </Button>
               </div>
