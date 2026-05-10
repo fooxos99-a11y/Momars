@@ -232,6 +232,8 @@ const RECITER_FILTER_ALL_RECITERS = "all-reciters";
 const RECITER_FILTER_CERTIFIED = "certified";
 const STUDENT_FILTER_ALL = "all";
 const STUDENT_FILTER_CERTIFIED = "certified";
+const INDICATOR_STUDENT_FILTER_ALL = "all";
+const INDICATOR_STUDENT_FILTER_CERTIFIED = "certified";
 const ALL_SATISFACTION_DELETE_COURSES = "__all_satisfaction_courses__";
 const getSatisfactionDeleteQuestionKey = (prompt: string, type: "rating" | "text") => `${type}::${prompt.trim()}`;
 
@@ -783,6 +785,7 @@ const Dashboard = () => {
   const [homeCourseFilter, setHomeCourseFilter] = useState("all");
   const [indicatorsBranchId, setIndicatorsBranchId] = useState<IndicatorsBranchFilter>("all");
   const [indicatorsSortOrder, setIndicatorsSortOrder] = useState<"alpha" | "overall-desc" | "overall-asc">("overall-desc");
+  const [indicatorsStudentFilter, setIndicatorsStudentFilter] = useState<typeof INDICATOR_STUDENT_FILTER_ALL | typeof INDICATOR_STUDENT_FILTER_CERTIFIED>(INDICATOR_STUDENT_FILTER_CERTIFIED);
   const [indicatorsCourseId, setIndicatorsCourseId] = useState("all");
   const [courseIndicatorsBranch, setCourseIndicatorsBranch] = useState<IndicatorsBranchFilter>(managedBranchId ?? "all");
   const [courseIndicatorsCourseId, setCourseIndicatorsCourseId] = useState("");
@@ -1304,7 +1307,15 @@ const Dashboard = () => {
     }
   }, [satisfactionDeleteCourseId, satisfactionDeleteCourseOptions, satisfactionDeleteQuestionKey]);
   const activeCourse = getActiveCourse(data);
-  const indicatorStudents = indicatorsBranchId === "all" ? data.students : getBranchStudents(data, indicatorsBranchId);
+  const indicatorStudents = useMemo(() => {
+    const students = indicatorsBranchId === "all" ? data.students : getBranchStudents(data, indicatorsBranchId);
+
+    if (indicatorsStudentFilter === INDICATOR_STUDENT_FILTER_CERTIFIED) {
+      return students.filter((student) => student.isCertified);
+    }
+
+    return students;
+  }, [data.students, indicatorsBranchId, indicatorsStudentFilter]);
   const selectedIndicatorsCourse = indicatorsCourseId === "all"
     ? null
     : courseItems.find((course) => course.id === indicatorsCourseId) ?? null;
@@ -5058,7 +5069,7 @@ const Dashboard = () => {
                     )}
                   </div>
 
-                  <div className="grid w-full gap-4 md:max-w-2xl md:grid-cols-2">
+                  <div className="grid w-full gap-4 md:max-w-4xl md:grid-cols-3">
                     <div className="space-y-2 text-right">
                       <div className="text-sm font-medium text-muted-foreground">الفرع</div>
                       <Select value={indicatorsBranchId} onValueChange={(value) => setIndicatorsBranchId(value as IndicatorsBranchFilter)}>
@@ -5072,7 +5083,7 @@ const Dashboard = () => {
                       </Select>
                     </div>
                     <div className="space-y-2 text-right">
-                      <div className="text-sm font-medium text-muted-foreground">الفلتر</div>
+                      <div className="text-sm font-medium text-muted-foreground">الترتيب</div>
                       <Select value={indicatorsSortOrder} onValueChange={(value) => setIndicatorsSortOrder(value as "alpha" | "overall-desc" | "overall-asc") }>
                         <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
                           <SelectValue />
@@ -5084,11 +5095,24 @@ const Dashboard = () => {
                         </SelectContent>
                       </Select>
                     </div>
+                    <div className="space-y-2 text-right">
+                      <div className="text-sm font-medium text-muted-foreground">الفلتر</div>
+                      <Select value={indicatorsStudentFilter} onValueChange={(value) => setIndicatorsStudentFilter(value as typeof INDICATOR_STUDENT_FILTER_ALL | typeof INDICATOR_STUDENT_FILTER_CERTIFIED)}>
+                        <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={INDICATOR_STUDENT_FILTER_CERTIFIED}>المجازون</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
 
                   {indicatorMetrics.totalStudents === 0 ? (
                     <div className={cn(dashboardEmptyStateClass, "p-6 text-sm text-muted-foreground")}>
-                      {indicatorsBranchId === "all" ? "لا يوجد طلاب في جميع الفروع بعد." : `لا يوجد طلاب في فرع ${branchLabels[indicatorsBranchId]} بعد.`}
+                      {indicatorsStudentFilter === INDICATOR_STUDENT_FILTER_CERTIFIED
+                        ? (indicatorsBranchId === "all" ? "لا يوجد طلاب مجازون في جميع الفروع." : `لا يوجد طلاب مجازون في فرع ${branchLabels[indicatorsBranchId]}.`)
+                        : (indicatorsBranchId === "all" ? "لا يوجد طلاب في جميع الفروع بعد." : `لا يوجد طلاب في فرع ${branchLabels[indicatorsBranchId]} بعد.`)}
                     </div>
                   ) : (
                     <div className="space-y-4">
