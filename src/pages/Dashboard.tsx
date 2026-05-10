@@ -230,6 +230,8 @@ type PreviewAttachment = {
 const RECITER_FILTER_ALL_STUDENTS = "all-students";
 const RECITER_FILTER_ALL_RECITERS = "all-reciters";
 const RECITER_FILTER_CERTIFIED = "certified";
+const STUDENT_FILTER_ALL = "all";
+const STUDENT_FILTER_CERTIFIED = "certified";
 const ALL_SATISFACTION_DELETE_COURSES = "__all_satisfaction_courses__";
 const getSatisfactionDeleteQuestionKey = (prompt: string, type: "rating" | "text") => `${type}::${prompt.trim()}`;
 
@@ -684,6 +686,7 @@ const Dashboard = () => {
   const [studentsOpen, setStudentsOpen] = useState(false);
   const [studentEntryMode, setStudentEntryMode] = useState<"single" | "bulk">("single");
   const [selectedBranch, setSelectedBranch] = useState<IndicatorsBranchFilter>(managedBranchId ?? "male");
+  const [selectedStudentsFilter, setSelectedStudentsFilter] = useState<typeof STUDENT_FILTER_ALL | typeof STUDENT_FILTER_CERTIFIED>(STUDENT_FILTER_ALL);
   const [studentForm, setStudentForm] = useState(emptyStudentForm);
   const [bulkStudents, setBulkStudents] = useState<BulkStudentRow[]>([]);
   const [bulkStudentFileName, setBulkStudentFileName] = useState("");
@@ -977,7 +980,15 @@ const Dashboard = () => {
   });
   const secondaryDashboardMenu = availableDashboardMenu.filter((item) => item.id === "permissions" || item.id === "notifications");
   const primaryDashboardMenu = availableDashboardMenu.filter((item) => item.id !== "permissions" && item.id !== "notifications");
-  const branchStudents = effectiveSelectedBranch === "all" ? data.students : getBranchStudents(data, effectiveSelectedBranch);
+  const branchStudents = useMemo(() => {
+    const students = effectiveSelectedBranch === "all" ? data.students : getBranchStudents(data, effectiveSelectedBranch);
+
+    if (selectedStudentsFilter === STUDENT_FILTER_CERTIFIED) {
+      return students.filter((student) => student.isCertified);
+    }
+
+    return students;
+  }, [data.students, effectiveSelectedBranch, selectedStudentsFilter]);
   const studentManagerBranch = managedBranchId ?? studentPickerBranchId;
   const studentManagerStudents = useMemo(
     () => data.students.filter((student) => student.branchId === studentManagerBranch),
@@ -4160,7 +4171,8 @@ const Dashboard = () => {
 
             <Card className={dashboardCardClass}>
               <CardHeader className="space-y-4 text-right">
-                <div className="w-full max-w-[220px] space-y-2 text-right">
+                <div className="grid w-full gap-4 md:grid-cols-2">
+                  <div className="w-full max-w-[220px] space-y-2 text-right">
                     <div className="text-sm font-medium text-muted-foreground">الفرع</div>
                     {managedBranchId ? (
                       <div className="rounded-[0.9rem] border border-border/60 bg-muted/20 px-3 py-2 text-sm font-medium text-foreground">
@@ -4177,12 +4189,27 @@ const Dashboard = () => {
                         </SelectContent>
                       </Select>
                     )}
+                  </div>
+                  <div className="w-full max-w-[220px] space-y-2 text-right">
+                    <div className="text-sm font-medium text-muted-foreground">الفلتر</div>
+                    <Select value={selectedStudentsFilter} onValueChange={(value) => setSelectedStudentsFilter(value as typeof STUDENT_FILTER_ALL | typeof STUDENT_FILTER_CERTIFIED)}>
+                      <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={STUDENT_FILTER_ALL}>جميع المستخدمين</SelectItem>
+                        <SelectItem value={STUDENT_FILTER_CERTIFIED}>المجازون</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
                 {branchStudents.length === 0 ? (
                   <div className={cn(dashboardEmptyStateClass, "p-6 text-sm text-muted-foreground")}>
-                    {effectiveSelectedBranch === "all" ? "لا يوجد طلاب في جميع الفروع بعد." : `لا يوجد طلاب في فرع ${branchLabels[effectiveSelectedBranch]} بعد.`}
+                    {selectedStudentsFilter === STUDENT_FILTER_CERTIFIED
+                      ? (effectiveSelectedBranch === "all" ? "لا يوجد طلاب مجازون في جميع الفروع." : `لا يوجد طلاب مجازون في فرع ${branchLabels[effectiveSelectedBranch]}.`)
+                      : (effectiveSelectedBranch === "all" ? "لا يوجد طلاب في جميع الفروع بعد." : `لا يوجد طلاب في فرع ${branchLabels[effectiveSelectedBranch]} بعد.`)}
                   </div>
                 ) : (
                   <div className="overflow-x-auto rounded-[1.25rem] border border-border/60 bg-white">
@@ -7525,20 +7552,19 @@ const Dashboard = () => {
           </DialogHeader>
           {partsDialogStudent && (
             <div className="space-y-4 p-4">
-              <div className="text-sm text-muted-foreground">اضغط على الجزء لتحديده أو إلغائه.</div>
               <div className="flex justify-center">
                 {renderPartGrid(partsDialogStudent.id, partsDialogStudent.completedParts)}
               </div>
               <div className="flex justify-end gap-3 border-t border-border/60 pt-4">
-                <Button variant="outline" className="rounded-full px-5" onClick={() => setPartsDialogStudentId(null)}>
-                  إغلاق
-                </Button>
                 <Button
                   className="rounded-full px-5"
                   variant={partsDialogStudent.isCertified ? "outline" : "default"}
                   onClick={() => store.toggleCertifiedStudent(partsDialogStudent.id)}
                 >
                   {partsDialogStudent.isCertified ? "مجاز" : "اعتماد مجاز"}
+                </Button>
+                <Button variant="outline" className="rounded-full px-5" onClick={() => setPartsDialogStudentId(null)}>
+                  حفظ
                 </Button>
               </div>
             </div>
