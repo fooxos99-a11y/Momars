@@ -17,6 +17,7 @@ const TRAILING_OPTION_MARKER_PATTERN = new RegExp(`\\s*(?:\\([${OPTION_LETTER_TO
 const OPTION_MARKER_ANYWHERE_PATTERN = new RegExp(`(?:\\([${OPTION_LETTER_TOKEN}]\\)|[${OPTION_LETTER_TOKEN}]\\s*[)(.:؛/-]|\\(?[${NUMBER_TOKEN}]{1,3}\\)?\\s*[)(.:؛/-])`);
 const INLINE_OPTION_SPLIT_PATTERN = new RegExp(`\\s+(?=(?:\\([${OPTION_LETTER_TOKEN}]\\)|[${OPTION_LETTER_TOKEN}]\\s*[)(.:؛/-]|\\(?[${NUMBER_TOKEN}]{1,3}\\)?\\s*[)(.:؛/-]))`, "g");
 const ANSWER_LINE_PATTERN = /^(?:الإجابة(?:\s+الصحيحة)?|الجواب(?:\s+الصحيح)?|answer|correct\s*answer|solution|الدرجة|التعليل|التفسير)\s*[:：-]/i;
+const INSTRUCTION_LINE_PATTERN = /^(?:التعليمات|إرشادات|ملاحظات|instructions?)\s*[:：-]/i;
 const NOISE_LINE_PATTERN = /^(?:page\s*\d+|\d+\s*\/\s*\d+|\d+)$/i;
 const ARABIC_CHAR_PATTERN = /[\u0600-\u06FF]/g;
 const LATIN_CHAR_PATTERN = /[A-Za-z]/g;
@@ -142,6 +143,38 @@ const isOptionLine = (value: string) => {
   return OPTION_MARKER_PATTERN.test(normalized) || TRAILING_OPTION_MARKER_PATTERN.test(normalized);
 };
 
+const NUMBERED_MARKER_PATTERN = new RegExp(`^\\s*\\(?[${NUMBER_TOKEN}]{1,3}\\)?\\s*[)(.:؛/-]`);
+
+const isExplicitQuestionBoundary = (lines: string[], index: number) => {
+  const line = lines[index];
+
+  if (!isQuestionStartLine(line)) {
+    return false;
+  }
+
+  const normalizedPrompt = stripTrailingQuestionNumber(stripLeadingMarker(line));
+
+  if (isQuestionLine(normalizedPrompt)) {
+    return true;
+  }
+
+  if (!NUMBERED_MARKER_PATTERN.test(normalizeLine(line))) {
+    return false;
+  }
+
+  for (let nextIndex = index + 1; nextIndex < lines.length; nextIndex += 1) {
+    const nextLine = lines[nextIndex];
+
+    if (shouldIgnoreLine(nextLine)) {
+      continue;
+    }
+
+    return isOptionLine(nextLine) && !NUMBERED_MARKER_PATTERN.test(normalizeLine(nextLine));
+  }
+
+  return true;
+};
+
 const splitInlineOptions = (value: string) => {
   const normalized = normalizeLine(value);
   const firstMarkerIndex = normalized.search(OPTION_MARKER_ANYWHERE_PATTERN);
@@ -172,7 +205,7 @@ const splitInlineOptions = (value: string) => {
 const shouldIgnoreLine = (value: string) => {
   const normalizedValue = normalizeLine(value);
 
-  return !normalizedValue || NOISE_LINE_PATTERN.test(normalizedValue) || ANSWER_LINE_PATTERN.test(normalizedValue);
+  return !normalizedValue || NOISE_LINE_PATTERN.test(normalizedValue) || ANSWER_LINE_PATTERN.test(normalizedValue) || INSTRUCTION_LINE_PATTERN.test(normalizedValue);
 };
 
 export const parseImportedQuestionsFromText = (text: string) => {
@@ -213,7 +246,7 @@ export const parseImportedQuestionsFromText = (text: string) => {
         }
 
         // Stop if next numbered question starts
-        if (isQuestionStartLine(nextLine)) break;
+        if (isExplicitQuestionBoundary(rawLines, j)) break;
         // Stop if an option line starts (question hasn't ended yet but options shouldn't mix in)
         if (isOptionLine(nextLine)) break;
 
@@ -251,6 +284,8 @@ export const parseImportedQuestionsFromText = (text: string) => {
       }
 
       // Check option lines FIRST — options ending with "." would falsely match isQuestionLine
+      if (isExplicitQuestionBoundary(rawLines, j)) break;
+
       if (isOptionLine(candidate)) {
         markedOptions.push(stripOptionMarker(candidate));
         j++;

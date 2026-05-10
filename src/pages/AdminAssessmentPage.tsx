@@ -282,18 +282,6 @@ const AdminAssessmentPage = ({ assessmentType }: AdminAssessmentPageProps) => {
     }
   }, [isHydrated, session, storedSession]);
 
-  if (!storedSession) {
-    return <Navigate to="/" replace />;
-  }
-
-  if (!isHydrated) {
-    return null;
-  }
-
-  if (!session) {
-    return <Navigate to="/" replace />;
-  }
-
   const canEditQuestions = session.role === "admin";
 
   const selectedCourse = useMemo(
@@ -413,6 +401,18 @@ const AdminAssessmentPage = ({ assessmentType }: AdminAssessmentPageProps) => {
       post: getAverage("post"),
     };
   }, [data.submissions, selectedCourse]);
+
+  if (!storedSession) {
+    return <Navigate to="/" replace />;
+  }
+
+  if (!isHydrated) {
+    return null;
+  }
+
+  if (!session) {
+    return <Navigate to="/" replace />;
+  }
 
   const resetQuestionForm = () => {
     setQuestionForms([emptyQuestionForm]);

@@ -112,4 +112,31 @@ describe("parseImportedQuestionsFromText", () => {
       },
     ]);
   });
+
+  it("splits numbered Arabic questions into separate questions instead of merging them into one", () => {
+    const importedQuestions = parseImportedQuestionsFromText(`
+      1. ما هو أكبر كوكب في النظام الشمسي؟
+      أ) الأرض
+      ب) المشتري
+      ج) المريخ
+
+      2. ما هي عاصمة فرنسا؟
+      أ) روما
+      ب) مدريد
+      ج) باريس
+    `);
+
+    expect(importedQuestions).toEqual([
+      {
+        prompt: "ما هو أكبر كوكب في النظام الشمسي؟",
+        type: "multiple",
+        options: ["الأرض", "المشتري", "المريخ"],
+      },
+      {
+        prompt: "ما هي عاصمة فرنسا؟",
+        type: "multiple",
+        options: ["روما", "مدريد", "باريس"],
+      },
+    ]);
+  });
 });

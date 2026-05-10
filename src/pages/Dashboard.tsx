@@ -698,7 +698,8 @@ const Dashboard = () => {
   const [studentPickerReciterId, setStudentPickerReciterId] = useState("");
   const [studentTransferTargetReciterId, setStudentTransferTargetReciterId] = useState("");
   const [partsDialogStudentId, setPartsDialogStudentId] = useState<string | null>(null);
-  const [partsCertificationSubmitting, setPartsCertificationSubmitting] = useState(false);
+  const [partsDialogDraftParts, setPartsDialogDraftParts] = useState<number[]>([]);
+  const [partsDialogSaving, setPartsDialogSaving] = useState(false);
   const [studentError, setStudentError] = useState("");
   const bulkStudentFileInputRef = useRef<HTMLInputElement | null>(null);
   const [adminsOpen, setAdminsOpen] = useState(false);
@@ -1025,6 +1026,16 @@ const Dashboard = () => {
   const partsDialogStudent = partsDialogStudentId
     ? data.students.find((student) => student.id === partsDialogStudentId) ?? null
     : null;
+
+  useEffect(() => {
+    if (!partsDialogStudent) {
+      setPartsDialogDraftParts([]);
+      return;
+    }
+
+    setPartsDialogDraftParts(partsDialogStudent.completedParts);
+  }, [partsDialogStudent]);
+
   const isAllStudentsReciterView = selectedReciterFilter === RECITER_FILTER_ALL_STUDENTS || selectedReciterFilter === RECITER_FILTER_CERTIFIED;
   const isCertifiedReciterView = selectedReciterFilter === RECITER_FILTER_CERTIFIED;
   const isSpecificReciterView = (
@@ -3923,19 +3934,62 @@ const Dashboard = () => {
     </div>
   );
 
-  const handleTogglePartsDialogCertification = async () => {
-    if (!partsDialogStudent || partsCertificationSubmitting) {
+  const renderDraftPartGrid = (completedParts: number[]) => (
+    <div className="overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="grid w-fit min-w-max grid-cols-5 gap-2 sm:grid-cols-6">
+        {parts.map((part) => {
+          const active = completedParts.includes(part);
+
+          return (
+            <button
+              key={part}
+              type="button"
+              onClick={() => {
+                setPartsDialogDraftParts((currentParts) => (
+                  currentParts.includes(part)
+                    ? currentParts.filter((currentPart) => currentPart !== part)
+                    : [...currentParts, part].sort((left, right) => left - right)
+                ));
+              }}
+              className={cn(
+                "flex h-10 w-10 items-center justify-center rounded-full border text-sm font-black leading-none transition-smooth sm:h-11 sm:w-11 sm:text-base",
+                active
+                  ? "border-cyan-200/30 bg-[linear-gradient(145deg,#0d7490,#0f3f5c)] text-white shadow-[0_12px_26px_rgba(8,61,93,0.35)] hover:brightness-110"
+                  : "border-slate-200 bg-white text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.06)] hover:border-cyan-300 hover:text-primary hover:shadow-[0_10px_24px_rgba(14,116,144,0.12)]",
+              )}
+            >
+              <span className="leading-none">{part}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  const handleSavePartsDialog = async () => {
+    if (!partsDialogStudent || partsDialogSaving) {
       return;
     }
 
-    setPartsCertificationSubmitting(true);
+    const currentParts = [...partsDialogStudent.completedParts].sort((left, right) => left - right);
+    const draftParts = [...partsDialogDraftParts].sort((left, right) => left - right);
+    const hasChanges = currentParts.length !== draftParts.length || currentParts.some((part, index) => part !== draftParts[index]);
+
+    if (!hasChanges) {
+      setPartsDialogStudentId(null);
+      return;
+    }
+
+    setPartsDialogSaving(true);
 
     try {
-      await store.toggleCertifiedStudent(partsDialogStudent.id);
+      await store.updateStudent(partsDialogStudent.id, { completedParts: draftParts });
+      showSuccessToast("تم حفظ الأجزاء", `تم تحديث أجزاء ${partsDialogStudent.name} بنجاح.`);
+      setPartsDialogStudentId(null);
     } catch {
-      showErrorToast("تعذر اعتماد الإنجاز.");
+      showErrorToast("تعذر حفظ الأجزاء.");
     } finally {
-      setPartsCertificationSubmitting(false);
+      setPartsDialogSaving(false);
     }
   };
 
@@ -4388,39 +4442,7 @@ const Dashboard = () => {
                             <Card key={`${reciter.id}-${student.id}`} className={dashboardCardClass}>
                               <CardContent className="space-y-4 p-4">
                                 <div className="text-right">
-                                  {hasTransferTarget ? (
-                                    <button
-                                      type="button"
-                                      className="font-bold text-foreground hover:text-primary hover:underline cursor-pointer"
-                                      onClick={() => openAdminTransferDialog({
-                                        studentId: student.id,
-                                        studentName: student.name,
-                                        branchId: student.branchId,
-                                        currentReciterId: reciter.id,
-                                      })}
-                                    >
-                                      {student.name}
-                                    </button>
-                                  ) : (
-                                    <div className="font-bold text-foreground">{student.name}</div>
-                                  )}
-                                  <span
-                                    className={cn(
-                                      "mt-1 inline-flex min-h-6 min-w-[56px] items-center justify-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-colors",
-                                      student.isCertified ? "bg-green-100 text-green-700" : "invisible",
-                                    )}
-                                  >
-                                    مجاز
-                                  </span>
-                                  <div className="text-xs text-muted-foreground">المقرئ الحالي: {reciter.name}</div>
-                                  {!hasTransferTarget && <div className="mt-1 text-xs text-muted-foreground">لا يوجد مقرئ آخر متاح في نفس الفرع.</div>}
-                                </div>
-                                <div className="space-y-3 text-right">
-                                  <div className="text-sm font-bold text-foreground">المقروء</div>
-                                  <div className="flex justify-end">
-                                    {renderPartGrid(student.id, student.completedParts)}
-                                  </div>
-                                  <div className="flex justify-end">
+                                  <div className="flex items-start justify-between gap-3">
                                     <button
                                       type="button"
                                       className={cn(
@@ -4431,8 +4453,42 @@ const Dashboard = () => {
                                       )}
                                       onClick={() => store.toggleCertifiedStudent(student.id)}
                                     >
-                                      {student.isCertified ? "مجاز" : "اعتماد"}
+                                      {student.isCertified ? "مجاز" : "اعتماد مجاز"}
                                     </button>
+                                    <div className="space-y-1">
+                                      {hasTransferTarget ? (
+                                        <button
+                                          type="button"
+                                          className="font-bold text-foreground hover:text-primary hover:underline cursor-pointer"
+                                          onClick={() => openAdminTransferDialog({
+                                            studentId: student.id,
+                                            studentName: student.name,
+                                            branchId: student.branchId,
+                                            currentReciterId: reciter.id,
+                                          })}
+                                        >
+                                          {student.name}
+                                        </button>
+                                      ) : (
+                                        <div className="font-bold text-foreground">{student.name}</div>
+                                      )}
+                                      <span
+                                        className={cn(
+                                          "inline-flex min-h-6 min-w-[56px] items-center justify-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-colors",
+                                          student.isCertified ? "bg-green-100 text-green-700" : "invisible",
+                                        )}
+                                      >
+                                        مجاز
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">المقرئ الحالي: {reciter.name}</div>
+                                  {!hasTransferTarget && <div className="mt-1 text-xs text-muted-foreground">لا يوجد مقرئ آخر متاح في نفس الفرع.</div>}
+                                </div>
+                                <div className="space-y-3 text-right">
+                                  <div className="text-sm font-bold text-foreground">المقروء</div>
+                                  <div className="flex justify-end">
+                                    {renderPartGrid(student.id, student.completedParts)}
                                   </div>
                                 </div>
                               </CardContent>
@@ -4450,7 +4506,6 @@ const Dashboard = () => {
                             <>
                               <TableHead className="text-right">الطالب</TableHead>
                               <TableHead className="text-center">المقروء</TableHead>
-                              <TableHead className="text-center">الاعتماد</TableHead>
                             </>
                           ) : isSpecificReciterView ? (
                             <>
@@ -4475,31 +4530,45 @@ const Dashboard = () => {
                             <TableRow key={`${reciter.id}-${student.id}`}>
                               <TableCell className="text-right align-top">
                                 <div className="space-y-3 text-right">
-                                  <div className="space-y-1 text-right">
-                                    {hasTransferTarget ? (
-                                      <button
-                                        type="button"
-                                        className="font-semibold text-foreground hover:text-primary hover:underline cursor-pointer"
-                                        onClick={() => openAdminTransferDialog({
-                                          studentId: student.id,
-                                          studentName: student.name,
-                                          branchId: student.branchId,
-                                          currentReciterId: reciter.id,
-                                        })}
-                                      >
-                                        {student.name}
-                                      </button>
-                                    ) : (
-                                      <div className="font-semibold text-foreground">{student.name}</div>
-                                    )}
-                                    <span
+                                  <div className="flex items-start justify-between gap-3 text-right">
+                                    <button
+                                      type="button"
                                       className={cn(
-                                        "inline-flex min-h-6 min-w-[56px] items-center justify-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-colors",
-                                        student.isCertified ? "bg-green-100 text-green-700" : "invisible",
+                                        "inline-flex h-10 min-w-[98px] items-center justify-center rounded-full px-4 text-sm font-semibold transition-colors",
+                                        student.isCertified
+                                          ? "bg-green-100 text-green-700 hover:bg-green-200"
+                                          : "border border-border text-muted-foreground hover:border-green-500 hover:text-green-700",
                                       )}
+                                      onClick={() => store.toggleCertifiedStudent(student.id)}
                                     >
-                                      مجاز
-                                    </span>
+                                      {student.isCertified ? "مجاز" : "اعتماد مجاز"}
+                                    </button>
+                                    <div className="space-y-1 text-right">
+                                      {hasTransferTarget ? (
+                                        <button
+                                          type="button"
+                                          className="font-semibold text-foreground hover:text-primary hover:underline cursor-pointer"
+                                          onClick={() => openAdminTransferDialog({
+                                            studentId: student.id,
+                                            studentName: student.name,
+                                            branchId: student.branchId,
+                                            currentReciterId: reciter.id,
+                                          })}
+                                        >
+                                          {student.name}
+                                        </button>
+                                      ) : (
+                                        <div className="font-semibold text-foreground">{student.name}</div>
+                                      )}
+                                      <span
+                                        className={cn(
+                                          "inline-flex min-h-6 min-w-[56px] items-center justify-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-colors",
+                                          student.isCertified ? "bg-green-100 text-green-700" : "invisible",
+                                        )}
+                                      >
+                                        مجاز
+                                      </span>
+                                    </div>
                                   {!hasTransferTarget && <div className="text-[11px] text-muted-foreground">لا يوجد مقرئ آخر متاح في نفس الفرع</div>}
                                   </div>
                                   <div className="text-xs text-muted-foreground">{reciter.name}</div>
@@ -4509,20 +4578,6 @@ const Dashboard = () => {
                                 <div className="flex flex-col items-center gap-3">
                                   {renderPartGrid(student.id, student.completedParts)}
                                 </div>
-                              </TableCell>
-                              <TableCell className="text-center align-middle">
-                                <button
-                                  type="button"
-                                  className={cn(
-                                    "inline-flex h-10 min-w-[98px] items-center justify-center rounded-full px-4 text-sm font-semibold transition-colors",
-                                    student.isCertified
-                                      ? "bg-green-100 text-green-700 hover:bg-green-200"
-                                      : "border border-border text-muted-foreground hover:border-green-500 hover:text-green-700",
-                                  )}
-                                  onClick={() => store.toggleCertifiedStudent(student.id)}
-                                >
-                                  {student.isCertified ? "مجاز" : "اعتماد"}
-                                </button>
                               </TableCell>
                             </TableRow>
                           );
@@ -7579,7 +7634,8 @@ const Dashboard = () => {
 
       <Dialog open={Boolean(partsDialogStudent)} onOpenChange={(open) => {
         if (!open) {
-          setPartsCertificationSubmitting(false);
+          setPartsDialogSaving(false);
+          setPartsDialogDraftParts([]);
           setPartsDialogStudentId(null);
         }
       }}>
@@ -7590,31 +7646,15 @@ const Dashboard = () => {
           {partsDialogStudent && (
             <div className="space-y-4 p-4">
               <div className="flex justify-center">
-                {renderPartGrid(partsDialogStudent.id, partsDialogStudent.completedParts)}
+                {renderDraftPartGrid(partsDialogDraftParts)}
               </div>
-              <div className="flex justify-end gap-3 border-t border-border/60 pt-4">
-                <Button
-                  className={cn(
-                    "rounded-full px-5",
-                    partsDialogStudent.isCertified
-                      ? "border-green-200 bg-green-50 text-green-700 hover:bg-green-100 hover:text-green-700"
-                      : "bg-white text-foreground hover:bg-primary/5",
-                  )}
-                  variant="outline"
-                  disabled={partsCertificationSubmitting}
-                  onClick={() => void handleTogglePartsDialogCertification()}
-                >
-                  {partsDialogStudent.isCertified ? "مجاز" : "اعتماد مجاز"}
-                </Button>
+              <div className="flex justify-end border-t border-border/60 pt-4">
                 <Button
                   className="rounded-full px-5"
-                  disabled={partsCertificationSubmitting}
-                  onClick={() => {
-                    setPartsCertificationSubmitting(false);
-                    setPartsDialogStudentId(null);
-                  }}
+                  disabled={partsDialogSaving}
+                  onClick={() => void handleSavePartsDialog()}
                 >
-                  حفظ
+                  {partsDialogSaving ? "جارٍ الحفظ..." : "حفظ"}
                 </Button>
               </div>
             </div>
