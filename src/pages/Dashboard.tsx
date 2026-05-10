@@ -3873,6 +3873,32 @@ const Dashboard = () => {
     );
   };
 
+  const renderPartGrid = (studentId: string, completedParts: number[]) => (
+    <div className="overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="grid w-fit min-w-max grid-cols-5 gap-2 sm:grid-cols-6">
+        {parts.map((part) => {
+          const active = completedParts.includes(part);
+
+          return (
+            <button
+              key={part}
+              type="button"
+              onClick={() => void store.toggleStudentPart(studentId, part)}
+              className={cn(
+                "flex h-10 w-10 items-center justify-center rounded-full border text-sm font-black leading-none transition-smooth sm:h-11 sm:w-11 sm:text-base",
+                active
+                  ? "border-cyan-200/30 bg-[linear-gradient(145deg,#0d7490,#0f3f5c)] text-white shadow-[0_12px_26px_rgba(8,61,93,0.35)] hover:brightness-110"
+                  : "border-slate-200 bg-white text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.06)] hover:border-cyan-300 hover:text-primary hover:shadow-[0_10px_24px_rgba(14,116,144,0.12)]",
+              )}
+            >
+              <span className="leading-none">{part}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   if (!storedSession) {
     return <Navigate to="/" replace />;
   }
