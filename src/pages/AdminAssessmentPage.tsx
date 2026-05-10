@@ -282,7 +282,7 @@ const AdminAssessmentPage = ({ assessmentType }: AdminAssessmentPageProps) => {
     }
   }, [isHydrated, session, storedSession]);
 
-  const canEditQuestions = session.role === "admin";
+  const canEditQuestions = session?.role === "admin";
 
   const selectedCourse = useMemo(
     () => data.courses.find((course) => course.id === courseId) ?? null,
