@@ -5221,12 +5221,7 @@ const Dashboard = () => {
                             <Card key={student.id} className={dashboardCardClass}>
                               <CardContent className="space-y-5 p-5">
                                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                  <div className="flex w-full flex-row-reverse items-start justify-between gap-3">
-                                    <div className="text-right">
-                                      <div className="text-lg font-bold text-foreground">{student.name}</div>
-                                      <div className="mt-1 text-xs text-muted-foreground">المقرئ: {student.reciterName}</div>
-                                      <div className="mt-1 text-xs text-muted-foreground">رقم الدخول: {student.loginId}</div>
-                                    </div>
+                                  <div className="flex w-full items-start justify-between gap-3" dir="ltr">
                                     <button
                                       type="button"
                                       className={cn(
@@ -5240,6 +5235,11 @@ const Dashboard = () => {
                                     >
                                       {isCertificationSubmitting ? "جارٍ..." : student.isCertified ? "مجاز" : "اعتماد مجاز"}
                                     </button>
+                                    <div className="text-right" dir="rtl">
+                                      <div className="text-lg font-bold text-foreground">{student.name}</div>
+                                      <div className="mt-1 text-xs text-muted-foreground">المقرئ: {student.reciterName}</div>
+                                      <div className="mt-1 text-xs text-muted-foreground">رقم الدخول: {student.loginId}</div>
+                                    </div>
                                   </div>
                                 </div>
 
