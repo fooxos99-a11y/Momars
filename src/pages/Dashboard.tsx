@@ -232,8 +232,6 @@ const RECITER_FILTER_ALL_RECITERS = "all-reciters";
 const RECITER_FILTER_CERTIFIED = "certified";
 const STUDENT_FILTER_ALL = "all";
 const STUDENT_FILTER_CERTIFIED = "certified";
-const INDICATOR_STUDENT_FILTER_ALL = "all";
-const INDICATOR_STUDENT_FILTER_CERTIFIED = "certified";
 const ALL_SATISFACTION_DELETE_COURSES = "__all_satisfaction_courses__";
 const getSatisfactionDeleteQuestionKey = (prompt: string, type: "rating" | "text") => `${type}::${prompt.trim()}`;
 
@@ -784,8 +782,7 @@ const Dashboard = () => {
   const [homeBranchFilter, setHomeBranchFilter] = useState<IndicatorsBranchFilter>("all");
   const [homeCourseFilter, setHomeCourseFilter] = useState("all");
   const [indicatorsBranchId, setIndicatorsBranchId] = useState<IndicatorsBranchFilter>("all");
-  const [indicatorsSortOrder, setIndicatorsSortOrder] = useState<"alpha" | "overall-desc" | "overall-asc">("overall-desc");
-  const [indicatorsStudentFilter, setIndicatorsStudentFilter] = useState<typeof INDICATOR_STUDENT_FILTER_ALL | typeof INDICATOR_STUDENT_FILTER_CERTIFIED>(INDICATOR_STUDENT_FILTER_CERTIFIED);
+  const [indicatorsSortOrder, setIndicatorsSortOrder] = useState<"alpha" | "overall-desc" | "overall-asc" | "certified">("overall-desc");
   const [indicatorsCourseId, setIndicatorsCourseId] = useState("all");
   const [courseIndicatorsBranch, setCourseIndicatorsBranch] = useState<IndicatorsBranchFilter>(managedBranchId ?? "all");
   const [courseIndicatorsCourseId, setCourseIndicatorsCourseId] = useState("");
@@ -1310,12 +1307,12 @@ const Dashboard = () => {
   const indicatorStudents = useMemo(() => {
     const students = indicatorsBranchId === "all" ? data.students : getBranchStudents(data, indicatorsBranchId);
 
-    if (indicatorsStudentFilter === INDICATOR_STUDENT_FILTER_CERTIFIED) {
+    if (indicatorsSortOrder === "certified") {
       return students.filter((student) => student.isCertified);
     }
 
     return students;
-  }, [data.students, indicatorsBranchId, indicatorsStudentFilter]);
+  }, [data.students, indicatorsBranchId, indicatorsSortOrder]);
   const selectedIndicatorsCourse = indicatorsCourseId === "all"
     ? null
     : courseItems.find((course) => course.id === indicatorsCourseId) ?? null;
@@ -3393,6 +3390,10 @@ const Dashboard = () => {
         };
       })
       .sort((left, right) => {
+        if (indicatorsSortOrder === "certified") {
+          return right.overallPercent - left.overallPercent || left.name.localeCompare(right.name, "ar");
+        }
+
         if (indicatorsSortOrder === "alpha") {
           return left.name.localeCompare(right.name, "ar");
         }
@@ -5069,7 +5070,7 @@ const Dashboard = () => {
                     )}
                   </div>
 
-                  <div className="grid w-full gap-4 md:max-w-4xl md:grid-cols-3">
+                  <div className="grid w-full gap-4 md:max-w-2xl md:grid-cols-2">
                     <div className="space-y-2 text-right">
                       <div className="text-sm font-medium text-muted-foreground">الفرع</div>
                       <Select value={indicatorsBranchId} onValueChange={(value) => setIndicatorsBranchId(value as IndicatorsBranchFilter)}>
@@ -5083,8 +5084,8 @@ const Dashboard = () => {
                       </Select>
                     </div>
                     <div className="space-y-2 text-right">
-                      <div className="text-sm font-medium text-muted-foreground">الترتيب</div>
-                      <Select value={indicatorsSortOrder} onValueChange={(value) => setIndicatorsSortOrder(value as "alpha" | "overall-desc" | "overall-asc") }>
+                      <div className="text-sm font-medium text-muted-foreground">الفلتر</div>
+                      <Select value={indicatorsSortOrder} onValueChange={(value) => setIndicatorsSortOrder(value as "alpha" | "overall-desc" | "overall-asc" | "certified") }>
                         <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
                           <SelectValue />
                         </SelectTrigger>
@@ -5092,17 +5093,7 @@ const Dashboard = () => {
                           <SelectItem value="alpha">الترتيب الأبجدي أ-ي</SelectItem>
                           <SelectItem value="overall-desc">الأعلى فالأقل إنجازًا</SelectItem>
                           <SelectItem value="overall-asc">الأقل فالأعلى إنجازًا</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2 text-right">
-                      <div className="text-sm font-medium text-muted-foreground">الفلتر</div>
-                      <Select value={indicatorsStudentFilter} onValueChange={(value) => setIndicatorsStudentFilter(value as typeof INDICATOR_STUDENT_FILTER_ALL | typeof INDICATOR_STUDENT_FILTER_CERTIFIED)}>
-                        <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={INDICATOR_STUDENT_FILTER_CERTIFIED}>المجازون</SelectItem>
+                          <SelectItem value="certified">المجازون</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -5110,7 +5101,7 @@ const Dashboard = () => {
 
                   {indicatorMetrics.totalStudents === 0 ? (
                     <div className={cn(dashboardEmptyStateClass, "p-6 text-sm text-muted-foreground")}>
-                      {indicatorsStudentFilter === INDICATOR_STUDENT_FILTER_CERTIFIED
+                      {indicatorsSortOrder === "certified"
                         ? (indicatorsBranchId === "all" ? "لا يوجد طلاب مجازون في جميع الفروع." : `لا يوجد طلاب مجازون في فرع ${branchLabels[indicatorsBranchId]}.`)
                         : (indicatorsBranchId === "all" ? "لا يوجد طلاب في جميع الفروع بعد." : `لا يوجد طلاب في فرع ${branchLabels[indicatorsBranchId]} بعد.`)}
                     </div>
@@ -6059,7 +6050,7 @@ const Dashboard = () => {
                     <div className="space-y-2 md:col-span-2 lg:col-span-1">
                       <label className="text-sm font-bold text-foreground">الطلاب</label>
                       <Select value={resultsAttendanceFilter} onValueChange={(value) => setResultsAttendanceFilter(value as "all" | "present" | "absent" | "frequent-absent") }>
-                        <SelectTrigger className="min-h-12 flex-row-reverse rounded-2xl border-primary/20 bg-primary/[0.03] text-right shadow-sm [&>span]:line-clamp-1 [&>span]:text-right"><SelectValue /></SelectTrigger>
+                        <SelectTrigger className="flex-row-reverse text-right [&>span]:line-clamp-1 [&>span]:text-right"><SelectValue /></SelectTrigger>
                         <SelectContent className="text-right">
                           <SelectItem value="all" className="justify-end pr-3 text-right">جميع الطلاب</SelectItem>
                           <SelectItem value="present" className="justify-end pr-3 text-right">الحاضرين</SelectItem>
