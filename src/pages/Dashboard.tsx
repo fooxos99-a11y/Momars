@@ -3392,6 +3392,7 @@ const Dashboard = () => {
           id: student.id,
           name: student.name,
           loginId: student.loginId,
+          isCertified: student.isCertified,
           reciterName: reciter?.name ?? "غير مرتبط",
           memorizationPercent,
           attendancePercent,
@@ -5198,10 +5199,32 @@ const Dashboard = () => {
                             <Card key={student.id} className={dashboardCardClass}>
                               <CardContent className="space-y-5 p-5">
                                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                  <div className="text-right">
-                                    <div className="text-lg font-bold text-foreground">{student.name}</div>
-                                    <div className="mt-1 text-xs text-muted-foreground">المقرئ: {student.reciterName}</div>
-                                    <div className="mt-1 text-xs text-muted-foreground">رقم الدخول: {student.loginId}</div>
+                                  <div className="flex w-full items-start justify-between gap-3">
+                                    <button
+                                      type="button"
+                                      className={cn(
+                                        "inline-flex h-10 min-w-[98px] items-center justify-center rounded-full px-4 text-sm font-semibold transition-colors",
+                                        student.isCertified
+                                          ? "bg-green-100 text-green-700 hover:bg-green-200"
+                                          : "border border-border text-muted-foreground hover:border-green-500 hover:text-green-700",
+                                      )}
+                                      onClick={() => store.toggleCertifiedStudent(student.id)}
+                                    >
+                                      {student.isCertified ? "مجاز" : "اعتماد مجاز"}
+                                    </button>
+                                    <div className="text-right">
+                                      <div className="text-lg font-bold text-foreground">{student.name}</div>
+                                      <span
+                                        className={cn(
+                                          "mt-1 inline-flex min-h-6 min-w-[56px] items-center justify-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-colors",
+                                          student.isCertified ? "bg-green-100 text-green-700" : "invisible",
+                                        )}
+                                      >
+                                        مجاز
+                                      </span>
+                                      <div className="mt-1 text-xs text-muted-foreground">المقرئ: {student.reciterName}</div>
+                                      <div className="mt-1 text-xs text-muted-foreground">رقم الدخول: {student.loginId}</div>
+                                    </div>
                                   </div>
                                 </div>
 
