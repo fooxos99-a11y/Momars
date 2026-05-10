@@ -4974,19 +4974,7 @@ const Dashboard = () => {
         })()}
 
         {dashboardTab === "indicators" && (
-          <Dialog open onOpenChange={(open) => {
-            if (!open) {
-              setDashboardTab("home", { replace: true });
-            }
-          }}>
-            <DialogContent className="flex h-[92vh] w-[min(96vw,1100px)] flex-col overflow-hidden rounded-[1.9rem] border-primary/20 bg-white p-0 text-right shadow-[0_24px_70px_rgba(15,23,42,0.14)] sm:h-[88vh] [&>button]:hidden">
-              <DialogHeader className="shrink-0 border-b border-border/60 px-5 py-4 text-right">
-                <DialogTitle className="text-right text-xl">المستخدمون</DialogTitle>
-                <DialogDescription className="text-right">عرض وتعديل مؤشرات الطلاب والمقرئين في نافذة مستقلة.</DialogDescription>
-              </DialogHeader>
-
-              <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">
-                <div className="space-y-6">
+          <div className="space-y-6">
                   <div className="flex items-center justify-end gap-2">
                     {(hasPermission("edit_student") || hasPermission("delete_student") || hasPermission("edit_reciter") || hasPermission("delete_reciter")) && (
                       <Button
@@ -5111,73 +5099,70 @@ const Dashboard = () => {
                     </div>
                   )}
 
-                  {indicatorsBranchId !== "all" && (
-                    <Card className={dashboardCardClass}>
-                      <CardHeader className="text-right">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-2">
-                            {hasPermission("add_reciter") && (
-                              <Button className="gap-2 rounded-full px-4 sm:px-5" variant="outline" onClick={() => openUnifiedCreateDialog("reciter")}>
-                                <Plus className="size-4" />
-                                إضافة مقرئ
-                              </Button>
-                            )}
-                          </div>
-                          <div>
-                            <CardTitle className="text-xl">المقرئون</CardTitle>
-                            <CardDescription>جميع المقرئين في الفرع المحدد.</CardDescription>
-                          </div>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        {indicatorReciters.length === 0 ? (
-                          <div className={cn(dashboardEmptyStateClass, "p-6 text-sm text-muted-foreground")}>
-                            لا يوجد مقرئون في هذا الفرع بعد.
-                          </div>
-                        ) : (
-                          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                            {indicatorReciters.map((reciter) => {
-                              const linkedStudents = data.students.filter((student) => reciter.studentIds.includes(student.id));
+            {indicatorsBranchId !== "all" && (
+              <Card className={dashboardCardClass}>
+                <CardHeader className="text-right">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      {hasPermission("add_reciter") && (
+                        <Button className="gap-2 rounded-full px-4 sm:px-5" variant="outline" onClick={() => openUnifiedCreateDialog("reciter")}>
+                          <Plus className="size-4" />
+                          إضافة مقرئ
+                        </Button>
+                      )}
+                    </div>
+                    <div>
+                      <CardTitle className="text-xl">المقرئون</CardTitle>
+                      <CardDescription>جميع المقرئين في الفرع المحدد.</CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {indicatorReciters.length === 0 ? (
+                    <div className={cn(dashboardEmptyStateClass, "p-6 text-sm text-muted-foreground")}>
+                      لا يوجد مقرئون في هذا الفرع بعد.
+                    </div>
+                  ) : (
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {indicatorReciters.map((reciter) => {
+                        const linkedStudents = data.students.filter((student) => reciter.studentIds.includes(student.id));
 
-                              return (
-                                <Card key={reciter.id} className={dashboardPlainPanelClass}>
-                                  <CardContent className="space-y-4 p-4 text-right">
-                                    <div className="flex items-start justify-between gap-3">
-                                      <Button variant="outline" size="icon" className="h-9 w-9 rounded-xl" onClick={() => openEntityManager("reciter", reciter.id)}>
-                                        <Pencil className="size-4" />
-                                      </Button>
-                                      <div>
-                                        <div className="font-bold text-foreground">{reciter.name}</div>
-                                        <div className="mt-1 text-xs text-muted-foreground">رقم الدخول: {reciter.loginCode}</div>
-                                      </div>
-                                    </div>
-                                    <div className="space-y-2">
-                                      <div className="text-sm font-medium text-muted-foreground">الطلاب المرتبطون</div>
-                                      {linkedStudents.length === 0 ? (
-                                        <div className="text-sm text-muted-foreground">لا يوجد طلاب مرتبطون.</div>
-                                      ) : (
-                                        <div className="flex flex-wrap justify-end gap-2">
-                                          {linkedStudents.map((student) => (
-                                            <span key={student.id} className="rounded-full border border-border/60 bg-muted/20 px-3 py-1 text-xs font-medium text-foreground">
-                                              {student.name}
-                                            </span>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </div>
-                                  </CardContent>
-                                </Card>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
+                        return (
+                          <Card key={reciter.id} className={dashboardPlainPanelClass}>
+                            <CardContent className="space-y-4 p-4 text-right">
+                              <div className="flex items-start justify-between gap-3">
+                                <Button variant="outline" size="icon" className="h-9 w-9 rounded-xl" onClick={() => openEntityManager("reciter", reciter.id)}>
+                                  <Pencil className="size-4" />
+                                </Button>
+                                <div>
+                                  <div className="font-bold text-foreground">{reciter.name}</div>
+                                  <div className="mt-1 text-xs text-muted-foreground">رقم الدخول: {reciter.loginCode}</div>
+                                </div>
+                              </div>
+                              <div className="space-y-2">
+                                <div className="text-sm font-medium text-muted-foreground">الطلاب المرتبطون</div>
+                                {linkedStudents.length === 0 ? (
+                                  <div className="text-sm text-muted-foreground">لا يوجد طلاب مرتبطون.</div>
+                                ) : (
+                                  <div className="flex flex-wrap justify-end gap-2">
+                                    {linkedStudents.map((student) => (
+                                      <span key={student.id} className="rounded-full border border-border/60 bg-muted/20 px-3 py-1 text-xs font-medium text-foreground">
+                                        {student.name}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
                   )}
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         )}
 
         {dashboardTab === "reader" && (
