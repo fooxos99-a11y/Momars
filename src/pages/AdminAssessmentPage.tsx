@@ -260,6 +260,7 @@ const AdminAssessmentPage = ({ assessmentType }: AdminAssessmentPageProps) => {
   const [isSaving, setIsSaving] = useState(false);
   const [templateDraft, setTemplateDraft] = useState("");
   const [templateSaving, setTemplateSaving] = useState(false);
+  const backDashboardTab = assessmentType === "tasks" ? "tasks" : "courses";
 
   const session = useMemo(() => {
     if (!storedSession || !isHydrated) {
@@ -873,8 +874,8 @@ const AdminAssessmentPage = ({ assessmentType }: AdminAssessmentPageProps) => {
             variant="outline"
             size="icon"
             className="rounded-full"
-            onClick={() => navigate(-1)}
-            aria-label="الرجوع إلى الصفحة السابقة"
+            onClick={() => navigate(`/dashboard?tab=${backDashboardTab}`)}
+            aria-label={assessmentType === "tasks" ? "الرجوع إلى صفحة إدارة المهام" : "الرجوع إلى صفحة الاختبارات"}
           >
             <ArrowRight className="size-5" />
           </Button>

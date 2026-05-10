@@ -292,10 +292,24 @@
 @media (max-width: 768px) {
   /* Allow the scaled A4 page to be fully visible — no clipping */
   .word-document-page {
-    padding: 0.25rem;
+    padding: 0.5rem;
     border-radius: 0.75rem;
     overflow: visible;
     background: transparent;
+  }
+
+  .word-document-content {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .word-document-page .ProseMirror,
+  .word-document-page-readonly .ProseMirror {
+    width: 100% !important;
+    min-height: auto !important;
+    padding: 1rem !important;
+    font-size: 16px;
+    line-height: 1.8;
   }
 
   /* On mobile: show top toolbar and hide bottom toolbar */

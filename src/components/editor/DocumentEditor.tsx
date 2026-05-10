@@ -667,7 +667,12 @@ const DocumentEditor = ({ value, onChange, editable = true, allowImageEditing = 
   const pageRef = useRef<HTMLDivElement | null>(null);
   // A4 = 794px, toolbar ≈ 56px (44px + 12px gap) when editable.
   const A4_PX = 794;
+  const MOBILE_BREAKPOINT_PX = 768;
   const computeZoom = (el: HTMLElement) => {
+    if (typeof window !== "undefined" && window.innerWidth <= MOBILE_BREAKPOINT_PX) {
+      return 1;
+    }
+
     const style = getComputedStyle(el);
     const innerWidth =
       el.clientWidth -

@@ -473,6 +473,12 @@ const ProgramIndicatorRing = ({
   const circumference = 2 * Math.PI * radius;
 
   useEffect(() => {
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches) {
+      setAnimatedProgress(safeProgress);
+      setAnimatedDisplay(safeDisplay);
+      return undefined;
+    }
+
     let frameId = 0;
     const startedAt = performance.now();
     const duration = 2200;
@@ -3796,6 +3802,7 @@ const Dashboard = () => {
     setNotifTemplateFinalExam(data.finalExamSettings[effectiveFinalExamManageBranch]?.notificationTemplate || getDefaultFinalExamNotificationTemplate());
     setNotifTemplatesOpen(true);
   };
+  const hasDashboardHeaderActions = dashboardTab === "home" || (dashboardTab === "finalexam" && canCreateCourses);
 
   const renderDashboardHeaderActions = (isMobile = false) => {
     const actionClassName = isMobile
@@ -3885,7 +3892,7 @@ const Dashboard = () => {
           {renderDashboardNavigation()}
         </aside>
 
-        <main className="min-w-0 flex-1 overflow-y-auto px-4 py-4 text-right md:px-6 lg:h-screen lg:px-8 lg:py-8">
+        <main className="h-screen min-w-0 flex-1 overflow-y-auto px-4 py-4 text-right md:px-6 lg:px-8 lg:py-8">
           <div className="w-full">
             {loadError && (
               <div className="mb-4 rounded-2xl border border-destructive/30 bg-destructive/5 px-5 py-4 text-sm font-medium text-destructive">
@@ -3925,19 +3932,21 @@ const Dashboard = () => {
                   <p className="text-xs font-medium text-muted-foreground">لوحة التحكم</p>
                   <p className="truncate text-sm font-extrabold text-foreground">{activeMenuItem.label}</p>
                 </div>
-                <Sheet open={mobileActionsOpen} onOpenChange={setMobileActionsOpen}>
-                  <SheetTrigger asChild>
-                    <Button variant="outline" size="icon" className="rounded-full" aria-label="إجراءات الصفحة الحالية">
-                      <MoreHorizontal className="size-5" />
-                    </Button>
-                  </SheetTrigger>
-                  <SheetContent side="bottom" className="rounded-t-[2rem] border border-white/70 bg-white/95 px-4 pb-8 pt-6 text-right shadow-[0_-18px_50px_rgba(15,23,42,0.08)]">
-                    <SheetTitle className="text-right text-base font-extrabold">إجراءات {activeMenuItem.label}</SheetTitle>
-                    <div className="mt-4 space-y-3">
-                      {renderDashboardHeaderActions(true)}
-                    </div>
-                  </SheetContent>
-                </Sheet>
+                {hasDashboardHeaderActions && (
+                  <Sheet open={mobileActionsOpen} onOpenChange={setMobileActionsOpen}>
+                    <SheetTrigger asChild>
+                      <Button variant="outline" size="icon" className="rounded-full" aria-label="إجراءات الصفحة الحالية">
+                        <MoreHorizontal className="size-5" />
+                      </Button>
+                    </SheetTrigger>
+                    <SheetContent side="bottom" className="rounded-t-[2rem] border border-white/70 bg-white/95 px-4 pb-8 pt-6 text-right shadow-[0_-18px_50px_rgba(15,23,42,0.08)] [&>button]:hidden">
+                      <SheetTitle className="sr-only">إجراءات الصفحة الحالية</SheetTitle>
+                      <div className="mt-4 space-y-3">
+                        {renderDashboardHeaderActions(true)}
+                      </div>
+                    </SheetContent>
+                  </Sheet>
+                )}
               </div>
               <div className="hidden w-full flex-wrap items-center justify-start gap-2 sm:gap-3 lg:flex lg:w-auto lg:flex-nowrap lg:justify-end">
                 <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
@@ -5017,8 +5026,8 @@ const Dashboard = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="alpha">الترتيب الأبجدي أ-ي</SelectItem>
-                    <SelectItem value="overall-desc">الأعلى فالأقل</SelectItem>
-                    <SelectItem value="overall-asc">الأقل فالأعلى</SelectItem>
+                    <SelectItem value="overall-desc">الأعلى فالأقل إنجازًا</SelectItem>
+                    <SelectItem value="overall-asc">الأقل فالأعلى إنجازًا</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -5058,19 +5067,28 @@ const Dashboard = () => {
 
                           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                             {itemMetrics.map((metric) => (
-                              <div key={metric.label} className="space-y-2 rounded-[1.1rem] border border-border/60 bg-white p-4">
-                                <div className="flex items-center justify-between gap-3 text-sm">
-                                  {metric.label === "الأجزاء" ? (
-                                    <button type="button" className="font-medium text-muted-foreground hover:text-primary hover:underline" onClick={() => setPartsDialogStudentId(student.id)}>
-                                      {metric.label}
-                                    </button>
-                                  ) : (
+                              metric.label === "الأجزاء" ? (
+                                <button
+                                  key={metric.label}
+                                  type="button"
+                                  className="space-y-2 rounded-[1.1rem] border border-border/60 bg-white p-4 text-right transition-colors hover:border-primary/30 hover:bg-primary/5"
+                                  onClick={() => setPartsDialogStudentId(student.id)}
+                                >
+                                  <div className="flex items-center justify-between gap-3 text-sm">
                                     <span className="font-medium text-muted-foreground">{metric.label}</span>
-                                  )}
-                                  <span className="font-bold text-foreground">{formatPercent(metric.value)}</span>
+                                    <span className="font-bold text-foreground">{formatPercent(metric.value)}</span>
+                                  </div>
+                                  <Progress value={clampPercent(metric.value)} className="h-2.5 bg-muted" />
+                                </button>
+                              ) : (
+                                <div key={metric.label} className="space-y-2 rounded-[1.1rem] border border-border/60 bg-white p-4">
+                                  <div className="flex items-center justify-between gap-3 text-sm">
+                                    <span className="font-medium text-muted-foreground">{metric.label}</span>
+                                    <span className="font-bold text-foreground">{formatPercent(metric.value)}</span>
+                                  </div>
+                                  <Progress value={clampPercent(metric.value)} className="h-2.5 bg-muted" />
                                 </div>
-                                <Progress value={clampPercent(metric.value)} className="h-2.5 bg-muted" />
-                              </div>
+                              )
                             ))}
                           </div>
                         </CardContent>
@@ -5502,7 +5520,7 @@ const Dashboard = () => {
 
         {/* Preview text dialog */}
         <Dialog open={satisfactionPreviewText != null} onOpenChange={(open) => { if (!open) setSatisfactionPreviewText(null); }}>
-          <DialogContent className="max-w-lg rounded-[1.75rem] text-right" dir="rtl">
+          <DialogContent className="max-w-lg rounded-[1.75rem] text-right [&>button]:hidden" dir="rtl">
             <DialogHeader>
               <DialogTitle className="text-right text-lg">{satisfactionPreviewText?.split("\n\n")[0]}</DialogTitle>
             </DialogHeader>
@@ -5961,10 +5979,10 @@ const Dashboard = () => {
                   </div>
                   )}
                   {resultsCourse && resultsType === "attendance" && resultsCourse.entityType !== "task" && (
-                    <div className="space-y-2">
+                    <div className="space-y-2 md:col-span-2 lg:col-span-1">
                       <label className="text-sm font-bold text-foreground">الطلاب</label>
                       <Select value={resultsAttendanceFilter} onValueChange={(value) => setResultsAttendanceFilter(value as "all" | "present" | "absent" | "frequent-absent") }>
-                        <SelectTrigger className="flex-row-reverse text-right [&>span]:text-right"><SelectValue /></SelectTrigger>
+                        <SelectTrigger className="min-h-12 flex-row-reverse rounded-2xl border-primary/20 bg-primary/[0.03] text-right shadow-sm [&>span]:line-clamp-1 [&>span]:text-right"><SelectValue /></SelectTrigger>
                         <SelectContent className="text-right">
                           <SelectItem value="all" className="justify-end pr-3 text-right">جميع الطلاب</SelectItem>
                           <SelectItem value="present" className="justify-end pr-3 text-right">الحاضرين</SelectItem>
@@ -6005,12 +6023,12 @@ const Dashboard = () => {
                     const isPresent = presentLoginIds.has(student.loginId);
 
                     return (
-                      <div key={student.id} className="flex flex-col gap-2 rounded-[1rem] border border-border/60 bg-white px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:border-0 sm:bg-transparent sm:px-0 last:border-b-0">
-                        <div className="text-right">
-                          <div className="font-bold text-black">{student.name}</div>
+                      <div key={student.id} className="flex flex-col gap-3 rounded-[1.25rem] border border-primary/10 bg-[linear-gradient(180deg,rgba(255,255,255,1)_0%,rgba(248,250,252,0.9)_100%)] px-4 py-3 shadow-[0_8px_24px_rgba(15,23,42,0.04)] sm:flex-row sm:items-start sm:justify-between sm:border-0 sm:bg-transparent sm:px-0 sm:py-2 sm:shadow-none last:border-b-0">
+                        <div className="min-w-0 text-right">
+                          <div className="truncate font-bold text-black">{student.name}</div>
                           <div className="text-xs text-muted-foreground">{student.loginId}</div>
                         </div>
-                        <div className={cn("text-sm font-medium", isPresent ? "text-emerald-700" : "text-rose-700")}>
+                        <div className={cn("self-start rounded-full px-3 py-1 text-sm font-medium", isPresent ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700")}>
                           {isPresent ? "حاضر" : "غائب"}
                         </div>
                       </div>
@@ -6033,17 +6051,17 @@ const Dashboard = () => {
                     const isCompletedTask = isTaskResult && row.score > 0;
 
                     return (
-                    <div key={row.studentId} className="flex flex-col gap-3 rounded-3xl border border-primary/10 bg-white p-4 md:flex-row md:items-center md:justify-between">
-                      <button type="button" className="text-right" disabled={!row.hasViewableAnswers} onClick={() => row.hasViewableAnswers && row.submissionId && setDetailsSubmissionId(row.submissionId)}>
-                        <div className="font-bold text-foreground">{row.studentName}</div>
+                    <div key={row.studentId} className="flex flex-col gap-3 rounded-[1.35rem] border border-primary/10 bg-[linear-gradient(180deg,rgba(255,255,255,1)_0%,rgba(248,250,252,0.96)_100%)] p-4 shadow-[0_10px_28px_rgba(15,23,42,0.05)] md:flex-row md:items-center md:justify-between md:shadow-none">
+                      <button type="button" className="min-w-0 text-right" disabled={!row.hasViewableAnswers} onClick={() => row.hasViewableAnswers && row.submissionId && setDetailsSubmissionId(row.submissionId)}>
+                        <div className="truncate font-bold text-foreground">{row.studentName}</div>
                         <div className="text-xs text-muted-foreground">{row.loginId}</div>
                       </button>
-                      <div className="flex w-full flex-wrap items-center justify-between gap-3 md:w-auto md:flex-nowrap md:justify-start">
+                      <div className="flex w-full flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between md:w-auto md:flex-nowrap md:justify-start">
                         {isTaskResult ? (
                           <Badge
                             variant="outline"
                             className={cn(
-                              "gap-1.5 rounded-full px-3 py-1",
+                              "justify-center gap-1.5 rounded-full px-3 py-2 sm:py-1",
                               isCompletedTask
                                 ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                                 : "border-border/60 bg-muted/30 text-muted-foreground",
@@ -6053,16 +6071,17 @@ const Dashboard = () => {
                             {isCompletedTask ? "منفذ" : "غير منفذ"}
                           </Badge>
                         ) : (
-                          <Badge variant="outline" className="border-primary/20 text-primary">
+                          <Badge variant="outline" className="justify-center border-primary/20 px-3 py-2 text-primary sm:py-1">
                             {row.score} / {row.total}
                           </Badge>
                         )}
                         {row.hasViewableAnswers && row.submissionId ? (
-                          <Button variant="outline" size="icon" className="h-9 w-9 rounded-xl" onClick={() => setDetailsSubmissionId(row.submissionId)} aria-label={`عرض إجابات ${row.studentName}`}>
-                            <Eye className="size-4" />
+                          <Button variant="outline" className="h-10 w-full rounded-xl sm:h-9 sm:w-9 sm:px-0" onClick={() => setDetailsSubmissionId(row.submissionId)} aria-label={`عرض إجابات ${row.studentName}`}>
+                            <Eye className="size-4 sm:mx-auto" />
+                            <span className="sm:hidden">عرض الإجابة</span>
                           </Button>
                         ) : (
-                          <span className="text-xs text-muted-foreground">{isTaskResult ? "لا توجد إجابة" : "لم يرسل"}</span>
+                          <span className="rounded-xl bg-muted/30 px-3 py-2 text-center text-xs text-muted-foreground">{isTaskResult ? "لا توجد إجابة" : "لم يرسل"}</span>
                         )}
                       </div>
                     </div>
@@ -6084,12 +6103,12 @@ const Dashboard = () => {
                       const score = typeof sub.manualScore === "number" ? sub.manualScore : null;
                       const hasViewableAnswers = (sub.answers ?? []).some((answer) => answer.questionId !== "__score_override__");
                       return (
-                          <div key={sub.id} className="flex flex-col gap-3 rounded-3xl border border-primary/10 bg-white p-4 md:flex-row md:items-center md:justify-between">
-                          <button type="button" className="text-right" disabled={!hasViewableAnswers} onClick={() => hasViewableAnswers && setFinalExamDetailsSubmissionId(sub.id)}>
-                            <div className="font-bold text-foreground">{sub.studentName}</div>
+                          <div key={sub.id} className="flex flex-col gap-3 rounded-[1.35rem] border border-primary/10 bg-[linear-gradient(180deg,rgba(255,255,255,1)_0%,rgba(248,250,252,0.96)_100%)] p-4 shadow-[0_10px_28px_rgba(15,23,42,0.05)] md:flex-row md:items-center md:justify-between md:shadow-none">
+                          <button type="button" className="min-w-0 text-right" disabled={!hasViewableAnswers} onClick={() => hasViewableAnswers && setFinalExamDetailsSubmissionId(sub.id)}>
+                            <div className="truncate font-bold text-foreground">{sub.studentName}</div>
                             <div className="text-xs text-muted-foreground">{sub.loginCode} · {new Date(sub.submittedAt).toLocaleDateString("ar-SA")}</div>
                           </button>
-                          <div className="flex w-full flex-wrap items-center justify-between gap-2 shrink-0 md:w-auto md:flex-nowrap md:justify-start">
+                          <div className="flex w-full shrink-0 flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between md:w-auto md:flex-nowrap md:justify-start">
                             {finalExamScoreEdit?.submissionId === sub.id ? (
                               <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:flex-nowrap">
                                 <Input className="h-8 w-20 rounded-xl text-center" value={finalExamScoreEdit.value} onChange={(e) => setFinalExamScoreEdit((c) => c ? { ...c, value: e.target.value } : null)} />
@@ -6103,16 +6122,17 @@ const Dashboard = () => {
                               </div>
                             ) : (
                               <>
-                                <Badge variant="outline" className="border-primary/20 text-primary">{score != null ? `${score} / ${feTotal}` : `— / ${feTotal}`}</Badge>
-                                <Button variant="outline" size="sm" className="rounded-xl h-8" onClick={() => setFinalExamScoreEdit({ submissionId: sub.id, value: score != null ? String(score) : "" })}>
+                                <Badge variant="outline" className="justify-center border-primary/20 px-3 py-2 text-primary sm:py-1">{score != null ? `${score} / ${feTotal}` : `— / ${feTotal}`}</Badge>
+                                <Button variant="outline" size="sm" className="h-10 rounded-xl sm:h-8" onClick={() => setFinalExamScoreEdit({ submissionId: sub.id, value: score != null ? String(score) : "" })}>
                                   <Pencil className="size-3.5" />
                                 </Button>
                                 {hasViewableAnswers ? (
-                                  <Button variant="outline" size="icon" className="h-9 w-9 rounded-xl" onClick={() => setFinalExamDetailsSubmissionId(sub.id)} aria-label={`عرض إجابات ${sub.studentName}`}>
-                                    <Eye className="size-4" />
+                                  <Button variant="outline" className="h-10 w-full rounded-xl sm:h-9 sm:w-9 sm:px-0" onClick={() => setFinalExamDetailsSubmissionId(sub.id)} aria-label={`عرض إجابات ${sub.studentName}`}>
+                                    <Eye className="size-4 sm:mx-auto" />
+                                    <span className="sm:hidden">عرض الإجابة</span>
                                   </Button>
                                 ) : (
-                                  <span className="text-xs text-muted-foreground">لا توجد إجابة</span>
+                                  <span className="rounded-xl bg-muted/30 px-3 py-2 text-center text-xs text-muted-foreground">لا توجد إجابة</span>
                                 )}
                               </>
                             )}
