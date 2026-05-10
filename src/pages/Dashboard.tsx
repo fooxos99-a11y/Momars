@@ -700,6 +700,7 @@ const Dashboard = () => {
   const [partsDialogStudentId, setPartsDialogStudentId] = useState<string | null>(null);
   const [partsDialogDraftParts, setPartsDialogDraftParts] = useState<number[]>([]);
   const [partsDialogSaving, setPartsDialogSaving] = useState(false);
+  const [certificationSubmittingStudentIds, setCertificationSubmittingStudentIds] = useState<string[]>([]);
   const [studentError, setStudentError] = useState("");
   const bulkStudentFileInputRef = useRef<HTMLInputElement | null>(null);
   const [adminsOpen, setAdminsOpen] = useState(false);
@@ -3994,6 +3995,22 @@ const Dashboard = () => {
     }
   };
 
+  const handleToggleStudentCertification = async (studentId: string) => {
+    if (certificationSubmittingStudentIds.includes(studentId)) {
+      return;
+    }
+
+    setCertificationSubmittingStudentIds((current) => [...current, studentId]);
+
+    try {
+      await store.toggleCertifiedStudent(studentId);
+    } catch {
+      showErrorToast("تعذر تحديث حالة الإجازة.");
+    } finally {
+      setCertificationSubmittingStudentIds((current) => current.filter((id) => id !== studentId));
+    }
+  };
+
   if (!storedSession) {
     return <Navigate to="/" replace />;
   }
@@ -4438,6 +4455,7 @@ const Dashboard = () => {
                       <div className="grid gap-4 md:hidden">
                         {filteredReciterStudentRows.map(({ student, reciter }) => {
                           const hasTransferTarget = hasAvailableTransferTarget(student.branchId, reciter.id);
+                          const isCertificationSubmitting = certificationSubmittingStudentIds.includes(student.id);
 
                           return (
                             <Card key={`${reciter.id}-${student.id}`} className={dashboardCardClass}>
@@ -4452,9 +4470,10 @@ const Dashboard = () => {
                                           ? "bg-green-100 text-green-700 hover:bg-green-200"
                                           : "border border-border text-muted-foreground hover:border-green-500 hover:text-green-700",
                                       )}
-                                      onClick={() => store.toggleCertifiedStudent(student.id)}
+                                      disabled={isCertificationSubmitting}
+                                      onClick={() => void handleToggleStudentCertification(student.id)}
                                     >
-                                      {student.isCertified ? "مجاز" : "اعتماد مجاز"}
+                                      {isCertificationSubmitting ? "جارٍ..." : student.isCertified ? "مجاز" : "اعتماد مجاز"}
                                     </button>
                                     <div className="space-y-1">
                                       {hasTransferTarget ? (
@@ -4526,6 +4545,7 @@ const Dashboard = () => {
                       <TableBody>
                         {isAllStudentsReciterView ? filteredReciterStudentRows.map(({ student, reciter }) => {
                           const hasTransferTarget = hasAvailableTransferTarget(student.branchId, reciter.id);
+                          const isCertificationSubmitting = certificationSubmittingStudentIds.includes(student.id);
 
                           return (
                             <TableRow key={`${reciter.id}-${student.id}`}>
@@ -4540,9 +4560,10 @@ const Dashboard = () => {
                                           ? "bg-green-100 text-green-700 hover:bg-green-200"
                                           : "border border-border text-muted-foreground hover:border-green-500 hover:text-green-700",
                                       )}
-                                      onClick={() => store.toggleCertifiedStudent(student.id)}
+                                      disabled={isCertificationSubmitting}
+                                      onClick={() => void handleToggleStudentCertification(student.id)}
                                     >
-                                      {student.isCertified ? "مجاز" : "اعتماد مجاز"}
+                                      {isCertificationSubmitting ? "جارٍ..." : student.isCertified ? "مجاز" : "اعتماد مجاز"}
                                     </button>
                                     <div className="space-y-1 text-right">
                                       {hasTransferTarget ? (
@@ -5186,6 +5207,7 @@ const Dashboard = () => {
                         </div>
                       ) : (
                         indicatorMetrics.studentRows.map((student) => {
+                          const isCertificationSubmitting = certificationSubmittingStudentIds.includes(student.id);
                           const itemMetrics = [
                             { label: "الأجزاء", value: student.memorizationPercent },
                             { label: "الحضور", value: student.attendancePercent },
@@ -5199,7 +5221,12 @@ const Dashboard = () => {
                             <Card key={student.id} className={dashboardCardClass}>
                               <CardContent className="space-y-5 p-5">
                                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                  <div className="flex w-full items-start justify-between gap-3">
+                                  <div className="flex w-full flex-row-reverse items-start justify-between gap-3">
+                                    <div className="text-right">
+                                      <div className="text-lg font-bold text-foreground">{student.name}</div>
+                                      <div className="mt-1 text-xs text-muted-foreground">المقرئ: {student.reciterName}</div>
+                                      <div className="mt-1 text-xs text-muted-foreground">رقم الدخول: {student.loginId}</div>
+                                    </div>
                                     <button
                                       type="button"
                                       className={cn(
@@ -5208,23 +5235,11 @@ const Dashboard = () => {
                                           ? "bg-green-100 text-green-700 hover:bg-green-200"
                                           : "border border-border text-muted-foreground hover:border-green-500 hover:text-green-700",
                                       )}
-                                      onClick={() => store.toggleCertifiedStudent(student.id)}
+                                      disabled={isCertificationSubmitting}
+                                      onClick={() => void handleToggleStudentCertification(student.id)}
                                     >
-                                      {student.isCertified ? "مجاز" : "اعتماد مجاز"}
+                                      {isCertificationSubmitting ? "جارٍ..." : student.isCertified ? "مجاز" : "اعتماد مجاز"}
                                     </button>
-                                    <div className="text-right">
-                                      <div className="text-lg font-bold text-foreground">{student.name}</div>
-                                      <span
-                                        className={cn(
-                                          "mt-1 inline-flex min-h-6 min-w-[56px] items-center justify-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-colors",
-                                          student.isCertified ? "bg-green-100 text-green-700" : "invisible",
-                                        )}
-                                      >
-                                        مجاز
-                                      </span>
-                                      <div className="mt-1 text-xs text-muted-foreground">المقرئ: {student.reciterName}</div>
-                                      <div className="mt-1 text-xs text-muted-foreground">رقم الدخول: {student.loginId}</div>
-                                    </div>
                                   </div>
                                 </div>
 
